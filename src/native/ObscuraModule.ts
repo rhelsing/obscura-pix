@@ -86,8 +86,9 @@ export const Obscura = {
   validateAndApproveLink: (code: string): Promise<void> =>
     Bridge.validateAndApproveLink(code),
 
-  // ORM — schema defined once at startup
-  defineModels: (): Promise<void> => Bridge.defineModels(),
+  // ORM — schema defined once at startup, cached by native for cold-start restore
+  defineModels: (schema: Record<string, any>): Promise<void> =>
+    Bridge.defineModels(JSON.stringify(schema)),
 
   // ORM — CRUD
   createEntry: (model: string, data: Record<string, any>): Promise<ModelEntry> =>
@@ -111,6 +112,12 @@ export const Obscura = {
 
   stopTyping: (conversationId: string): Promise<void> =>
     Bridge.stopTyping(conversationId),
+
+  observeTyping: (conversationId: string): Promise<void> =>
+    Bridge.observeTyping(conversationId),
+
+  stopObservingTyping: (conversationId: string): Promise<void> =>
+    Bridge.stopObservingTyping(conversationId),
 
   // Attachments (encrypted photos)
   uploadAttachment: (base64Data: string): Promise<{ id: string; contentKey: string; nonce: string }> =>

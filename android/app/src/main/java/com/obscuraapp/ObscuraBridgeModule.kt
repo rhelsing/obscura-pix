@@ -35,16 +35,25 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var client: ObscuraClient? = null
     private var eventJobs = mutableListOf<Job>()
+    private val typingJobs = mutableMapOf<String, Job>()
     private val prefs: SharedPreferences =
         reactContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-
 
     // Logcat logger — all ObscuraKit events visible via `adb logcat -s ObscuraBridge`
     private val logcatLogger = object : ObscuraLogger {
         override fun log(message: String) { Log.d(TAG, message) }
         override fun decryptFailed(sourceUserId: String, reason: String) { Log.w(TAG, "decrypt failed from ${sourceUserId.take(8)}: $reason") }
         override fun ackFailed(envelopeId: String, reason: String) { Log.w(TAG, "ack failed $envelopeId: $reason") }
-        override fun tokenRefreshFailed(attempt: Int, reason: String) { Log.e(TAG, "token refresh failed (attempt $attempt): $reason") }
+        override fun tokenRefreshFailed(attempt: Int, reason: String) {
+            Log.e(TAG, "token refresh failed (attempt $attempt): $reason")
+            // After 5 failures, surface auth failure to JS so it can show login screen
+            if (attempt >= 5) {
+                sendEvent("ObscuraEvent", Arguments.createMap().apply {
+                    putString("type", "authFailed")
+                    putString("reason", "Token refresh failed after $attempt attempts")
+                })
+            }
+        }
         override fun preKeyReplenishFailed(reason: String) { Log.w(TAG, "prekey replenish failed: $reason") }
         override fun identityChanged(address: String) { Log.w(TAG, "identity changed: $address") }
         override fun sessionEstablishFailed(userId: String, reason: String) { Log.e(TAG, "session establish failed $userId: $reason") }
@@ -103,19 +112,28 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         val userId = prefs.getString("userId", null) ?: return
         val refreshToken = prefs.getString("refreshToken", null)
         val deviceId = prefs.getString("deviceId", null)
-        val username = prefs.getString("username", null)
+        val username = prefs.getString("username", null) ?: return
         val registrationId = prefs.getInt("registrationId", 0)
 
         Log.d(TAG, "Restoring session: user=$username device=${deviceId?.take(8)}")
 
-        val c = ensureClient()
+        // Create client with the correct per-user database
+        val c = createClient(username)
         c.restoreSession(token, refreshToken, userId, deviceId, username, registrationId)
 
-        // Define models + connect in background
+        // Define models from cache + connect in background
         scope.launch {
             try {
-                defineModelsInternal(c)
+                val cached = getCachedSchema()
+                if (cached != null) {
+                    defineModelsFromJson(c, cached)
+                    Log.d(TAG, "Models defined from cache")
+                } else {
+                    Log.w(TAG, "No cached schema — waiting for JS defineModels()")
+                }
+                c.ensureFreshToken()
                 c.connect()
+                saveSession()
                 Log.d(TAG, "Session restored and connected")
             } catch (e: Exception) {
                 Log.e(TAG, "Session restore connect failed: ${e.message}")
@@ -123,41 +141,29 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         }
     }
 
-    private suspend fun defineModelsInternal(c: ObscuraClient) {
-        c.orm.define(mapOf(
-            "directMessage" to ModelConfig(
-                fields = mapOf(
-                    "conversationId" to "string",
-                    "content" to "string",
-                    "senderUsername" to "string"
-                ),
-                sync = "gset"
-            ),
-            "story" to ModelConfig(
-                fields = mapOf(
-                    "content" to "string",
-                    "authorUsername" to "string"
-                ),
-                sync = "gset",
-                ttl = "24h"
-            ),
-            "profile" to ModelConfig(
-                fields = mapOf(
-                    "displayName" to "string",
-                    "avatarUrl" to "string",
-                    "bio" to "string"
-                ),
-                sync = "lww"
-            ),
-            "settings" to ModelConfig(
-                fields = mapOf(
-                    "theme" to "string",
-                    "notificationsEnabled" to "boolean"
-                ),
-                sync = "lww",
-                private = true
+    private suspend fun defineModelsFromJson(c: ObscuraClient, schemaJson: String) {
+        val schema = JSONObject(schemaJson)
+        val models = mutableMapOf<String, ModelConfig>()
+        for (name in schema.keys()) {
+            val model = schema.getJSONObject(name)
+            val fieldsObj = model.getJSONObject("fields")
+            val fields = mutableMapOf<String, String>()
+            for (key in fieldsObj.keys()) fields[key] = fieldsObj.getString(key)
+            models[name] = ModelConfig(
+                fields = fields,
+                sync = model.optString("sync", "gset"),
+                ttl = model.optString("ttl", null),
+                private = model.optBoolean("private", false)
             )
-        ))
+        }
+        c.orm.define(models)
+    }
+
+    private fun getCachedSchema(): String? =
+        prefs.getString("cachedSchema", null)
+
+    private fun cacheSchema(schemaJson: String) {
+        prefs.edit().putString("cachedSchema", schemaJson).apply()
     }
 
     // ─── Client Init ────────────────────────────────────────
@@ -165,23 +171,39 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     private fun requireClient(): ObscuraClient =
         client ?: throw IllegalStateException("ObscuraClient not initialized — call register or login first")
 
+    /** Tear down current client: cancel observers, disconnect, null out */
+    private fun destroyClient() {
+        eventJobs.forEach { it.cancel() }
+        eventJobs.clear()
+        typingJobs.values.forEach { it.cancel() }
+        typingJobs.clear()
+        try { client?.disconnect() } catch (_: Exception) {}
+        client = null
+        Log.d(TAG, "Client destroyed")
+    }
+
+    /** Create a fresh client with per-user database */
+    private fun createClient(username: String): ObscuraClient {
+        // Per-user database: obscura_$username.db — isolates data between accounts
+        val dbName = "obscura_${username}.db"
+        val driver = app.cash.sqldelight.driver.android.AndroidSqliteDriver(
+            com.obscura.kit.db.ObscuraDatabase.Schema,
+            reactApplicationContext,
+            dbName
+        )
+        val c = ObscuraClient(
+            ObscuraConfig(apiUrl = "https://obscura.barrelmaker.dev"),
+            externalDriver = driver
+        )
+        c.logger = logcatLogger
+        client = c
+        startEventObservation()
+        Log.d(TAG, "Client initialized (db=$dbName)")
+        return c
+    }
+
     private fun ensureClient(): ObscuraClient {
-        if (client == null) {
-            val driver = app.cash.sqldelight.driver.android.AndroidSqliteDriver(
-                com.obscura.kit.db.ObscuraDatabase.Schema,
-                reactApplicationContext,
-                "obscura.db"
-            )
-            val c = ObscuraClient(
-                ObscuraConfig(apiUrl = "https://obscura.barrelmaker.dev"),
-                externalDriver = driver
-            )
-            c.logger = logcatLogger
-            client = c
-            startEventObservation()
-            Log.d(TAG, "Client initialized")
-        }
-        return client!!
+        return client ?: throw IllegalStateException("No active client — register or login first")
     }
 
     private fun sendEvent(eventName: String, params: WritableMap) {
@@ -210,19 +232,6 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
             }
         }
 
-        // Pending requests changes
-        eventJobs += scope.launch {
-            c.pendingRequests.collectLatest { pending ->
-                val arr = Arguments.createArray()
-                for (f in pending) arr.pushMap(friendToMap(f, "pending_received"))
-                val params = Arguments.createMap().apply {
-                    putString("type", "pendingUpdated")
-                    putArray("friends", arr)
-                }
-                sendEvent("ObscuraEvent", params)
-            }
-        }
-
         // Connection state changes
         eventJobs += scope.launch {
             c.connectionState.collectLatest { state ->
@@ -233,6 +242,24 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                         ConnectionState.DISCONNECTED -> "disconnected"
                         ConnectionState.CONNECTING -> "connecting"
                         ConnectionState.CONNECTED -> "connected"
+                    })
+                }
+                sendEvent("ObscuraEvent", params)
+                // Re-save session when connected — tokens may have been refreshed
+                if (state == ConnectionState.CONNECTED) saveSession()
+            }
+        }
+
+        // Auth state changes — surface to JS so it can show login screen on auth failure
+        eventJobs += scope.launch {
+            c.authState.collectLatest { authState ->
+                Log.d(TAG, "AuthState: $authState")
+                val params = Arguments.createMap().apply {
+                    putString("type", "authStateChanged")
+                    putString("state", when (authState) {
+                        AuthState.LOGGED_OUT -> "loggedOut"
+                        AuthState.PENDING_APPROVAL -> "pendingApproval"
+                        AuthState.AUTHENTICATED -> "authenticated"
                     })
                 }
                 sendEvent("ObscuraEvent", params)
@@ -260,29 +287,8 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                         }
                         sendEvent("ObscuraEvent", params)
                     }
-                    "MODEL_SIGNAL" -> {
-                        if (msg.text.isNotBlank()) {
-                            try {
-                                val json = JSONObject(msg.text)
-                                val signal = json.optString("signal", "")
-                                val data = json.optJSONObject("data")
-                                val convId = data?.optString("conversationId", "") ?: ""
-                                val authorDevice = json.optString("authorDeviceId", "")
-                                if (signal == "typing") {
-                                    sendEvent("ObscuraEvent", Arguments.createMap().apply {
-                                        putString("type", "typingStarted")
-                                        putString("conversationId", convId)
-                                        putString("authorDeviceId", authorDevice)
-                                    })
-                                } else if (signal == "stoppedTyping") {
-                                    sendEvent("ObscuraEvent", Arguments.createMap().apply {
-                                        putString("type", "typingStopped")
-                                        putString("conversationId", convId)
-                                    })
-                                }
-                            } catch (_: Exception) {}
-                        }
-                    }
+                    // MODEL_SIGNAL typing handled by observeTyping() via SignalManager
+                    "MODEL_SIGNAL" -> {}
                     "FRIEND_REQUEST", "FRIEND_RESPONSE" -> {
                         Log.d(TAG, "Friend event: ${msg.type} accepted=${msg.accepted}")
                     }
@@ -304,7 +310,8 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         scope.launch {
             try {
                 Log.d(TAG, "register: $username")
-                val c = ensureClient()
+                destroyClient()
+                val c = createClient(username)
                 c.register(username, password)
                 saveSession()
                 promise.resolve(null)
@@ -320,7 +327,8 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         scope.launch {
             try {
                 Log.d(TAG, "loginSmart: $username")
-                val c = ensureClient()
+                destroyClient()
+                val c = createClient(username)
                 val result = c.login(username, password)
                 val scenario = when (result.scenario) {
                     LoginScenario.EXISTING_DEVICE -> "existingDevice"
@@ -346,7 +354,8 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         scope.launch {
             try {
                 Log.d(TAG, "loginAndProvision: $username")
-                val c = ensureClient()
+                destroyClient()
+                val c = createClient(username)
                 c.loginAndProvision(username, password)
                 saveSession()
                 promise.resolve(null)
@@ -362,7 +371,10 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         scope.launch {
             try {
                 Log.d(TAG, "connect")
-                requireClient().connect()
+                val c = requireClient()
+                c.ensureFreshToken()
+                c.connect()
+                saveSession() // persist any refreshed tokens
                 promise.resolve(null)
             } catch (e: Exception) {
                 Log.e(TAG, "connect failed: ${e.message}")
@@ -387,7 +399,8 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     fun logout(promise: Promise) {
         scope.launch {
             try {
-                requireClient().logout()
+                try { requireClient().logout() } catch (_: Exception) {}
+                destroyClient()
                 clearSession()
                 promise.resolve(null)
             } catch (e: Exception) {
@@ -550,12 +563,13 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     // ─── ORM ────────────────────────────────────────────────
 
     @ReactMethod
-    fun defineModels(promise: Promise) {
+    fun defineModels(schemaJson: String, promise: Promise) {
         scope.launch {
             try {
-                val c = ensureClient()
-                defineModelsInternal(c)
-                Log.d(TAG, "Models defined")
+                val c = requireClient()
+                defineModelsFromJson(c, schemaJson)
+                cacheSchema(schemaJson)
+                Log.d(TAG, "Models defined + cached")
                 promise.resolve(null)
             } catch (e: Exception) {
                 Log.e(TAG, "defineModels failed: ${e.message}")
@@ -656,6 +670,32 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 promise.reject("STOP_TYPING_ERROR", e.message, e)
             }
         }
+    }
+
+    @ReactMethod
+    fun observeTyping(conversationId: String, promise: Promise) {
+        if (typingJobs.containsKey(conversationId)) { promise.resolve(null); return }
+        val model = client?.orm?.modelOrNull("directMessage")
+        if (model == null) { promise.resolve(null); return }
+
+        typingJobs[conversationId] = scope.launch {
+            model.observeTyping(conversationId).collectLatest { typers ->
+                val arr = Arguments.createArray()
+                for (t in typers) arr.pushString(t)
+                sendEvent("ObscuraEvent", Arguments.createMap().apply {
+                    putString("type", "typingChanged")
+                    putString("conversationId", conversationId)
+                    putArray("typers", arr)
+                })
+            }
+        }
+        promise.resolve(null)
+    }
+
+    @ReactMethod
+    fun stopObservingTyping(conversationId: String, promise: Promise) {
+        typingJobs.remove(conversationId)?.cancel()
+        promise.resolve(null)
     }
 
     // ─── Attachments ────────────────────────────────────────

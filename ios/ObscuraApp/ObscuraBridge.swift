@@ -9,7 +9,7 @@ class ObscuraBridge: RCTEventEmitter {
 
   private var client: ObscuraClient?
   private var observationTasks: [Task<Void, Never>] = []
-  private var eventQueue: [[String: Any]] = []
+  private var typingTasks: [String: Task<Void, Never>] = [:]
   private var debugLog: [String] = []
 
   private static var dataDir: String {
@@ -47,12 +47,13 @@ class ObscuraBridge: RCTEventEmitter {
 
   private func saveSession() {
     guard let c = client, let token = c.token, let userId = c.userId else { return }
-    let data: [String: String] = [
+    let data: [String: Any] = [
       "token": token,
       "refreshToken": c.refreshToken ?? "",
       "userId": userId,
       "deviceId": c.deviceId ?? "",
       "username": c.username ?? "",
+      "registrationId": c.registrationId ?? 0,
     ]
     UserDefaults.standard.set(data, forKey: Self.sessionKey)
     log("session saved for \(data["username"] ?? "?")")
@@ -64,9 +65,9 @@ class ObscuraBridge: RCTEventEmitter {
   }
 
   private func tryRestoreSession() {
-    guard let saved = UserDefaults.standard.dictionary(forKey: Self.sessionKey) as? [String: String],
-          let token = saved["token"], !token.isEmpty,
-          let userId = saved["userId"], !userId.isEmpty else {
+    guard let saved = UserDefaults.standard.dictionary(forKey: Self.sessionKey),
+          let token = saved["token"] as? String, !token.isEmpty,
+          let userId = saved["userId"] as? String, !userId.isEmpty else {
       log("no saved session")
       return
     }
@@ -80,10 +81,12 @@ class ObscuraBridge: RCTEventEmitter {
     self.client = c
 
     Task {
+      let regId = (saved["registrationId"] as? UInt32) ?? UInt32(saved["registrationId"] as? Int ?? 0)
       await c.restoreSession(
-        token: token, refreshToken: saved["refreshToken"],
-        userId: userId, deviceId: saved["deviceId"],
-        username: saved["username"]
+        token: token, refreshToken: saved["refreshToken"] as? String,
+        userId: userId, deviceId: saved["deviceId"] as? String,
+        username: saved["username"] as? String,
+        registrationId: regId
       )
       let fresh = await c.ensureFreshToken()
       guard fresh else {
@@ -93,7 +96,7 @@ class ObscuraBridge: RCTEventEmitter {
         return
       }
       self.saveSession()
-      self.callDefineModels()
+      self.defineModelsFromCache(c)
       do {
         try await c.connect()
         self.setupObservers()
@@ -104,34 +107,88 @@ class ObscuraBridge: RCTEventEmitter {
     }
   }
 
-  private func callDefineModels() {
-    guard let c = client else { return }
-    c.schema([
-      ModelDefinition(name: "directMessage", sync: .gset, syncScope: .friends,
-                      fields: ["conversationId": .string, "content": .string, "senderUsername": .string]),
-      ModelDefinition(name: "story", sync: .gset, syncScope: .friends, ttl: .hours(24),
-                      fields: ["content": .string, "authorUsername": .string, "mediaUrl": .optionalString]),
-      ModelDefinition(name: "profile", sync: .lwwMap, syncScope: .friends,
-                      fields: ["displayName": .string, "bio": .optionalString, "avatarUrl": .optionalString]),
-      ModelDefinition(name: "settings", sync: .lwwMap, syncScope: .ownDevices,
-                      fields: ["theme": .string, "notificationsEnabled": .boolean],
-                      belongsTo: [], hasMany: [], isPrivate: true),
-      ModelDefinition(name: "pix", sync: .gset, syncScope: .friends, ttl: .seconds(10),
-                      fields: ["recipientUsername": .string, "senderUsername": .string,
-                               "mediaRef": .string, "contentKey": .string, "nonce": .string,
-                               "caption": .optionalString, "displayDuration": .number]),
-    ])
-    log("models defined")
+  // ─── Schema (JS-driven, cached for cold start) ───────
+
+  private static let schemaKey = "cachedSchema"
+
+  /// Parse schema JSON from JS and define models on the client.
+  private func defineModelsFromJson(_ c: ObscuraClient, _ schemaJson: String) throws {
+    guard let data = schemaJson.data(using: .utf8),
+          let schema = try? JSONSerialization.jsonObject(with: data) as? [String: [String: Any]] else {
+      throw NSError(domain: "ObscuraBridge", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid schema JSON"])
+    }
+
+    var definitions: [ModelDefinition] = []
+    for (name, config) in schema {
+      let syncStr = config["sync"] as? String ?? "gset"
+      let sync: SyncStrategy = syncStr == "lww" ? .lwwMap : .gset
+      let isPrivate = config["private"] as? Bool ?? false
+      let scope: SyncScope = isPrivate ? .ownDevices : .friends
+
+      var ttl: TTL? = nil
+      if let ttlStr = config["ttl"] as? String {
+        ttl = parseTTL(ttlStr)
+      }
+
+      var fields: [String: FieldType] = [:]
+      if let fieldMap = config["fields"] as? [String: String] {
+        for (fieldName, fieldType) in fieldMap {
+          switch fieldType {
+          case "string": fields[fieldName] = .string
+          case "number": fields[fieldName] = .number
+          case "boolean": fields[fieldName] = .boolean
+          case "string?": fields[fieldName] = .optionalString
+          case "number?": fields[fieldName] = .optionalNumber
+          case "boolean?": fields[fieldName] = .optionalBoolean
+          default: fields[fieldName] = .string
+          }
+        }
+      }
+
+      definitions.append(ModelDefinition(name: name, sync: sync, syncScope: scope, ttl: ttl, fields: fields, isPrivate: isPrivate))
+    }
+
+    c.schema(definitions)
+  }
+
+  private func parseTTL(_ str: String) -> TTL? {
+    guard str.count >= 2 else { return nil }
+    let unit = str.last!
+    guard let value = Int(str.dropLast()) else { return nil }
+    switch unit {
+    case "s": return .seconds(value)
+    case "m": return .minutes(value)
+    case "h": return .hours(value)
+    case "d": return .days(value)
+    default: return nil
+    }
+  }
+
+  private func cacheSchema(_ schemaJson: String) {
+    UserDefaults.standard.set(schemaJson, forKey: Self.schemaKey)
+  }
+
+  private func getCachedSchema() -> String? {
+    UserDefaults.standard.string(forKey: Self.schemaKey)
+  }
+
+  /// Define models from cache for cold-start session restore.
+  private func defineModelsFromCache(_ c: ObscuraClient) {
+    guard let cached = getCachedSchema() else {
+      log("No cached schema — waiting for JS defineModels()")
+      return
+    }
+    do {
+      try defineModelsFromJson(c, cached)
+      log("models defined from cache")
+    } catch {
+      log("cached schema invalid: \(error.localizedDescription)")
+    }
   }
 
   // ─── Event Polling (JS calls this to get queued events) ──
 
-  @objc func pollEvents(_ resolve: @escaping RCTPromiseResolveBlock,
-                          reject: @escaping RCTPromiseRejectBlock) {
-    let events = eventQueue
-    eventQueue.removeAll()
-    resolve(events)
-  }
+  // pollEvents removed — all events are push via RCTEventEmitter.sendEvent
 
   // ─── Auth ────────────────────────────────────────────
 
@@ -140,6 +197,14 @@ class ObscuraBridge: RCTEventEmitter {
                        reject: @escaping RCTPromiseRejectBlock) {
     Task {
       do {
+        // Clean up any existing session first
+        if self.client != nil {
+          self.log("register: cleaning up previous session")
+          self.teardownObservers()
+          self.client?.disconnect()
+          self.client = nil
+        }
+
         // Phase 1: API-only register to get userId
         let creds = try await ObscuraClient.registerAccount(username, password)
         guard !creds.userId.isEmpty else { reject("E", "no userId", nil); return }
@@ -152,7 +217,7 @@ class ObscuraBridge: RCTEventEmitter {
                                userId: creds.userId, deviceId: nil, username: username)
         try await c.provisionCurrentDevice()
         self.client = c
-        self.callDefineModels()
+        // Models defined by JS calling defineModels(schema) after register
         self.saveSession()
         self.setupObservers()
         self.log("registered \(username)")
@@ -169,6 +234,14 @@ class ObscuraBridge: RCTEventEmitter {
                           reject: @escaping RCTPromiseRejectBlock) {
     Task {
       do {
+        // Clean up any existing session first
+        if self.client != nil {
+          self.log("loginSmart: cleaning up previous session")
+          self.teardownObservers()
+          self.client?.disconnect()
+          self.client = nil
+        }
+
         let shellCreds = try await ObscuraClient.loginAccount(username, password)
         guard !shellCreds.userId.isEmpty else { reject("E", "no userId", nil); return }
 
@@ -177,7 +250,7 @@ class ObscuraBridge: RCTEventEmitter {
                                    dataDirectory: userDir, userId: shellCreds.userId)
         self.client = c
         let scenario = try await c.loginSmart(username, password)
-        self.callDefineModels()
+        // Models defined by JS calling defineModels(schema) after login
         self.saveSession()
         self.setupObservers()
         self.log("login: \(scenario)")
@@ -218,11 +291,23 @@ class ObscuraBridge: RCTEventEmitter {
     Task {
       do {
         log("connecting...")
+        let fresh = await client!.ensureFreshToken()
+        log("token fresh: \(fresh)")
+        guard fresh else {
+          log("connect aborted — token refresh failed")
+          reject("connect_error", "Token refresh failed — re-login required", nil)
+          self.emitEvent(["type": "authFailed", "reason": "token refresh failed"])
+          return
+        }
         try await client!.connect()
-        log("connected (state: \(client?.connectionState.rawValue ?? "?"))")
+        log("connected")
+        self.emitEvent(["type": "connectionChanged", "state": "connected"])
+        self.emitEvent(["type": "authStateChanged", "state": "authenticated"])
+        self.saveSession()
         resolve(nil)
       } catch {
         log("connect error: \(error.localizedDescription)")
+        self.emitEvent(["type": "connectionChanged", "state": "disconnected"])
         reject("connect_error", error.localizedDescription, error)
       }
     }
@@ -232,15 +317,24 @@ class ObscuraBridge: RCTEventEmitter {
                           reject: @escaping RCTPromiseRejectBlock) {
     log("disconnecting")
     client?.disconnect()
+    emitEvent(["type": "connectionChanged", "state": "disconnected"])
     resolve(nil)
   }
 
   @objc func logout(_ resolve: @escaping RCTPromiseResolveBlock,
                      reject: @escaping RCTPromiseRejectBlock) {
     Task {
-      try? await client?.logout()
+      log("logout — full cleanup")
       teardownObservers()
+      typingTasks.values.forEach { $0.cancel() }
+      typingTasks.removeAll()
+      client?.disconnect()
+      try? await client?.logout()
+      client = nil
       clearSession()
+      debugLog.removeAll()
+      self.emitEvent(["type": "connectionChanged", "state": "disconnected"])
+      self.emitEvent(["type": "authStateChanged", "state": "loggedOut"])
       log("logged out")
       resolve(nil)
     }
@@ -383,25 +477,19 @@ class ObscuraBridge: RCTEventEmitter {
 
   // ─── ORM ─────────────────────────────────────────────
 
-  @objc func defineModels(_ resolve: @escaping RCTPromiseResolveBlock,
+  @objc func defineModels(_ schemaJson: String,
+                            resolve: @escaping RCTPromiseResolveBlock,
                             reject: @escaping RCTPromiseRejectBlock) {
     guard let c = client else { reject("E", "no client", nil); return }
-    c.schema([
-      ModelDefinition(name: "directMessage", sync: .gset, syncScope: .friends,
-                      fields: ["conversationId": .string, "content": .string, "senderUsername": .string]),
-      ModelDefinition(name: "story", sync: .gset, syncScope: .friends, ttl: .hours(24),
-                      fields: ["content": .string, "authorUsername": .string, "mediaUrl": .optionalString]),
-      ModelDefinition(name: "profile", sync: .lwwMap, syncScope: .friends,
-                      fields: ["displayName": .string, "bio": .optionalString, "avatarUrl": .optionalString]),
-      ModelDefinition(name: "settings", sync: .lwwMap, syncScope: .ownDevices,
-                      fields: ["theme": .string, "notificationsEnabled": .boolean],
-                      belongsTo: [], hasMany: [], isPrivate: true),
-      ModelDefinition(name: "pix", sync: .gset, syncScope: .friends, ttl: .seconds(10),
-                      fields: ["recipientUsername": .string, "senderUsername": .string,
-                               "mediaRef": .string, "contentKey": .string, "nonce": .string,
-                               "caption": .optionalString, "displayDuration": .number]),
-    ])
-    resolve(nil)
+    do {
+      try defineModelsFromJson(c, schemaJson)
+      cacheSchema(schemaJson)
+      log("models defined from JS schema")
+      resolve(nil)
+    } catch {
+      log("defineModels error: \(error.localizedDescription)")
+      reject("define_error", error.localizedDescription, error)
+    }
   }
 
   @objc func createEntry(_ model: String, dataJson: String,
@@ -505,6 +593,34 @@ class ObscuraBridge: RCTEventEmitter {
     }
   }
 
+  @objc func observeTyping(_ conversationId: String,
+                             resolve: @escaping RCTPromiseResolveBlock,
+                             reject: @escaping RCTPromiseRejectBlock) {
+    // Don't double-subscribe
+    guard typingTasks[conversationId] == nil else { resolve(nil); return }
+    guard let m = client?.model("directMessage") else { resolve(nil); return }
+
+    let typed = TypedModel<DirectMessageModel>(model: m)
+    typingTasks[conversationId] = Task {
+      for await typers in typed.observeTyping(conversationId: conversationId).values {
+        self.emitEvent([
+          "type": "typingChanged",
+          "conversationId": conversationId,
+          "typers": typers
+        ])
+      }
+    }
+    resolve(nil)
+  }
+
+  @objc func stopObservingTyping(_ conversationId: String,
+                                   resolve: @escaping RCTPromiseResolveBlock,
+                                   reject: @escaping RCTPromiseRejectBlock) {
+    typingTasks[conversationId]?.cancel()
+    typingTasks.removeValue(forKey: conversationId)
+    resolve(nil)
+  }
+
   // ─── Attachments ─────────────────────────────────────
 
   @objc func uploadAttachment(_ base64Data: String,
@@ -591,6 +707,28 @@ class ObscuraBridge: RCTEventEmitter {
       for await event in c.events() {
         if event.type == 30 { // MODEL_SYNC
           self.emitEvent(["type": "messageReceived", "model": "unknown"])
+        } else if event.type == 31 { // MODEL_SIGNAL
+          self.emitEvent(["type": "signalReceived"])
+        }
+      }
+    })
+
+    // Connection state — push via ObscuraKit's observeConnectionState()
+    observationTasks.append(Task {
+      for await state in c.observeConnectionState() {
+        self.emitEvent(["type": "connectionChanged", "state": state.rawValue])
+        self.log("connection: \(state.rawValue)")
+        if state == .connected { self.saveSession() }
+      }
+    })
+
+    // Auth state — push via ObscuraKit's observeAuthState()
+    observationTasks.append(Task {
+      for await state in c.observeAuthState() {
+        self.emitEvent(["type": "authStateChanged", "state": state.rawValue])
+        self.log("auth: \(state.rawValue)")
+        if state == .loggedOut {
+          self.emitEvent(["type": "authFailed"])
         }
       }
     })

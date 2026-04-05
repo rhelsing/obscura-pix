@@ -2,24 +2,24 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   SafeAreaView, View, Text, TextInput, TouchableOpacity, FlatList,
   StyleSheet, StatusBar, Alert, KeyboardAvoidingView, Platform,
-  Image, NativeModules, NativeEventEmitter, ScrollView,
+  Image, NativeModules, NativeEventEmitter, ScrollView, Animated,
 } from 'react-native';
 import {
   Obscura, conversationId, type Friend, type ModelEntry,
 } from './src/native/ObscuraModule';
+import { obscuraSchema } from './src/models/schema';
 
 const ObscuraEvents = new NativeEventEmitter(NativeModules.ObscuraBridge);
 
 // ─── Reactive Event Hook ─────────────────────────────────
 
-function useObscuraEvents(authed: boolean) {
+function useObscuraEvents(authed: boolean, onAuthLost?: () => void) {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [pending, setPending] = useState<Friend[]>([]);
   const [connState, setConnState] = useState('disconnected');
 
   useEffect(() => {
-    if (!authed) return;
-    // Subscribe to reactive events from native StateFlows
+    // Always listen for auth state — even when not authed, to catch session expiry
     const sub = ObscuraEvents.addListener('ObscuraEvent', (event) => {
       console.log('[ObscuraEvent]', event.type, JSON.stringify(event).slice(0, 200));
       if (event.type === 'friendsUpdated') {
@@ -28,7 +28,13 @@ function useObscuraEvents(authed: boolean) {
         setPending(all.filter((f: Friend) => f.status !== 'accepted'));
       }
       if (event.type === 'connectionChanged') setConnState(event.state || 'disconnected');
+      // Auth failure — token refresh exhausted or server revoked session
+      if (event.type === 'authFailed' || (event.type === 'authStateChanged' && event.state === 'loggedOut')) {
+        console.log('[ObscuraEvent] Auth lost — showing login');
+        onAuthLost?.();
+      }
     });
+    if (!authed) return () => sub.remove();
     // Fetch initial state (events may have fired before JS subscribed)
     Obscura.getFriends().then((all: Friend[]) => {
       setFriends((all || []).filter((f: Friend) => f.status === 'accepted'));
@@ -53,7 +59,7 @@ function AuthScreen({ onAuth }: { onAuth: () => void }) {
     setStatus('Registering...');
     try {
       await Obscura.register(username, password);
-      await Obscura.defineModels();
+      await Obscura.defineModels(obscuraSchema);
       await Obscura.connect();
       onAuth();
     } catch (e: any) { setStatus(e.message || 'Registration failed'); }
@@ -66,13 +72,13 @@ function AuthScreen({ onAuth }: { onAuth: () => void }) {
       const scenario = await Obscura.loginSmart(username, password);
       switch (scenario) {
         case 'existingDevice': case 'onlyDevice':
-          await Obscura.defineModels();
+          await Obscura.defineModels(obscuraSchema);
           await Obscura.connect();
           onAuth();
           break;
         case 'newDevice':
           await Obscura.loginAndProvision(username, password);
-          await Obscura.defineModels();
+          await Obscura.defineModels(obscuraSchema);
           await Obscura.connect();
           onAuth();
           break;
@@ -113,7 +119,7 @@ function ChatScreen({ friend, myUserId, myUsername, onBack }: {
 }) {
   const [messages, setMessages] = useState<ModelEntry[]>([]);
   const [text, setText] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
+  const [typers, setTypers] = useState<string[]>([]);
   const convId = conversationId(myUserId, friend.userId);
 
   const loadMessages = useCallback(() => {
@@ -121,20 +127,25 @@ function ChatScreen({ friend, myUserId, myUsername, onBack }: {
       .then(msgs => setMessages([...msgs].sort((a, b) => a.timestamp - b.timestamp)));
   }, [convId]);
 
-  // Poll for new messages + typing
+  // Load messages + subscribe to incoming
   useEffect(() => {
     loadMessages();
-    const interval = setInterval(async () => {
-      loadMessages();
-      // Check typing via pollEvents
-      try {
-        const events = await Obscura.pollEvents();
-        for (const e of (events || [])) {
-          if (e.type === 'messageReceived') loadMessages();
-        }
-      } catch {}
-    }, 1500);
-    return () => clearInterval(interval);
+    const sub = ObscuraEvents.addListener('ObscuraEvent', (event) => {
+      if (event.type === 'messageReceived') {
+        loadMessages();
+        setTypers([]); // Clear typing bubble immediately when a message arrives
+      }
+      if (event.type === 'typingChanged' && event.conversationId === convId) {
+        setTypers(event.typers || []);
+      }
+      // typingChanged is the only typing event — both iOS and Android use observeTyping()
+    });
+    // Start observing typing for this conversation
+    Obscura.observeTyping(convId);
+    return () => {
+      sub.remove();
+      Obscura.stopObservingTyping(convId);
+    };
   }, [convId, loadMessages]);
 
   const send = async () => {
@@ -176,11 +187,9 @@ function ChatScreen({ friend, myUserId, myUsername, onBack }: {
             </View>
           );
         }}
-        ListFooterComponent={isTyping ? (
+        ListFooterComponent={typers.length > 0 ? (
           <View style={[s.msgRow, s.msgRowLeft]}>
-            <View style={[s.msgBubble, s.theirBubble]}>
-              <Text style={s.typingDots}>• • •</Text>
-            </View>
+            <TypingBubble />
           </View>
         ) : null}
       />
@@ -411,12 +420,21 @@ export default function App() {
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
   const [myUserId, setMyUserId] = useState('');
   const [myUsername, setMyUsername] = useState('');
-  const { friends, pending, connState } = useObscuraEvents(authed);
+  const handleAuthLost = useCallback(() => {
+    setAuthed(false);
+    setMyUserId('');
+    setMyUsername('');
+    setSelectedFriend(null);
+    setTab('friends');
+  }, []);
+  const { friends, pending, connState } = useObscuraEvents(authed, handleAuthLost);
 
   // Check for existing session on launch
   useEffect(() => {
-    Obscura.getAuthState().then(state => {
+    Obscura.getAuthState().then(async (state) => {
       if (state === 'authenticated') {
+        // Ensure models are defined (may have been cached by native, but JS should always send latest)
+        await Obscura.defineModels(obscuraSchema).catch(() => {});
         Obscura.getUserId().then(id => setMyUserId(id || ''));
         Obscura.getUsername().then(name => setMyUsername(name || ''));
         setAuthed(true);
@@ -462,6 +480,38 @@ export default function App() {
         ))}
       </View>
     </SafeAreaView>
+  );
+}
+
+// ─── Typing Bubble (animated three dots) ─────────────────
+
+function TypingBubble() {
+  const dot1 = useRef(new Animated.Value(0.3)).current;
+  const dot2 = useRef(new Animated.Value(0.3)).current;
+  const dot3 = useRef(new Animated.Value(0.3)).current;
+
+  useEffect(() => {
+    const animate = (dot: Animated.Value, delay: number) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(dot, { toValue: 1, duration: 400, useNativeDriver: true }),
+          Animated.timing(dot, { toValue: 0.3, duration: 400, useNativeDriver: true }),
+        ])
+      );
+    const a1 = animate(dot1, 0);
+    const a2 = animate(dot2, 200);
+    const a3 = animate(dot3, 400);
+    a1.start(); a2.start(); a3.start();
+    return () => { a1.stop(); a2.stop(); a3.stop(); };
+  }, [dot1, dot2, dot3]);
+
+  return (
+    <View style={s.typingBubble}>
+      {[dot1, dot2, dot3].map((opacity, i) => (
+        <Animated.View key={i} style={[s.typingDot, { opacity }]} />
+      ))}
+    </View>
   );
 }
 
@@ -512,7 +562,13 @@ const s = StyleSheet.create({
   theirBubble: { backgroundColor: '#1a1a1a' },
   myBubbleText: { color: '#000', fontSize: 16 },
   theirBubbleText: { color: '#fff', fontSize: 16 },
-  typingDots: { color: '#666', fontSize: 18 },
+  typingBubble: {
+    flexDirection: 'row', backgroundColor: '#1a1a1a', borderRadius: 18,
+    paddingHorizontal: 14, paddingVertical: 10, gap: 4, marginVertical: 2,
+  },
+  typingDot: {
+    width: 8, height: 8, borderRadius: 4, backgroundColor: '#666',
+  },
   composer: { flexDirection: 'row', padding: 12, gap: 8, borderTopWidth: 0.5, borderTopColor: '#222' },
   composerInput: { flex: 1, backgroundColor: '#1a1a1a', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, color: '#fff', fontSize: 16 },
   sendBtn: { backgroundColor: '#FFFC00', borderRadius: 20, width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },

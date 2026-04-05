@@ -38,7 +38,8 @@ RCT_EXTERN_METHOD(validateAndApproveLink:(NSString *)code
                   resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 
 // ORM
-RCT_EXTERN_METHOD(defineModels:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(defineModels:(NSString *)schemaJson
+                  resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(createEntry:(NSString *)model dataJson:(NSString *)dataJson
                   resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(upsertEntry:(NSString *)model id:(NSString *)id dataJson:(NSString *)dataJson
@@ -55,6 +56,10 @@ RCT_EXTERN_METHOD(sendTyping:(NSString *)conversationId
                   resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(stopTyping:(NSString *)conversationId
                   resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(observeTyping:(NSString *)conversationId
+                  resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(stopObservingTyping:(NSString *)conversationId
+                  resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 
 // Attachments
 RCT_EXTERN_METHOD(uploadAttachment:(NSString *)base64Data
@@ -66,8 +71,5 @@ RCT_EXTERN_METHOD(sendPhoto:(NSString *)friendUserId base64Data:(NSString *)base
 
 // Debug
 RCT_EXTERN_METHOD(getDebugLog:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
-
-// Event polling
-RCT_EXTERN_METHOD(pollEvents:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 
 @end
