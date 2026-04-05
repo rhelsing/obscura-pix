@@ -1,0 +1,39 @@
+name: ObscuraApp
+options:
+  bundleIdPrefix: org.reactjs.native.example
+  deploymentTarget:
+    iOS: "16.0"
+  xcodeVersion: "17.0"
+  generateEmptyDirectories: true
+
+packages:
+  ObscuraKit:
+    path: ../../obscura-client-ios
+
+targets:
+  ObscuraApp:
+    type: application
+    platform: iOS
+    sources:
+      - ObscuraApp
+    settings:
+      base:
+        INFOPLIST_FILE: ObscuraApp/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: org.reactjs.native.example.ObscuraApp
+        SWIFT_VERSION: "5.0"
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - -lsignal_ffi
+        LIBRARY_SEARCH_PATHS:
+          - $(inherited)
+          - /Users/ryanhelsing/Projects/obscura-client-ios/vendored/libsignal/target/aarch64-apple-ios-sim/release
+          - /Users/ryanhelsing/Projects/obscura-client-ios/vendored/libsignal/target/release
+        SWIFT_OBJC_BRIDGING_HEADER: ObscuraApp/ObscuraApp-Bridging-Header.h
+        HEADER_SEARCH_PATHS:
+          - $(inherited)
+    dependencies:
+      - package: ObscuraKit
+    postCompileScripts:
+      - name: "[CP] Copy Pods Resources"
+        script: "\"${PODS_ROOT}/Target Support Files/Pods-ObscuraApp/Pods-ObscuraApp-resources.sh\""
+        basedOnDependencyAnalysis: false
