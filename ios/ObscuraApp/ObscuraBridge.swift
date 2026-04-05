@@ -2,33 +2,29 @@ import Foundation
 import React
 import ObscuraKit
 
-/// Native module bridging ObscuraKit to React Native.
-/// All methods are async and return via RCTPromise.
+/// Thin native module — all logic lives in ObscuraKit.
+/// The bridge just relays calls and events between JS and the kit.
 @objc(ObscuraBridge)
 class ObscuraBridge: RCTEventEmitter {
 
   private var client: ObscuraClient?
-  private var observationTasks: [Task<Void, Never>] = []
+  private var eventTask: Task<Void, Never>?
   private var typingTasks: [String: Task<Void, Never>] = [:]
   private var debugLog: [String] = []
 
-  private static var dataDir: String {
-    let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+  private static var baseDir: String {
+    let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
       .appendingPathComponent("ObscuraData")
-    try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-    return base.path
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    return dir.path
   }
 
   @objc override static func requiresMainQueueSetup() -> Bool { true }
-
-  override func supportedEvents() -> [String]! {
-    ["ObscuraEvent"]
-  }
+  override func supportedEvents() -> [String]! { ["ObscuraEvent"] }
 
   override init() {
     super.init()
-    NSLog("[ObscuraBridge] init — attempting session restore")
-    tryRestoreSession()
+    tryRestore()
   }
 
   private func log(_ msg: String) {
@@ -37,224 +33,89 @@ class ObscuraBridge: RCTEventEmitter {
     if debugLog.count > 200 { debugLog.removeFirst() }
   }
 
-  private func emitEvent(_ event: [String: Any]) {
-    sendEvent(withName: "ObscuraEvent", body: event)
+  private func emit(_ body: [String: Any]) {
+    sendEvent(withName: "ObscuraEvent", body: body)
   }
 
-  // ─── Session Persistence ─────────────────────────────
-
-  private static let sessionKey = "ObscuraBridgeSession"
-
-  private func saveSession() {
-    guard let c = client, let token = c.token, let userId = c.userId else { return }
-    let data: [String: Any] = [
-      "token": token,
-      "refreshToken": c.refreshToken ?? "",
-      "userId": userId,
-      "deviceId": c.deviceId ?? "",
-      "username": c.username ?? "",
-      "registrationId": c.registrationId ?? 0,
-    ]
-    UserDefaults.standard.set(data, forKey: Self.sessionKey)
-    log("session saved for \(data["username"] ?? "?")")
+  private func makeClient(userId: String) -> ObscuraClient {
+    let dir = Self.baseDir + "/\(userId)"
+    let c = try! ObscuraClient(apiURL: "https://obscura.barrelmaker.dev",
+                                dataDirectory: dir, userId: userId)
+    c.sessionStorage = UserDefaultsSessionStorage()
+    return c
   }
 
-  private func clearSession() {
-    UserDefaults.standard.removeObject(forKey: Self.sessionKey)
-    log("session cleared")
-  }
-
-  private func tryRestoreSession() {
-    guard let saved = UserDefaults.standard.dictionary(forKey: Self.sessionKey),
-          let token = saved["token"] as? String, !token.isEmpty,
-          let userId = saved["userId"] as? String, !userId.isEmpty else {
-      log("no saved session")
-      return
-    }
-
-    let userDir = Self.dataDir + "/\(userId)"
-    guard let c = try? ObscuraClient(apiURL: "https://obscura.barrelmaker.dev",
-                                      dataDirectory: userDir, userId: userId) else {
-      log("failed to create client for restore")
-      return
-    }
-    self.client = c
-
-    Task {
-      let regId = (saved["registrationId"] as? UInt32) ?? UInt32(saved["registrationId"] as? Int ?? 0)
-      await c.restoreSession(
-        token: token, refreshToken: saved["refreshToken"] as? String,
-        userId: userId, deviceId: saved["deviceId"] as? String,
-        username: saved["username"] as? String,
-        registrationId: regId
-      )
-      let fresh = await c.ensureFreshToken()
-      guard fresh else {
-        log("token refresh failed on restore — need re-login")
-        self.clearSession()
-        self.client = nil
-        return
-      }
-      self.saveSession()
-      self.defineModelsFromCache(c)
-      do {
-        try await c.connect()
-        self.setupObservers()
-        self.log("session restored and connected")
-      } catch {
-        self.log("restore connect failed: \(error.localizedDescription)")
-      }
-    }
-  }
-
-  // ─── Schema (JS-driven, cached for cold start) ───────
-
-  private static let schemaKey = "cachedSchema"
-
-  /// Parse schema JSON from JS and define models on the client.
-  private func defineModelsFromJson(_ c: ObscuraClient, _ schemaJson: String) throws {
-    guard let data = schemaJson.data(using: .utf8),
-          let schema = try? JSONSerialization.jsonObject(with: data) as? [String: [String: Any]] else {
-      throw NSError(domain: "ObscuraBridge", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid schema JSON"])
-    }
-
-    var definitions: [ModelDefinition] = []
-    for (name, config) in schema {
-      let syncStr = config["sync"] as? String ?? "gset"
-      let sync: SyncStrategy = syncStr == "lww" ? .lwwMap : .gset
-      let isPrivate = config["private"] as? Bool ?? false
-      let scope: SyncScope = isPrivate ? .ownDevices : .friends
-
-      var ttl: TTL? = nil
-      if let ttlStr = config["ttl"] as? String {
-        ttl = parseTTL(ttlStr)
-      }
-
-      var fields: [String: FieldType] = [:]
-      if let fieldMap = config["fields"] as? [String: String] {
-        for (fieldName, fieldType) in fieldMap {
-          switch fieldType {
-          case "string": fields[fieldName] = .string
-          case "number": fields[fieldName] = .number
-          case "boolean": fields[fieldName] = .boolean
-          case "string?": fields[fieldName] = .optionalString
-          case "number?": fields[fieldName] = .optionalNumber
-          case "boolean?": fields[fieldName] = .optionalBoolean
-          default: fields[fieldName] = .string
-          }
+  private func startEvents() {
+    eventTask?.cancel()
+    guard let c = client else { return }
+    eventTask = Task {
+      for await event in c.observeEvents() {
+        switch event {
+        case .friendsUpdated(let friends):
+          self.emit(["type": "friendsUpdated", "friends": friends.map {
+            ["userId": $0.userId, "username": $0.username, "status": $0.status.rawValue] as [String: Any]
+          }])
+        case .connectionChanged(let state):
+          self.emit(["type": "connectionChanged", "state": state.rawValue])
+        case .authChanged(let state):
+          self.emit(["type": "authStateChanged", "state": state.rawValue])
+          if state == .loggedOut { self.emit(["type": "authFailed"]) }
+        case .messageReceived(let model, _):
+          self.emit(["type": "messageReceived", "model": model])
+        case .typingChanged(let convId, let typers):
+          self.emit(["type": "typingChanged", "conversationId": convId, "typers": typers])
+        case .debugLog(let msg):
+          self.log(msg)
         }
       }
-
-      definitions.append(ModelDefinition(name: name, sync: sync, syncScope: scope, ttl: ttl, fields: fields, isPrivate: isPrivate))
-    }
-
-    c.schema(definitions)
-  }
-
-  private func parseTTL(_ str: String) -> TTL? {
-    guard str.count >= 2 else { return nil }
-    let unit = str.last!
-    guard let value = Int(str.dropLast()) else { return nil }
-    switch unit {
-    case "s": return .seconds(value)
-    case "m": return .minutes(value)
-    case "h": return .hours(value)
-    case "d": return .days(value)
-    default: return nil
     }
   }
 
-  private func cacheSchema(_ schemaJson: String) {
-    UserDefaults.standard.set(schemaJson, forKey: Self.schemaKey)
+  private func cleanup() {
+    eventTask?.cancel(); eventTask = nil
+    typingTasks.values.forEach { $0.cancel() }; typingTasks.removeAll()
   }
 
-  private func getCachedSchema() -> String? {
-    UserDefaults.standard.string(forKey: Self.schemaKey)
-  }
-
-  /// Define models from cache for cold-start session restore.
-  private func defineModelsFromCache(_ c: ObscuraClient) {
-    guard let cached = getCachedSchema() else {
-      log("No cached schema — waiting for JS defineModels()")
-      return
+  private func tryRestore() {
+    guard let saved = UserDefaultsSessionStorage().load(),
+          let userId = saved["userId"] as? String, !userId.isEmpty else {
+      log("no saved session"); return
     }
-    do {
-      try defineModelsFromJson(c, cached)
-      log("models defined from cache")
-    } catch {
-      log("cached schema invalid: \(error.localizedDescription)")
+    let c = makeClient(userId: userId)
+    self.client = c
+    Task {
+      do { try await c.restorePersistedSession(); startEvents(); log("session restored") }
+      catch { log("restore failed: \(error.localizedDescription)"); self.client = nil }
     }
   }
 
-  // ─── Event Polling (JS calls this to get queued events) ──
-
-  // pollEvents removed — all events are push via RCTEventEmitter.sendEvent
-
-  // ─── Auth ────────────────────────────────────────────
+  // ─── Auth ──────────────────────────────────────────────
 
   @objc func registerUser(_ username: String, password: String,
-                       resolve: @escaping RCTPromiseResolveBlock,
-                       reject: @escaping RCTPromiseRejectBlock) {
+                           resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     Task {
       do {
-        // Clean up any existing session first
-        if self.client != nil {
-          self.log("register: cleaning up previous session")
-          self.teardownObservers()
-          self.client?.disconnect()
-          self.client = nil
-        }
-
-        // Phase 1: API-only register to get userId
+        cleanup()
         let creds = try await ObscuraClient.registerAccount(username, password)
-        guard !creds.userId.isEmpty else { reject("E", "no userId", nil); return }
-
-        // Phase 2: Create file-backed client with encrypted DB
-        let userDir = Self.dataDir + "/\(creds.userId)"
-        let c = try ObscuraClient(apiURL: "https://obscura.barrelmaker.dev",
-                                   dataDirectory: userDir, userId: creds.userId)
+        let c = makeClient(userId: creds.userId)
         await c.restoreSession(token: creds.token, refreshToken: creds.refreshToken,
                                userId: creds.userId, deviceId: nil, username: username)
         try await c.provisionCurrentDevice()
-        self.client = c
-        // Models defined by JS calling defineModels(schema) after register
-        self.saveSession()
-        self.setupObservers()
-        self.log("registered \(username)")
-        resolve(nil)
-      } catch {
-        self.log("register error: \(error.localizedDescription)")
-        reject("register_error", error.localizedDescription, error)
-      }
+        self.client = c; startEvents(); log("registered \(username)"); resolve(nil)
+      } catch { reject("E", error.localizedDescription, error) }
     }
   }
 
   @objc func loginSmart(_ username: String, password: String,
-                          resolve: @escaping RCTPromiseResolveBlock,
-                          reject: @escaping RCTPromiseRejectBlock) {
+                          resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     Task {
       do {
-        // Clean up any existing session first
-        if self.client != nil {
-          self.log("loginSmart: cleaning up previous session")
-          self.teardownObservers()
-          self.client?.disconnect()
-          self.client = nil
-        }
-
-        let shellCreds = try await ObscuraClient.loginAccount(username, password)
-        guard !shellCreds.userId.isEmpty else { reject("E", "no userId", nil); return }
-
-        let userDir = Self.dataDir + "/\(shellCreds.userId)"
-        let c = try ObscuraClient(apiURL: "https://obscura.barrelmaker.dev",
-                                   dataDirectory: userDir, userId: shellCreds.userId)
+        cleanup()
+        let creds = try await ObscuraClient.loginAccount(username, password)
+        let c = makeClient(userId: creds.userId)
         self.client = c
         let scenario = try await c.loginSmart(username, password)
-        // Models defined by JS calling defineModels(schema) after login
-        self.saveSession()
-        self.setupObservers()
-        self.log("login: \(scenario)")
-
+        startEvents()
         switch scenario {
         case .existingDevice: resolve("existingDevice")
         case .newDevice: resolve("newDevice")
@@ -263,504 +124,167 @@ class ObscuraBridge: RCTEventEmitter {
         case .invalidCredentials: resolve("invalidCredentials")
         case .userNotFound: resolve("userNotFound")
         }
-      } catch {
-        reject("login_error", error.localizedDescription, error)
-      }
+      } catch { reject("E", error.localizedDescription, error) }
     }
   }
 
   @objc func loginAndProvision(_ username: String, password: String,
-                                 resolve: @escaping RCTPromiseResolveBlock,
-                                 reject: @escaping RCTPromiseRejectBlock) {
+                                 resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     Task {
       do {
-        log("loginAndProvision \(username)")
-        guard client != nil else {
-          reject("provision_error", "No client — call loginSmart first", nil); return
-        }
-        try await client!.loginAndProvision(username, password)
-        self.saveSession()
-        log("provisioned OK")
-        resolve(nil)
-      } catch {
-        log("provision error: \(error.localizedDescription)")
-        reject("provision_error", error.localizedDescription, error)
-      }
+        guard client != nil else { reject("E", "Call loginSmart first", nil); return }
+        try await client!.loginAndProvision(username, password); resolve(nil)
+      } catch { reject("E", error.localizedDescription, error) }
     }
   }
 
-  @objc func connect(_ resolve: @escaping RCTPromiseResolveBlock,
-                      reject: @escaping RCTPromiseRejectBlock) {
+  @objc func connect(_ resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+    Task {
+      do { try await client!.connect(); resolve(nil) }
+      catch { reject("E", error.localizedDescription, error) }
+    }
+  }
+
+  @objc func disconnect(_ resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+    client?.disconnect(); resolve(nil)
+  }
+
+  @objc func logout(_ resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+    Task { cleanup(); await client?.fullLogout(); client = nil; resolve(nil) }
+  }
+
+  // ─── State ─────────────────────────────────────────────
+
+  @objc func getConnectionState(_ r: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) { r(client?.connectionState.rawValue ?? "disconnected") }
+  @objc func getAuthState(_ r: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) { r(client?.authState.rawValue ?? "loggedOut") }
+  @objc func getUserId(_ r: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) { r(client?.userId) }
+  @objc func getUsername(_ r: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) { r(client?.username) }
+  @objc func getDeviceId(_ r: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) { r(client?.deviceId) }
+
+  // ─── Friends ───────────────────────────────────────────
+
+  @objc func befriend(_ userId: String, username: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+    Task { do { try await client!.befriend(userId, username: username); resolve(nil) } catch { reject("E", error.localizedDescription, error) } }
+  }
+  @objc func acceptFriend(_ userId: String, username: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+    Task { do { try await client!.acceptFriend(userId, username: username); resolve(nil) } catch { reject("E", error.localizedDescription, error) } }
+  }
+  @objc func getFriends(_ r: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+    Task { let all = await client?.friends.getAll() ?? []; r(all.map { ["userId": $0.userId, "username": $0.username, "status": $0.status.rawValue] }) }
+  }
+  @objc func getPendingRequests(_ r: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+    Task { let all = await client?.friends.getAll() ?? []; r(all.filter { $0.status != .accepted }.map { ["userId": $0.userId, "username": $0.username, "status": $0.status.rawValue] }) }
+  }
+  @objc func getFriendCode(_ r: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) { r(client?.friendCode() ?? "") }
+  @objc func addFriendByCode(_ code: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+    Task { do { try await client!.addFriendByCode(code); resolve(nil) } catch { reject("E", error.localizedDescription, error) } }
+  }
+
+  // ─── Device Linking ────────────────────────────────────
+
+  @objc func generateLinkCode(_ r: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) { r(client?.generateLinkCode() ?? "") }
+  @objc func validateAndApproveLink(_ code: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+    Task { do { try await client!.validateAndApproveLink(code); resolve(nil) } catch { reject("E", error.localizedDescription, error) } }
+  }
+
+  // ─── ORM ───────────────────────────────────────────────
+
+  @objc func defineModels(_ schemaJson: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+    do { try client!.defineModelsFromJson(schemaJson); resolve(nil) } catch { reject("E", error.localizedDescription, error) }
+  }
+  @objc func createEntry(_ model: String, dataJson: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     Task {
       do {
-        log("connecting...")
-        let fresh = await client!.ensureFreshToken()
-        log("token fresh: \(fresh)")
-        guard fresh else {
-          log("connect aborted — token refresh failed")
-          reject("connect_error", "Token refresh failed — re-login required", nil)
-          self.emitEvent(["type": "authFailed", "reason": "token refresh failed"])
-          return
-        }
-        try await client!.connect()
-        log("connected")
-        self.saveSession()
-        resolve(nil)
-      } catch {
-        log("connect error: \(error.localizedDescription)")
-        reject("connect_error", error.localizedDescription, error)
-      }
+        guard let data = pj(dataJson), let m = client?.model(model) else { reject("E", "invalid", nil); return }
+        let e = try await m.create(data); resolve(["id": e.id, "data": e.data, "timestamp": e.timestamp, "authorDeviceId": e.authorDeviceId])
+      } catch { reject("E", error.localizedDescription, error) }
     }
   }
-
-  @objc func disconnect(_ resolve: @escaping RCTPromiseResolveBlock,
-                          reject: @escaping RCTPromiseRejectBlock) {
-    log("disconnecting")
-    client?.disconnect()
-    // connectionChanged event emitted by the reactive observer
-    resolve(nil)
-  }
-
-  @objc func logout(_ resolve: @escaping RCTPromiseResolveBlock,
-                     reject: @escaping RCTPromiseRejectBlock) {
-    Task {
-      log("logout — full cleanup")
-      teardownObservers()
-      typingTasks.values.forEach { $0.cancel() }
-      typingTasks.removeAll()
-      client?.disconnect()
-      try? await client?.logout()
-      client = nil
-      clearSession()
-      debugLog.removeAll()
-      self.emitEvent(["type": "connectionChanged", "state": "disconnected"])
-      self.emitEvent(["type": "authStateChanged", "state": "loggedOut"])
-      log("logged out")
-      resolve(nil)
-    }
-  }
-
-  // ─── State ───────────────────────────────────────────
-
-  @objc func getConnectionState(_ resolve: @escaping RCTPromiseResolveBlock,
-                                  reject: @escaping RCTPromiseRejectBlock) {
-    resolve(client?.connectionState.rawValue ?? "disconnected")
-  }
-
-  @objc func getAuthState(_ resolve: @escaping RCTPromiseResolveBlock,
-                            reject: @escaping RCTPromiseRejectBlock) {
-    resolve(client?.authState.rawValue ?? "loggedOut")
-  }
-
-  @objc func getUserId(_ resolve: @escaping RCTPromiseResolveBlock,
-                         reject: @escaping RCTPromiseRejectBlock) {
-    resolve(client?.userId)
-  }
-
-  @objc func getUsername(_ resolve: @escaping RCTPromiseResolveBlock,
-                          reject: @escaping RCTPromiseRejectBlock) {
-    resolve(client?.username)
-  }
-
-  @objc func getDeviceId(_ resolve: @escaping RCTPromiseResolveBlock,
-                           reject: @escaping RCTPromiseRejectBlock) {
-    resolve(client?.deviceId)
-  }
-
-  // ─── Friends ─────────────────────────────────────────
-
-  @objc func befriend(_ userId: String, username: String,
-                       resolve: @escaping RCTPromiseResolveBlock,
-                       reject: @escaping RCTPromiseRejectBlock) {
+  @objc func upsertEntry(_ model: String, id: String, dataJson: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     Task {
       do {
-        log("befriend \(username) (\(userId.prefix(8))...)")
-        try await client!.befriend(userId, username: username)
-        log("befriend OK")
-        resolve(nil)
-      } catch {
-        log("befriend error: \(error.localizedDescription)")
-        reject("befriend_error", error.localizedDescription, error)
-      }
+        guard let data = pj(dataJson), let m = client?.model(model) else { reject("E", "invalid", nil); return }
+        let e = try await m.upsert(id, data); resolve(["id": e.id, "data": e.data, "timestamp": e.timestamp, "authorDeviceId": e.authorDeviceId])
+      } catch { reject("E", error.localizedDescription, error) }
     }
   }
-
-  @objc func acceptFriend(_ userId: String, username: String,
-                            resolve: @escaping RCTPromiseResolveBlock,
-                            reject: @escaping RCTPromiseRejectBlock) {
+  @objc func queryEntries(_ model: String, conditionsJson: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     Task {
-      do {
-        log("acceptFriend \(username)")
-        try await client!.acceptFriend(userId, username: username)
-        log("acceptFriend OK")
-        resolve(nil)
-      } catch {
-        log("acceptFriend error: \(error.localizedDescription)")
-        reject("accept_error", error.localizedDescription, error)
-      }
+      guard let c = pj(conditionsJson), let m = client?.model(model) else { reject("E", "invalid", nil); return }
+      let entries = await m.where(c).exec()
+      resolve(entries.map { ["id": $0.id, "data": $0.data, "timestamp": $0.timestamp, "authorDeviceId": $0.authorDeviceId] })
     }
   }
-
-  @objc func getFriends(_ resolve: @escaping RCTPromiseResolveBlock,
-                         reject: @escaping RCTPromiseRejectBlock) {
+  @objc func allEntries(_ model: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     Task {
-      guard let c = client else { resolve([]); return }
-      // Return ALL friends with real status — JS filters by status
-      let all = await c.friends.getAll()
-      resolve(all.map { f -> [String: Any] in
-        ["userId": f.userId, "username": f.username, "status": f.status.rawValue]
-      })
+      guard let m = client?.model(model) else { reject("E", "Model '\(model)' not defined", nil); return }
+      resolve((await m.all()).map { ["id": $0.id, "data": $0.data, "timestamp": $0.timestamp, "authorDeviceId": $0.authorDeviceId] })
     }
   }
-
-  @objc func getPendingRequests(_ resolve: @escaping RCTPromiseResolveBlock,
-                                  reject: @escaping RCTPromiseRejectBlock) {
-    Task {
-      guard let c = client else { resolve([]); return }
-      // Return all non-accepted for backwards compat
-      let all = await c.friends.getAll()
-      let pending = all.filter { $0.status != .accepted }
-      resolve(pending.map { f -> [String: Any] in
-        ["userId": f.userId, "username": f.username, "status": f.status.rawValue]
-      })
-    }
+  @objc func deleteEntry(_ model: String, id: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+    Task { do { _ = try await client?.model(model)?.delete(id); resolve(nil) } catch { reject("E", error.localizedDescription, error) } }
   }
 
-  @objc func getFriendCode(_ resolve: @escaping RCTPromiseResolveBlock,
-                             reject: @escaping RCTPromiseRejectBlock) {
-    guard let userId = client?.userId, let username = client?.username else {
-      resolve("")
-      return
-    }
-    resolve(FriendCode.encode(userId: userId, username: username))
+  // ─── Signals ───────────────────────────────────────────
+
+  @objc func sendTyping(_ convId: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+    Task { if let m = client?.model("directMessage") { await TypedModel<DMModel>(model: m).typing(conversationId: convId) }; resolve(nil) }
   }
-
-  @objc func addFriendByCode(_ code: String,
-                               resolve: @escaping RCTPromiseResolveBlock,
-                               reject: @escaping RCTPromiseRejectBlock) {
-    Task {
-      do {
-        // Strip soft hyphens iOS might insert
-        let cleaned = code.replacingOccurrences(of: "\u{00AD}", with: "")
-        log("addFriendByCode: \(cleaned.prefix(20))...")
-        let decoded = try FriendCode.decode(cleaned)
-        log("decoded: \(decoded.username) (\(decoded.userId.prefix(8))...)")
-        try await client!.befriend(decoded.userId, username: decoded.username)
-        log("addFriendByCode OK")
-        resolve(nil)
-      } catch {
-        log("addFriendByCode error: \(error.localizedDescription)")
-        reject("add_friend_error", error.localizedDescription, error)
-      }
-    }
+  @objc func stopTyping(_ convId: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+    Task { if let m = client?.model("directMessage") { await TypedModel<DMModel>(model: m).stopTyping(conversationId: convId) }; resolve(nil) }
   }
-
-  // ─── Device Linking ──────────────────────────────────
-
-  @objc func generateLinkCode(_ resolve: @escaping RCTPromiseResolveBlock,
-                                reject: @escaping RCTPromiseRejectBlock) {
-    resolve(client?.generateLinkCode() ?? "")
-  }
-
-  @objc func validateAndApproveLink(_ code: String,
-                                      resolve: @escaping RCTPromiseResolveBlock,
-                                      reject: @escaping RCTPromiseRejectBlock) {
-    Task {
-      do {
-        try await client!.validateAndApproveLink(code)
-        resolve(nil)
-      } catch {
-        reject("link_error", error.localizedDescription, error)
-      }
-    }
-  }
-
-  // ─── ORM ─────────────────────────────────────────────
-
-  @objc func defineModels(_ schemaJson: String,
-                            resolve: @escaping RCTPromiseResolveBlock,
-                            reject: @escaping RCTPromiseRejectBlock) {
-    guard let c = client else { reject("E", "no client", nil); return }
-    do {
-      try defineModelsFromJson(c, schemaJson)
-      cacheSchema(schemaJson)
-      log("models defined from JS schema")
-      resolve(nil)
-    } catch {
-      log("defineModels error: \(error.localizedDescription)")
-      reject("define_error", error.localizedDescription, error)
-    }
-  }
-
-  @objc func createEntry(_ model: String, dataJson: String,
-                           resolve: @escaping RCTPromiseResolveBlock,
-                           reject: @escaping RCTPromiseRejectBlock) {
-    Task {
-      do {
-        guard let data = parseJson(dataJson), let m = client?.model(model) else {
-          log("createEntry FAIL: invalid model '\(model)' or bad json")
-          reject("E", "invalid model or data", nil); return
-        }
-        log("createEntry \(model)")
-        let entry = try await m.create(data)
-        log("createEntry OK: \(entry.id.prefix(20))")
-        resolve(entryToDict(entry))
-      } catch {
-        log("createEntry error: \(error.localizedDescription)")
-        reject("create_error", error.localizedDescription, error)
-      }
-    }
-  }
-
-  @objc func upsertEntry(_ model: String, id: String, dataJson: String,
-                           resolve: @escaping RCTPromiseResolveBlock,
-                           reject: @escaping RCTPromiseRejectBlock) {
-    Task {
-      do {
-        guard let data = parseJson(dataJson), let m = client?.model(model) else {
-          log("upsertEntry FAIL: invalid model '\(model)'")
-          reject("E", "invalid model or data", nil); return
-        }
-        log("upsertEntry \(model)/\(id.prefix(16))")
-        let entry = try await m.upsert(id, data)
-        log("upsertEntry OK")
-        resolve(entryToDict(entry))
-      } catch {
-        log("upsertEntry error: \(error.localizedDescription)")
-        reject("upsert_error", error.localizedDescription, error)
-      }
-    }
-  }
-
-  @objc func queryEntries(_ model: String, conditionsJson: String,
-                            resolve: @escaping RCTPromiseResolveBlock,
-                            reject: @escaping RCTPromiseRejectBlock) {
-    Task {
-      guard let conditions = parseJson(conditionsJson), let m = client?.model(model) else {
-        log("queryEntries FAIL: model '\(model)' not found or bad conditions")
-        reject("E", "Model '\(model)' not defined — call defineModels first", nil); return
-      }
-      let entries = await m.where(conditions).exec()
-      resolve(entries.map { entryToDict($0) })
-    }
-  }
-
-  @objc func allEntries(_ model: String,
-                          resolve: @escaping RCTPromiseResolveBlock,
-                          reject: @escaping RCTPromiseRejectBlock) {
-    Task {
-      guard let m = client?.model(model) else {
-        log("allEntries FAIL: model '\(model)' not found")
-        reject("E", "Model '\(model)' not defined — call defineModels first", nil); return
-      }
-      let entries = await m.all()
-      resolve(entries.map { entryToDict($0) })
-    }
-  }
-
-  @objc func deleteEntry(_ model: String, id: String,
-                           resolve: @escaping RCTPromiseResolveBlock,
-                           reject: @escaping RCTPromiseRejectBlock) {
-    Task {
-      do {
-        _ = try await client?.model(model)?.delete(id)
-        resolve(nil)
-      } catch {
-        reject("delete_error", error.localizedDescription, error)
-      }
-    }
-  }
-
-  // ─── Signals ─────────────────────────────────────────
-
-  @objc func sendTyping(_ conversationId: String,
-                          resolve: @escaping RCTPromiseResolveBlock,
-                          reject: @escaping RCTPromiseRejectBlock) {
-    Task {
-      if let m = client?.model("directMessage") {
-        let typed = TypedModel<DirectMessageModel>(model: m)
-        await typed.typing(conversationId: conversationId)
-      }
-      resolve(nil)
-    }
-  }
-
-  @objc func stopTyping(_ conversationId: String,
-                          resolve: @escaping RCTPromiseResolveBlock,
-                          reject: @escaping RCTPromiseRejectBlock) {
-    Task {
-      if let m = client?.model("directMessage") {
-        let typed = TypedModel<DirectMessageModel>(model: m)
-        await typed.stopTyping(conversationId: conversationId)
-      }
-      resolve(nil)
-    }
-  }
-
-  @objc func observeTyping(_ conversationId: String,
-                             resolve: @escaping RCTPromiseResolveBlock,
-                             reject: @escaping RCTPromiseRejectBlock) {
-    // Don't double-subscribe
-    guard typingTasks[conversationId] == nil else { resolve(nil); return }
-    guard let m = client?.model("directMessage") else { resolve(nil); return }
-
-    let typed = TypedModel<DirectMessageModel>(model: m)
-    typingTasks[conversationId] = Task {
-      for await typers in typed.observeTyping(conversationId: conversationId).values {
-        self.emitEvent([
-          "type": "typingChanged",
-          "conversationId": conversationId,
-          "typers": typers
-        ])
+  @objc func observeTyping(_ convId: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+    guard typingTasks[convId] == nil, let m = client?.model("directMessage") else { resolve(nil); return }
+    typingTasks[convId] = Task {
+      for await typers in TypedModel<DMModel>(model: m).observeTyping(conversationId: convId).values {
+        self.emit(["type": "typingChanged", "conversationId": convId, "typers": typers])
       }
     }
     resolve(nil)
   }
-
-  @objc func stopObservingTyping(_ conversationId: String,
-                                   resolve: @escaping RCTPromiseResolveBlock,
-                                   reject: @escaping RCTPromiseRejectBlock) {
-    typingTasks[conversationId]?.cancel()
-    typingTasks.removeValue(forKey: conversationId)
-    resolve(nil)
+  @objc func stopObservingTyping(_ convId: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+    typingTasks[convId]?.cancel(); typingTasks.removeValue(forKey: convId); resolve(nil)
   }
 
-  // ─── Attachments ─────────────────────────────────────
+  // ─── Attachments ───────────────────────────────────────
 
-  @objc func uploadAttachment(_ base64Data: String,
-                                resolve: @escaping RCTPromiseResolveBlock,
-                                reject: @escaping RCTPromiseRejectBlock) {
+  @objc func uploadAttachment(_ b64: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     Task {
       do {
-        guard let data = Data(base64Encoded: base64Data) else {
-          reject("E", "invalid base64", nil); return
-        }
-        let encrypted = try AttachmentCrypto.encrypt(data)
-        let result = try await client!.api.uploadAttachment(encrypted.ciphertext)
-        // Rate limiting handled internally by ObscuraKit
-        resolve([
-          "id": result.id,
-          "contentKey": encrypted.contentKey.base64EncodedString(),
-          "nonce": encrypted.nonce.base64EncodedString(),
-        ])
-      } catch {
-        reject("upload_error", error.localizedDescription, error)
-      }
+        guard let data = Data(base64Encoded: b64) else { reject("E", "bad base64", nil); return }
+        let enc = try AttachmentCrypto.encrypt(data)
+        let r = try await client!.api.uploadAttachment(enc.ciphertext)
+        resolve(["id": r.id, "contentKey": enc.contentKey.base64EncodedString(), "nonce": enc.nonce.base64EncodedString()])
+      } catch { reject("E", error.localizedDescription, error) }
+    }
+  }
+  @objc func downloadAttachment(_ id: String, contentKey: String, nonce: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+    Task {
+      do { resolve(try await client!.downloadDecryptedAttachment(id: id, contentKey: Data(base64Encoded: contentKey)!, nonce: Data(base64Encoded: nonce)!).base64EncodedString()) }
+      catch { reject("E", error.localizedDescription, error) }
+    }
+  }
+  @objc func sendPhoto(_ friendUserId: String, base64Data: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+    Task {
+      do {
+        guard let data = Data(base64Encoded: base64Data) else { reject("E", "bad base64", nil); return }
+        try await client!.sendEncryptedAttachment(to: friendUserId, plaintext: data); resolve(nil)
+      } catch { reject("E", error.localizedDescription, error) }
     }
   }
 
-  @objc func downloadAttachment(_ id: String, contentKey: String, nonce: String,
-                                  resolve: @escaping RCTPromiseResolveBlock,
-                                  reject: @escaping RCTPromiseRejectBlock) {
-    Task {
-      do {
-        let plaintext = try await client!.downloadDecryptedAttachment(
-          id: id,
-          contentKey: Data(base64Encoded: contentKey)!,
-          nonce: Data(base64Encoded: nonce)!
-        )
-        resolve(plaintext.base64EncodedString())
-      } catch {
-        reject("download_error", error.localizedDescription, error)
-      }
-    }
-  }
+  // ─── Debug ─────────────────────────────────────────────
 
-  @objc func sendPhoto(_ friendUserId: String, base64Data: String,
-                         resolve: @escaping RCTPromiseResolveBlock,
-                         reject: @escaping RCTPromiseRejectBlock) {
-    Task {
-      do {
-        guard let data = Data(base64Encoded: base64Data) else {
-          reject("E", "invalid base64", nil); return
-        }
-        try await client!.sendEncryptedAttachment(to: friendUserId, plaintext: data)
-        resolve(nil)
-      } catch {
-        reject("send_photo_error", error.localizedDescription, error)
-      }
-    }
-  }
+  @objc func getDebugLog(_ r: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) { r(debugLog) }
 
-  // ─── Debug ───────────────────────────────────────────
-
-  @objc func getDebugLog(_ resolve: @escaping RCTPromiseResolveBlock,
-                           reject: @escaping RCTPromiseRejectBlock) {
-    resolve(debugLog)
-  }
-
-  // ─── Observation (queue events for JS polling) ───────
-
-  private func setupObservers() {
-    teardownObservers()
-    guard let c = client else { return }
-
-    // Friends — emit ALL friends with real status. JS splits by status.
-    observationTasks.append(Task {
-      for await allFriends in c.friends.observeAll().values {
-        let list = allFriends.map { f -> [String: Any] in
-          ["userId": f.userId, "username": f.username, "status": f.status.rawValue]
-        }
-        self.emitEvent(["type": "friendsUpdated", "friends": list])
-        self.log("friendsUpdated: \(allFriends.count) total")
-      }
-    })
-
-    // ORM model changes (via events stream)
-    observationTasks.append(Task {
-      for await event in c.events() {
-        if event.type == 30 { // MODEL_SYNC
-          self.emitEvent(["type": "messageReceived", "model": "unknown"])
-        } else if event.type == 31 { // MODEL_SIGNAL
-          self.emitEvent(["type": "signalReceived"])
-        }
-      }
-    })
-
-    // Connection state — push via ObscuraKit's observeConnectionState()
-    observationTasks.append(Task {
-      for await state in c.observeConnectionState() {
-        self.emitEvent(["type": "connectionChanged", "state": state.rawValue])
-        self.log("connection: \(state.rawValue)")
-        if state == .connected { self.saveSession() }
-      }
-    })
-
-    // Auth state — push via ObscuraKit's observeAuthState()
-    observationTasks.append(Task {
-      for await state in c.observeAuthState() {
-        self.emitEvent(["type": "authStateChanged", "state": state.rawValue])
-        self.log("auth: \(state.rawValue)")
-        if state == .loggedOut {
-          self.emitEvent(["type": "authFailed"])
-        }
-      }
-    })
-  }
-
-  private func teardownObservers() {
-    observationTasks.forEach { $0.cancel() }
-    observationTasks.removeAll()
-  }
-
-  // ─── Helpers ─────────────────────────────────────────
-
-  private func parseJson(_ json: String) -> [String: Any]? {
-    guard let data = json.data(using: .utf8),
-          let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-    return obj
-  }
-
-  private func entryToDict(_ entry: ModelEntry) -> [String: Any] {
-    ["id": entry.id, "data": entry.data, "timestamp": entry.timestamp, "authorDeviceId": entry.authorDeviceId]
+  private func pj(_ json: String) -> [String: Any]? {
+    guard let d = json.data(using: .utf8) else { return nil }
+    return try? JSONSerialization.jsonObject(with: d) as? [String: Any]
   }
 }
 
-// Minimal SyncModel for typing signals
-struct DirectMessageModel: SyncModel {
+struct DMModel: SyncModel {
   static let modelName = "directMessage"
   static let sync: SyncStrategy = .gset
-  var conversationId: String
-  var content: String
-  var senderUsername: String
+  var conversationId: String; var content: String; var senderUsername: String
 }
