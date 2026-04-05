@@ -276,7 +276,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                             putString("type", "messageReceived")
                             putString("model", "directMessage")
                             putMap("entry", Arguments.createMap().apply {
-                                putString("id", msg.sourceUserId)
+                                putString("id", java.util.UUID.randomUUID().toString())
                                 putDouble("timestamp", System.currentTimeMillis().toDouble())
                                 putString("authorDeviceId", msg.senderDeviceId ?: "")
                                 putMap("data", Arguments.createMap().apply {

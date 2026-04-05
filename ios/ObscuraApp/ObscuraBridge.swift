@@ -275,6 +275,9 @@ class ObscuraBridge: RCTEventEmitter {
     Task {
       do {
         log("loginAndProvision \(username)")
+        guard client != nil else {
+          reject("provision_error", "No client — call loginSmart first", nil); return
+        }
         try await client!.loginAndProvision(username, password)
         self.saveSession()
         log("provisioned OK")
@@ -301,13 +304,10 @@ class ObscuraBridge: RCTEventEmitter {
         }
         try await client!.connect()
         log("connected")
-        self.emitEvent(["type": "connectionChanged", "state": "connected"])
-        self.emitEvent(["type": "authStateChanged", "state": "authenticated"])
         self.saveSession()
         resolve(nil)
       } catch {
         log("connect error: \(error.localizedDescription)")
-        self.emitEvent(["type": "connectionChanged", "state": "disconnected"])
         reject("connect_error", error.localizedDescription, error)
       }
     }
@@ -317,7 +317,7 @@ class ObscuraBridge: RCTEventEmitter {
                           reject: @escaping RCTPromiseRejectBlock) {
     log("disconnecting")
     client?.disconnect()
-    emitEvent(["type": "connectionChanged", "state": "disconnected"])
+    // connectionChanged event emitted by the reactive observer
     resolve(nil)
   }
 
@@ -537,7 +537,8 @@ class ObscuraBridge: RCTEventEmitter {
                             reject: @escaping RCTPromiseRejectBlock) {
     Task {
       guard let conditions = parseJson(conditionsJson), let m = client?.model(model) else {
-        resolve([]); return
+        log("queryEntries FAIL: model '\(model)' not found or bad conditions")
+        reject("E", "Model '\(model)' not defined — call defineModels first", nil); return
       }
       let entries = await m.where(conditions).exec()
       resolve(entries.map { entryToDict($0) })
@@ -548,7 +549,10 @@ class ObscuraBridge: RCTEventEmitter {
                           resolve: @escaping RCTPromiseResolveBlock,
                           reject: @escaping RCTPromiseRejectBlock) {
     Task {
-      guard let m = client?.model(model) else { resolve([]); return }
+      guard let m = client?.model(model) else {
+        log("allEntries FAIL: model '\(model)' not found")
+        reject("E", "Model '\(model)' not defined — call defineModels first", nil); return
+      }
       let entries = await m.all()
       resolve(entries.map { entryToDict($0) })
     }
@@ -633,7 +637,7 @@ class ObscuraBridge: RCTEventEmitter {
         }
         let encrypted = try AttachmentCrypto.encrypt(data)
         let result = try await client!.api.uploadAttachment(encrypted.ciphertext)
-        await rateLimitDelay()
+        // Rate limiting handled internally by ObscuraKit
         resolve([
           "id": result.id,
           "contentKey": encrypted.contentKey.base64EncodedString(),
