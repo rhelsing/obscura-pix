@@ -29,7 +29,7 @@ export const s = StyleSheet.create({
   topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, paddingTop: Platform.OS === 'android' ? 40 : 12 },
   topTitle: { fontSize: 20, fontWeight: '700', color: colors.text },
   connDot: { fontSize: 16 },
-  tabBar: { flexDirection: 'row', borderTopWidth: 0.5, borderTopColor: colors.border, paddingVertical: 12 },
+  tabBar: { flexDirection: 'row', borderTopWidth: 0.5, borderTopColor: colors.border, paddingVertical: 12, paddingBottom: Platform.OS === 'android' ? 24 : 12 },
   tab: { flex: 1, alignItems: 'center' },
   tabText: { color: colors.textDim, fontSize: 13, fontWeight: '600' },
   tabActive: { color: colors.accent },

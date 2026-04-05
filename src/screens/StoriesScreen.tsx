@@ -94,16 +94,27 @@ function StoryViewer({ groups, startIndex, onClose }: {
 
   useEffect(() => {
     setMediaUri(null);
-    if (!story.data.mediaUrl) return;
+    // Resolve attachment — supports both story format (mediaUrl JSON) and pix format (separate fields)
+    let attachmentId: string | undefined;
+    let contentKey: string | undefined;
+    let nonce: string | undefined;
+    if (story.data.mediaUrl) {
+      try {
+        const ref = JSON.parse(story.data.mediaUrl);
+        attachmentId = ref.attachmentId; contentKey = ref.contentKey; nonce = ref.nonce;
+      } catch {}
+    } else if (story.data.mediaRef) {
+      attachmentId = story.data.mediaRef; contentKey = story.data.contentKey; nonce = story.data.nonce;
+    }
+    if (!attachmentId || !contentKey || !nonce) return;
     let cancelled = false;
     (async () => {
       try {
         setMediaLoading(true);
-        const ref = JSON.parse(story.data.mediaUrl);
-        const base64 = await Obscura.downloadAttachment(ref.attachmentId, ref.contentKey, ref.nonce);
+        const base64 = await Obscura.downloadAttachment(attachmentId!, contentKey!, nonce!);
         if (!cancelled) setMediaUri(`data:image/jpeg;base64,${base64}`);
       } catch (e) {
-        console.warn('Story media load failed:', e);
+        console.warn('Media load failed:', e);
       } finally {
         if (!cancelled) setMediaLoading(false);
       }
@@ -233,10 +244,6 @@ export function StoriesScreen({ myUsername }: { myUsername: string }) {
         ))}
       </ScrollView>
 
-      {groups.every(g => g.stories.length === 0) && (
-        <Text style={ss.empty}>no stories yet</Text>
-      )}
-
       <Modal visible={viewerOpen} animationType="fade" statusBarTranslucent>
         <StoryViewer
           groups={groups.filter(g => g.stories.length > 0)}
@@ -282,8 +289,8 @@ const sv = StyleSheet.create({
 });
 
 const ss = StyleSheet.create({
-  container: { flex: 1 },
-  circleRow: { maxHeight: 100, paddingTop: 12 },
+  container: {},
+  circleRow: { paddingTop: 8, paddingBottom: 8 },
   circleRowContent: { paddingHorizontal: 16 },
   empty: { color: '#444', textAlign: 'center', marginTop: 48, fontSize: 14 },
 });

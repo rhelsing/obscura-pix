@@ -11,18 +11,17 @@ import RNFS from 'react-native-fs';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { CameraScreen } from './src/screens/CameraScreen';
 import { ChatScreen } from './src/screens/ChatScreen';
-import { FriendsScreen } from './src/screens/FriendsScreen';
-import { StoriesScreen } from './src/screens/StoriesScreen';
+import { ChatListScreen } from './src/screens/ChatListScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { PhotoPreviewScreen } from './src/screens/PhotoPreviewScreen';
 import { RecipientPicker } from './src/screens/RecipientPicker';
-import { PixInbox } from './src/screens/PixInbox';
+import { PixViewer } from './src/screens/PixViewer';
 import type { PhotoFile } from 'react-native-vision-camera';
 
 // ─── Reactive Event Hook ─────────────────────────────────
 
-type Tab = 'chat' | 'camera' | 'stories';
+type Tab = 'chat' | 'camera';
 
 function useObscuraEvents(authed: boolean, onAuthLost?: () => void) {
   const [friends, setFriends] = useState<Friend[]>([]);
@@ -198,18 +197,6 @@ export default function App() {
   }
 
   // ─── Full-screen overlays
-  if (screen === 'friends') {
-    return (
-      <SafeAreaView style={s.container}>
-        <View style={s.chatHeader}>
-          <TouchableOpacity onPress={() => setScreen('main')}><Text style={s.backBtn}>{'<'}</Text></TouchableOpacity>
-          <Text style={s.chatTitle}>friends</Text>
-        </View>
-        <FriendsScreen friends={friends} pending={pending} onSelectFriend={openChat} />
-      </SafeAreaView>
-    );
-  }
-
   if (screen === 'profile') {
     return (
       <SafeAreaView style={s.container}>
@@ -252,13 +239,15 @@ export default function App() {
 
       <View style={{ flex: 1 }}>
         {tab === 'chat' && (
-          <View style={{ flex: 1 }}>
-            <PixInbox myUsername={myUsername} onViewPix={(entry) => Alert.alert('Pix', `From ${entry.data.senderUsername}\n${entry.data.caption || '(no caption)'}`)} />
-            <FriendsScreen friends={friends} pending={pending} onSelectFriend={openChat} />
-          </View>
+          <ChatListScreen
+            friends={friends}
+            pending={pending}
+            myUsername={myUsername}
+            onSelectFriend={openChat}
+            onViewPix={(entry) => Alert.alert('Pix', `From ${entry.data.senderUsername}\n${entry.data.caption || '(no caption)'}`)}
+          />
         )}
         {tab === 'camera' && <CameraScreen onPhotoCaptured={onPhotoCaptured} />}
-        {tab === 'stories' && <StoriesScreen myUsername={myUsername} />}
       </View>
 
       <View style={s.tabBar}>
@@ -269,9 +258,6 @@ export default function App() {
           <View style={s.cameraTab}>
             <Text style={s.cameraTabIcon}>O</Text>
           </View>
-        </TouchableOpacity>
-        <TouchableOpacity style={s.tab} onPress={() => setTab('stories')}>
-          <Text style={[s.tabText, tab === 'stories' && s.tabActive]}>stories</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
