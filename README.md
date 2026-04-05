@@ -1,97 +1,86 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Obscura Pix
 
-# Getting Started
+End-to-end encrypted photo messaging app. Signal Protocol encryption, disappearing content, cross-platform. Built on ObscuraKit.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+React Native app with native bridges to [ObscuraKit-Swift](https://github.com/rhelsing/ObscuraKit-swift) (iOS) and [ObscuraKit-Kotlin](https://github.com/rhelsing/ObscuraKit-Kotlin) (Android).
 
-## Step 1: Start Metro
+## What it does
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+- Friends via shareable codes
+- Encrypted chat with typing indicators
+- 24-hour stories
+- Ephemeral photos (Pix) — encrypted, self-destructing
+- Profiles synced to friends
+- Private settings (never leave your device)
+- Auto-reconnect, session persistence, offline delivery
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+The app never touches encryption, protobufs, or WebSocket frames. Everything goes through the ObscuraKit ORM.
 
-```sh
-# Using npm
-npm start
+## Architecture
 
-# OR using Yarn
-yarn start
+```
+React Native (shared UI)
+  ├── iOS:     ObscuraBridge.swift → ObscuraKit (Swift)
+  └── Android: ObscuraBridgeModule.kt → ObscuraKit (Kotlin)
 ```
 
-## Step 2: Build and run your app
+Schema defined once in `src/models/schema.ts`. Both native bridges read it — no hardcoded models on either platform.
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+## Setup
 
-### Android
+### Prerequisites
 
-```sh
-# Using npm
-npm run android
+- Node 20+, React Native CLI
+- iOS: Xcode 16+, CocoaPods, Rust (for libsignal FFI)
+- Android: Android Studio, JDK 21
 
-# OR using Yarn
-yarn android
+### Install
+
+```bash
+npm install
 ```
 
 ### iOS
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+```bash
+# Build libsignal for iOS simulator (first time only):
+cd ../ObscuraKit-swift/vendored/libsignal
+RUSTUP_TOOLCHAIN=stable CARGO_BUILD_TARGET=aarch64-apple-ios-sim ./swift/build_ffi.sh -r
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
+# Install pods + run:
+cd ios && bundle exec pod install && cd ..
+npx react-native run-ios
 ```
 
-Then, and every time you update your native dependencies, run:
+### Android
 
-```sh
-bundle exec pod install
+```bash
+npx react-native run-android
 ```
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+## Project Structure
 
-```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
+```
+src/
+  models/schema.ts        — ORM schema (single source of truth)
+  native/ObscuraModule.ts — TypeScript API contract (both bridges implement this)
+ios/
+  ObscuraApp/ObscuraBridge.swift — Native module → ObscuraKit-iOS
+  ObscuraApp/ObscuraBridge.m    — ObjC registration
+android/
+  .../ObscuraBridgeModule.kt    — Native module → ObscuraKit-Kotlin
+  .../ObscuraBridgePackage.kt   — ReactPackage registration
+App.tsx                         — UI (auth, chat, stories, profile, settings)
 ```
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+## Development
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+Both platforms push events reactively to JS — no polling. Friends, connection state, auth state, typing indicators, and incoming messages all use native observation streams.
 
-## Step 3: Modify your app
+JS changes hot-reload via Metro — no rebuild needed. Native changes require a rebuild.
 
-Now that you have successfully run the app, let's make changes!
+## Dependencies
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+- [ObscuraKit-Swift](https://github.com/rhelsing/ObscuraKit-swift) — iOS E2E encrypted data layer
+- [ObscuraKit-Kotlin](https://github.com/rhelsing/ObscuraKit-Kotlin) — Android E2E encrypted data layer
+- [obscura-server](https://github.com/barrelmaker97/obscura-server) — server (dumb relay, never sees contents)
