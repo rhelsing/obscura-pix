@@ -705,8 +705,14 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         scope.launch {
             try {
                 val bytes = Base64.decode(base64Data, Base64.DEFAULT)
-                val (id, _) = requireClient().uploadAttachment(bytes)
-                promise.resolve(Arguments.createMap().apply { putString("id", id) })
+                // Encrypt locally, upload ciphertext, return ref with key+nonce
+                val encrypted = com.obscura.kit.crypto.AttachmentCrypto.encrypt(bytes)
+                val (id, _) = requireClient().uploadAttachment(encrypted.ciphertext)
+                promise.resolve(Arguments.createMap().apply {
+                    putString("id", id)
+                    putString("contentKey", Base64.encodeToString(encrypted.contentKey, Base64.NO_WRAP))
+                    putString("nonce", Base64.encodeToString(encrypted.nonce, Base64.NO_WRAP))
+                })
             } catch (e: Exception) {
                 promise.reject("UPLOAD_ERROR", e.message, e)
             }
@@ -801,6 +807,28 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
             }
         } catch (_: Exception) {}
         return map
+    }
+
+    // ─── Screen Security ───────────────────────────────────
+
+    @ReactMethod
+    fun setSecureScreen(enabled: Boolean, promise: Promise) {
+        UiThreadUtil.runOnUiThread {
+            try {
+                val window = reactApplicationContext.currentActivity?.window ?: run { promise.resolve(null); return@runOnUiThread }
+                if (enabled) {
+                    window.setFlags(
+                        android.view.WindowManager.LayoutParams.FLAG_SECURE,
+                        android.view.WindowManager.LayoutParams.FLAG_SECURE
+                    )
+                } else {
+                    window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                }
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("SECURE_ERROR", e.message, e)
+            }
+        }
     }
 
     // Required for NativeEventEmitter

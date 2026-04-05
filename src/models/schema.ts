@@ -9,12 +9,12 @@ export const obscuraSchema = {
     sync: 'gset',
   },
   story: {
-    fields: { content: 'string', authorUsername: 'string', mediaUrl: 'string' },
+    fields: { content: 'string', authorUsername: 'string', mediaUrl: 'string?' },
     sync: 'gset',
     ttl: '24h',
   },
   profile: {
-    fields: { displayName: 'string', bio: 'string', avatarUrl: 'string' },
+    fields: { displayName: 'string', bio: 'string?', avatarUrl: 'string?' },
     sync: 'lww',
   },
   settings: {
@@ -29,8 +29,8 @@ export const obscuraSchema = {
       mediaRef: 'string',
       contentKey: 'string',
       nonce: 'string',
-      caption: 'string',
-      displayDuration: 'string',
+      caption: 'string?',
+      displayDuration: 'number',
     },
     sync: 'gset',
     ttl: '10s',

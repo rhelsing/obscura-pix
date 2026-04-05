@@ -35,6 +35,12 @@
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string></string>
+	<key>NSCameraUsageDescription</key>
+	<string>Obscura needs camera access to take photos and send snaps</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Obscura needs microphone access for voice notes</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Obscura needs photo library access to send photos</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

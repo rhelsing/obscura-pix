@@ -132,6 +132,9 @@ export const Obscura = {
   // Debug
   getDebugLog: (): Promise<string[]> => Bridge.getDebugLog(),
 
+  // Screen security (FLAG_SECURE on Android, no-op on iOS for now)
+  setSecureScreen: (enabled: boolean): Promise<void> => Bridge.setSecureScreen(enabled),
+
 };
 
 // ─── Event Subscriptions ─────────────────────────────────

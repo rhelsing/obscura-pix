@@ -37,11 +37,16 @@ class ObscuraBridge: RCTEventEmitter {
     sendEvent(withName: "ObscuraEvent", body: body)
   }
 
-  private func makeClient(userId: String) -> ObscuraClient {
+  private func makeClient(userId: String) throws -> ObscuraClient {
     let dir = Self.baseDir + "/\(userId)"
-    let c = try! ObscuraClient(apiURL: "https://obscura.barrelmaker.dev",
+    let c = try ObscuraClient(apiURL: "https://obscura.barrelmaker.dev",
                                 dataDirectory: dir, userId: userId)
     c.sessionStorage = UserDefaultsSessionStorage()
+    return c
+  }
+
+  private func requireClient() throws -> ObscuraClient {
+    guard let c = client else { throw NSError(domain: "ObscuraBridge", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not logged in"]) }
     return c
   }
 
@@ -81,7 +86,7 @@ class ObscuraBridge: RCTEventEmitter {
           let userId = saved["userId"] as? String, !userId.isEmpty else {
       log("no saved session"); return
     }
-    let c = makeClient(userId: userId)
+    guard let c = try? makeClient(userId: userId) else { log("makeClient failed"); return }
     self.client = c
     Task {
       do { try await c.restorePersistedSession(); startEvents(); log("session restored") }
@@ -97,7 +102,7 @@ class ObscuraBridge: RCTEventEmitter {
       do {
         cleanup()
         let creds = try await ObscuraClient.registerAccount(username, password)
-        let c = makeClient(userId: creds.userId)
+        let c = try makeClient(userId: creds.userId)
         await c.restoreSession(token: creds.token, refreshToken: creds.refreshToken,
                                userId: creds.userId, deviceId: nil, username: username)
         try await c.provisionCurrentDevice()
@@ -112,7 +117,7 @@ class ObscuraBridge: RCTEventEmitter {
       do {
         cleanup()
         let creds = try await ObscuraClient.loginAccount(username, password)
-        let c = makeClient(userId: creds.userId)
+        let c = try makeClient(userId: creds.userId)
         self.client = c
         let scenario = try await c.loginSmart(username, password)
         startEvents()
@@ -132,15 +137,14 @@ class ObscuraBridge: RCTEventEmitter {
                                  resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     Task {
       do {
-        guard client != nil else { reject("E", "Call loginSmart first", nil); return }
-        try await client!.loginAndProvision(username, password); resolve(nil)
+        try await requireClient().loginAndProvision(username, password); resolve(nil)
       } catch { reject("E", error.localizedDescription, error) }
     }
   }
 
   @objc func connect(_ resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     Task {
-      do { try await client!.connect(); resolve(nil) }
+      do { try await try requireClient().connect(); resolve(nil) }
       catch { reject("E", error.localizedDescription, error) }
     }
   }
@@ -164,10 +168,10 @@ class ObscuraBridge: RCTEventEmitter {
   // ─── Friends ───────────────────────────────────────────
 
   @objc func befriend(_ userId: String, username: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
-    Task { do { try await client!.befriend(userId, username: username); resolve(nil) } catch { reject("E", error.localizedDescription, error) } }
+    Task { do { try await try requireClient().befriend(userId, username: username); resolve(nil) } catch { reject("E", error.localizedDescription, error) } }
   }
   @objc func acceptFriend(_ userId: String, username: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
-    Task { do { try await client!.acceptFriend(userId, username: username); resolve(nil) } catch { reject("E", error.localizedDescription, error) } }
+    Task { do { try await try requireClient().acceptFriend(userId, username: username); resolve(nil) } catch { reject("E", error.localizedDescription, error) } }
   }
   @objc func getFriends(_ r: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     Task { let all = await client?.friends.getAll() ?? []; r(all.map { ["userId": $0.userId, "username": $0.username, "status": $0.status.rawValue] }) }
@@ -177,20 +181,20 @@ class ObscuraBridge: RCTEventEmitter {
   }
   @objc func getFriendCode(_ r: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) { r(client?.friendCode() ?? "") }
   @objc func addFriendByCode(_ code: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
-    Task { do { try await client!.addFriendByCode(code); resolve(nil) } catch { reject("E", error.localizedDescription, error) } }
+    Task { do { try await try requireClient().addFriendByCode(code); resolve(nil) } catch { reject("E", error.localizedDescription, error) } }
   }
 
   // ─── Device Linking ────────────────────────────────────
 
   @objc func generateLinkCode(_ r: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) { r(client?.generateLinkCode() ?? "") }
   @objc func validateAndApproveLink(_ code: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
-    Task { do { try await client!.validateAndApproveLink(code); resolve(nil) } catch { reject("E", error.localizedDescription, error) } }
+    Task { do { try await try requireClient().validateAndApproveLink(code); resolve(nil) } catch { reject("E", error.localizedDescription, error) } }
   }
 
   // ─── ORM ───────────────────────────────────────────────
 
   @objc func defineModels(_ schemaJson: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
-    do { try client!.defineModelsFromJson(schemaJson); resolve(nil) } catch { reject("E", error.localizedDescription, error) }
+    do { try try requireClient().defineModelsFromJson(schemaJson); resolve(nil) } catch { reject("E", error.localizedDescription, error) }
   }
   @objc func createEntry(_ model: String, dataJson: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     Task {
@@ -253,14 +257,14 @@ class ObscuraBridge: RCTEventEmitter {
       do {
         guard let data = Data(base64Encoded: b64) else { reject("E", "bad base64", nil); return }
         let enc = try AttachmentCrypto.encrypt(data)
-        let r = try await client!.api.uploadAttachment(enc.ciphertext)
+        let r = try await try requireClient().api.uploadAttachment(enc.ciphertext)
         resolve(["id": r.id, "contentKey": enc.contentKey.base64EncodedString(), "nonce": enc.nonce.base64EncodedString()])
       } catch { reject("E", error.localizedDescription, error) }
     }
   }
   @objc func downloadAttachment(_ id: String, contentKey: String, nonce: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     Task {
-      do { resolve(try await client!.downloadDecryptedAttachment(id: id, contentKey: Data(base64Encoded: contentKey)!, nonce: Data(base64Encoded: nonce)!).base64EncodedString()) }
+      do { resolve(try await try requireClient().downloadDecryptedAttachment(id: id, contentKey: Data(base64Encoded: contentKey)!, nonce: Data(base64Encoded: nonce)!).base64EncodedString()) }
       catch { reject("E", error.localizedDescription, error) }
     }
   }
@@ -268,7 +272,7 @@ class ObscuraBridge: RCTEventEmitter {
     Task {
       do {
         guard let data = Data(base64Encoded: base64Data) else { reject("E", "bad base64", nil); return }
-        try await client!.sendEncryptedAttachment(to: friendUserId, plaintext: data); resolve(nil)
+        try await try requireClient().sendEncryptedAttachment(to: friendUserId, plaintext: data); resolve(nil)
       } catch { reject("E", error.localizedDescription, error) }
     }
   }
