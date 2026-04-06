@@ -16,6 +16,7 @@ import { ProfileScreen } from './src/screens/ProfileScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { PhotoPreviewScreen } from './src/screens/PhotoPreviewScreen';
 import { RecipientPicker } from './src/screens/RecipientPicker';
+import { StoryViewer } from './src/screens/StoriesScreen';
 import { PixViewer } from './src/screens/PixViewer';
 import type { PhotoFile } from 'react-native-vision-camera';
 
@@ -65,6 +66,10 @@ export default function App() {
   // Camera flow state
   const [capturedPhoto, setCapturedPhoto] = useState<PhotoFile | null>(null);
   const [sendOpts, setSendOpts] = useState<{ caption: string; displayDuration: number } | null>(null);
+
+  // Pix viewing state
+  const [viewingPix, setViewingPix] = useState<import('./src/native/ObscuraModule').ModelEntry | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const handleAuthLost = useCallback(() => {
     setAuthed(false);
@@ -190,10 +195,37 @@ export default function App() {
     );
   }
 
+  // ─── Pix viewer (full-screen, reuses story viewer)
+  if (viewingPix) {
+    const pixGroup = { username: viewingPix.data.senderUsername || '?', stories: [viewingPix], isMe: false };
+    return (
+      <StoryViewer
+        groups={[pixGroup]}
+        startIndex={0}
+        onClose={() => {
+          // Mark as viewed via upsert — LWW merges viewedAt, syncs to sender
+          Obscura.upsertEntry('pix', viewingPix.id, {
+            ...viewingPix.data,
+            viewedAt: Date.now(),
+          }).catch(() => {});
+          setViewingPix(null);
+          setRefreshKey(k => k + 1);
+        }}
+        onViewed={(entry) => {
+          Obscura.upsertEntry('pix', entry.id, {
+            ...entry.data,
+            viewedAt: Date.now(),
+          }).catch(() => {});
+        }}
+      />
+    );
+  }
+
   // ─── Chat screen
   if (screen === 'chat' && selectedFriend) {
     return <ChatScreen friend={selectedFriend} myUserId={myUserId}
-      myUsername={myUsername} onBack={() => setScreen('main')} />;
+      myUsername={myUsername} onBack={() => setScreen('main')}
+      onViewPix={(entry) => setViewingPix(entry)} />;
   }
 
   // ─── Full-screen overlays
@@ -244,7 +276,8 @@ export default function App() {
             pending={pending}
             myUsername={myUsername}
             onSelectFriend={openChat}
-            onViewPix={(entry) => Alert.alert('Pix', `From ${entry.data.senderUsername}\n${entry.data.caption || '(no caption)'}`)}
+            onViewPix={(entry) => setViewingPix(entry)}
+            refreshTrigger={refreshKey}
           />
         )}
         {tab === 'camera' && <CameraScreen onPhotoCaptured={onPhotoCaptured} />}

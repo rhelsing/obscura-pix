@@ -31,8 +31,8 @@ export const obscuraSchema = {
       nonce: 'string',
       caption: 'string?',
       displayDuration: 'number',
+      viewedAt: 'number?',
     },
-    sync: 'gset',
-    ttl: '10s',
+    sync: 'lww',
   },
 };

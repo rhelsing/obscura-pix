@@ -38,10 +38,11 @@ function StoryCircle({ group, onPress }: { group: StoryGroup; onPress: () => voi
 
 // ─── Story Viewer (full-screen, auto-advance) ─────────────
 
-function StoryViewer({ groups, startIndex, onClose }: {
+export function StoryViewer({ groups, startIndex, onClose, onViewed }: {
   groups: StoryGroup[];
   startIndex: number;
   onClose: () => void;
+  onViewed?: (entry: ModelEntry) => void;
 }) {
   const [groupIdx, setGroupIdx] = useState(startIndex);
   const [storyIdx, setStoryIdx] = useState(0);
@@ -53,6 +54,8 @@ function StoryViewer({ groups, startIndex, onClose }: {
 
   const advance = useCallback(() => {
     if (!group) { onClose(); return; }
+    // Notify viewer (for pix deletion)
+    if (story) onViewed?.(story);
     if (storyIdx < group.stories.length - 1) {
       setStoryIdx(i => i + 1);
     } else if (groupIdx < groups.length - 1) {
@@ -61,7 +64,7 @@ function StoryViewer({ groups, startIndex, onClose }: {
     } else {
       onClose();
     }
-  }, [group, groupIdx, storyIdx, groups.length, onClose]);
+  }, [group, groupIdx, storyIdx, story, groups.length, onClose, onViewed]);
 
   const goBack = useCallback(() => {
     if (storyIdx > 0) {
@@ -72,19 +75,27 @@ function StoryViewer({ groups, startIndex, onClose }: {
     }
   }, [storyIdx, groupIdx]);
 
-  // Auto-advance timer
+  // Auto-advance timer — waits for media to load before starting
+  const hasMedia = !!(story?.data.mediaUrl || story?.data.mediaRef);
+  const readyToPlay = !hasMedia || !mediaLoading;
+
   useEffect(() => {
+    if (!readyToPlay) { progress.setValue(0); return; }
+    const entryDuration = story?.data.displayDuration
+      ? Number(story.data.displayDuration) * 1000
+      : STORY_DURATION;
+    const dur = entryDuration > 0 ? entryDuration : STORY_DURATION;
     progress.setValue(0);
     const anim = Animated.timing(progress, {
-      toValue: 1, duration: STORY_DURATION, useNativeDriver: false,
+      toValue: 1, duration: dur, useNativeDriver: false,
     });
     anim.start();
-    timerRef.current = setTimeout(advance, STORY_DURATION);
+    timerRef.current = setTimeout(advance, dur);
     return () => {
       anim.stop();
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [groupIdx, storyIdx]);
+  }, [groupIdx, storyIdx, readyToPlay]);
 
   if (!story) { onClose(); return null; }
 
@@ -165,12 +176,12 @@ function StoryViewer({ groups, startIndex, onClose }: {
       {/* Content */}
       <View style={sv.content}>
         {mediaLoading && <ActivityIndicator color="#fff" size="large" />}
-        {story.data.content && !mediaUri ? (
-          <Text style={sv.contentText}>{story.data.content}</Text>
-        ) : null}
-        {story.data.content && mediaUri ? (
-          <Text style={sv.captionOverlay}>{story.data.content}</Text>
-        ) : null}
+        {(() => {
+          const text = story.data.content || story.data.caption || '';
+          if (!text) return null;
+          if (mediaUri) return <Text style={sv.captionOverlay}>{text}</Text>;
+          return <Text style={sv.contentText}>{text}</Text>;
+        })()}
       </View>
 
       {/* Tap zones: left = back, right = next */}
