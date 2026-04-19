@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   SafeAreaView, View, Text, TouchableOpacity, StatusBar, Alert,
 } from 'react-native';
@@ -17,7 +17,6 @@ import { SettingsScreen } from './src/screens/SettingsScreen';
 import { PhotoPreviewScreen } from './src/screens/PhotoPreviewScreen';
 import { RecipientPicker } from './src/screens/RecipientPicker';
 import { StoryViewer } from './src/screens/StoriesScreen';
-import { PixViewer } from './src/screens/PixViewer';
 import type { PhotoFile } from 'react-native-vision-camera';
 
 // ─── Reactive Event Hook ─────────────────────────────────
@@ -71,6 +70,10 @@ export default function App() {
   const [viewingPix, setViewingPix] = useState<import('./src/native/ObscuraModule').ModelEntry | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
+  // Push-permission request is gated to once per session — OS caches the decision,
+  // but we also avoid re-prompting on every reconnect.
+  const pushRequestedRef = useRef(false);
+
   const handleAuthLost = useCallback(() => {
     setAuthed(false);
     setMyUserId('');
@@ -78,6 +81,7 @@ export default function App() {
     setSelectedFriend(null);
     setScreen('main');
     setTab('camera');
+    pushRequestedRef.current = false;
   }, []);
 
   const { friends, pending, connState } = useObscuraEvents(authed, handleAuthLost);
@@ -98,6 +102,31 @@ export default function App() {
     Obscura.getUserId().then(id => setMyUserId(id || ''));
     Obscura.getUsername().then(name => setMyUsername(name || ''));
   }, [authed]);
+
+  // Push notifications — request permission once per session after connect lands.
+  // Token arrives asynchronously as a 'pushTokenReceived' event (see listener below).
+  useEffect(() => {
+    if (!authed || connState !== 'connected') return;
+    if (pushRequestedRef.current) return;
+    pushRequestedRef.current = true;
+    Obscura.requestPushPermission().catch((e: unknown) => {
+      console.warn('[push] permission request failed:', e);
+    });
+  }, [authed, connState]);
+
+  // Register any FCM/APNS token the native side hands us. Fires on first launch,
+  // subsequent launches (cached), and token rotation. Server upserts by deviceId.
+  useEffect(() => {
+    const sub = ObscuraEvents.addListener('ObscuraEvent', (event: { type: string; token?: string }) => {
+      if (event.type !== 'pushTokenReceived' || !event.token) return;
+      const preview = event.token.slice(0, 8) + '...';
+      console.log('[push] token received:', preview);
+      Obscura.registerPushToken(event.token).catch((e: unknown) => {
+        console.warn('[push] token registration failed:', e);
+      });
+    });
+    return () => sub.remove();
+  }, []);
 
   const onLogout = () => { Obscura.logout(); handleAuthLost(); };
   const openChat = (f: Friend) => { setSelectedFriend(f); setScreen('chat'); };

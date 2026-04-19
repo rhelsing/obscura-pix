@@ -69,6 +69,11 @@ RCT_EXTERN_METHOD(downloadAttachment:(NSString *)id contentKey:(NSString *)conte
 RCT_EXTERN_METHOD(sendPhoto:(NSString *)friendUserId base64Data:(NSString *)base64Data
                   resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 
+// Push Notifications
+RCT_EXTERN_METHOD(requestPushPermission:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(registerPushToken:(NSString *)token
+                  resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+
 // Debug
 RCT_EXTERN_METHOD(getDebugLog:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 

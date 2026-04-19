@@ -1,7 +1,9 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
       android:name=".MainApplication"
@@ -24,5 +26,23 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
       </activity>
+
+      <!-- FCM silent push receiver. Service receives data-only wake-up pings
+           from obscura-server and asks the kit to drain queued envelopes,
+           then posts a hardcoded generic local notification. -->
+      <service
+        android:name=".ObscuraMessagingService"
+        android:exported="false">
+        <intent-filter>
+          <action android:name="com.google.firebase.MESSAGING_EVENT" />
+        </intent-filter>
+      </service>
+
+      <!-- Default notification channel (Android 8+) used for generic push notifications.
+           tools:replace overrides the empty default injected by @react-native-firebase/messaging. -->
+      <meta-data
+        android:name="com.google.firebase.messaging.default_notification_channel_id"
+        android:value="obscura_default"
+        tools:replace="android:value" />
     </application>
 </manifest>

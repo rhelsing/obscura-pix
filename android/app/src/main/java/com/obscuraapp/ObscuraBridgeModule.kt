@@ -32,6 +32,20 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
 
     override fun getName() = "ObscuraBridge"
 
+    companion object {
+        /**
+         * Weak reference to the live bridge instance so platform components
+         * (FirebaseMessagingService) can reach it without going through the
+         * React bridge. Mirrors iOS's `static weak var current` pattern.
+         */
+        @Volatile
+        var current: ObscuraBridgeModule? = null
+            private set
+
+        /** Convenience for FCM service — current client or null if not authed. */
+        fun currentClient(): ObscuraClient? = current?.client
+    }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var client: ObscuraClient? = null
     private var eventJobs = mutableListOf<Job>()
@@ -62,6 +76,9 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     }
 
     init {
+        // Make this instance reachable from FirebaseMessagingService
+        current = this
+
         // Try to restore session on module init
         tryRestoreSession()
 
@@ -843,5 +860,83 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         super.onCatalystInstanceDestroy()
         eventJobs.forEach { it.cancel() }
         scope.cancel()
+        if (current === this) current = null
+    }
+
+    // ─── Push Notifications ─────────────────────────────────
+
+    /**
+     * Request runtime notification permission. Android 13+ (API 33) needs
+     * POST_NOTIFICATIONS; earlier versions auto-grant via manifest.
+     *
+     * Also fetches the FCM token and emits pushTokenReceived to JS when ready.
+     */
+    @ReactMethod
+    fun requestPushPermission(promise: Promise) {
+        // Android 13+ runtime permission
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            val activity = reactApplicationContext.currentActivity
+            if (activity != null) {
+                val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+                    activity, android.Manifest.permission.POST_NOTIFICATIONS
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                if (!granted) {
+                    androidx.core.app.ActivityCompat.requestPermissions(
+                        activity,
+                        arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                        42
+                    )
+                    // We don't wait for the dialog result here — the permission state
+                    // is observable via the system. JS just needs to know we asked.
+                }
+            }
+        }
+
+        // Fetch FCM token and emit to JS once available.
+        try {
+            com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+                .addOnCompleteListener { task ->
+                    if (task.isSuccessful) {
+                        val token = task.result
+                        Log.d(TAG, "FCM token: ${token.take(20)}...")
+                        deliverPushToken(token)
+                        promise.resolve(true)
+                    } else {
+                        Log.e(TAG, "FCM token fetch failed: ${task.exception?.message}")
+                        promise.reject("TOKEN_ERROR", task.exception?.message ?: "Token fetch failed")
+                    }
+                }
+        } catch (e: Exception) {
+            promise.reject("FCM_INIT_ERROR", e.message, e)
+        }
+    }
+
+    /**
+     * Called by JS after receiving pushTokenReceived. Registers the token
+     * with the Obscura server so it can send silent pushes to this device.
+     */
+    @ReactMethod
+    fun registerPushToken(token: String, promise: Promise) {
+        scope.launch {
+            try {
+                requireClient().registerPushToken(token)
+                Log.d(TAG, "registerPushToken OK")
+                promise.resolve(null)
+            } catch (e: Exception) {
+                Log.e(TAG, "registerPushToken failed: ${e.message}")
+                promise.reject("REGISTER_TOKEN_ERROR", e.message, e)
+            }
+        }
+    }
+
+    /**
+     * Called by FirebaseMessagingService.onNewToken and by our token fetch.
+     * Emits pushTokenReceived event to JS so JS can call registerPushToken().
+     */
+    fun deliverPushToken(token: String) {
+        sendEvent("ObscuraEvent", Arguments.createMap().apply {
+            putString("type", "pushTokenReceived")
+            putString("token", token)
+        })
     }
 }

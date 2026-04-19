@@ -1,5 +1,7 @@
 import Foundation
 import React
+import UIKit
+import UserNotifications
 import ObscuraKit
 
 /// Thin native module — all logic lives in ObscuraKit.
@@ -7,10 +9,15 @@ import ObscuraKit
 @objc(ObscuraBridge)
 class ObscuraBridge: RCTEventEmitter {
 
+  /// Weak reference so AppDelegate's silent-push handler can reach the live bridge
+  /// instance without creating a retain cycle or forcing lifecycle ownership.
+  private static weak var current: ObscuraBridge?
+
   private var client: ObscuraClient?
   private var eventTask: Task<Void, Never>?
   private var typingTasks: [String: Task<Void, Never>] = [:]
   private var debugLog: [String] = []
+  private var fcmTokenObserver: NSObjectProtocol?
 
   private static var baseDir: String {
     let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -24,7 +31,20 @@ class ObscuraBridge: RCTEventEmitter {
 
   override init() {
     super.init()
+    Self.current = self
+    // AppDelegate posts this when Firebase hands us an FCM token. We emit it to JS,
+    // which then calls Obscura.registerPushToken(token) back down through the bridge.
+    fcmTokenObserver = NotificationCenter.default.addObserver(
+      forName: Notification.Name("ObscuraFCMTokenReceived"), object: nil, queue: .main
+    ) { [weak self] note in
+      guard let token = note.userInfo?["token"] as? String else { return }
+      self?.emit(["type": "pushTokenReceived", "token": token])
+    }
     tryRestore()
+  }
+
+  deinit {
+    if let obs = fcmTokenObserver { NotificationCenter.default.removeObserver(obs) }
   }
 
   private func log(_ msg: String) {
@@ -274,6 +294,66 @@ class ObscuraBridge: RCTEventEmitter {
         guard let data = Data(base64Encoded: base64Data) else { reject("E", "bad base64", nil); return }
         try await try requireClient().sendEncryptedAttachment(to: friendUserId, plaintext: data); resolve(nil)
       } catch { reject("E", error.localizedDescription, error) }
+    }
+  }
+
+  // ─── Push Notifications ────────────────────────────────
+
+  /// Request notification permission + register with APNS. Firebase hands us an FCM
+  /// token asynchronously via `MessagingDelegate`, which arrives as a `pushTokenReceived`
+  /// event. JS should listen for that and call `registerPushToken(token)`.
+  @objc func requestPushPermission(_ resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+      if let error = error { reject("E", error.localizedDescription, error); return }
+      DispatchQueue.main.async {
+        if granted { UIApplication.shared.registerForRemoteNotifications() }
+        resolve(granted)
+      }
+    }
+  }
+
+  /// Forward an FCM/APNS token to the kit, which registers it with `PUT /v1/push-tokens`.
+  /// Safe to call multiple times — server upserts by deviceId.
+  @objc func registerPushToken(_ token: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+    Task {
+      do { try await requireClient().registerPushToken(token); resolve(nil) }
+      catch { reject("E", error.localizedDescription, error) }
+    }
+  }
+
+  /// Called by AppDelegate when a silent push arrives. Drains the kit's envelope queue,
+  /// posts a generic local notification per the privacy contract (no sender/content),
+  /// then calls the OS completion handler. Returns false if no live bridge+client exists.
+  @objc static func handleSilentPush(completion: @escaping (UIBackgroundFetchResult) -> Void) -> Bool {
+    guard let bridge = current, let client = bridge.client else { return false }
+    Task { @MainActor in
+      let counts = await client.processPendingMessages(timeout: 25)
+      bridge.log("silent push drained: pix=\(counts.pixCount) message=\(counts.messageCount) other=\(counts.otherCount)")
+      bridge.postGenericNotification(counts: counts)
+      let hasNew = counts.pixCount + counts.messageCount + counts.otherCount > 0
+      completion(hasNew ? .newData : .noData)
+    }
+    return true
+  }
+
+  /// Post a LOCAL notification with strictly generic text. The notification DB may be
+  /// forensically extracted — we never write sender names, conversation IDs, or content.
+  /// "Pix wins on tie" per the cross-platform contract with the Kotlin bridge.
+  private func postGenericNotification(counts: ProcessedCounts) {
+    let body: String
+    if counts.pixCount > 0 { body = "New pix" }
+    else if counts.messageCount > 0 { body = "New message" }
+    else { return } // don't notify for friend requests / device announces / etc.
+
+    let content = UNMutableNotificationContent()
+    content.body = body
+    content.sound = .default
+
+    let request = UNNotificationRequest(
+      identifier: UUID().uuidString, content: content, trigger: nil
+    )
+    UNUserNotificationCenter.current().add(request) { err in
+      if let err = err { NSLog("[ObscuraBridge] local notification failed: %@", err.localizedDescription) }
     }
   }
 

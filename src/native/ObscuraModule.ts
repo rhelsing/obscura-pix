@@ -129,6 +129,12 @@ export const Obscura = {
   sendPhoto: (friendUserId: string, base64Data: string): Promise<void> =>
     Bridge.sendPhoto(friendUserId, base64Data),
 
+  // Push notifications — requestPushPermission triggers APNS registration.
+  // Firebase hands back an FCM token asynchronously via the 'pushTokenReceived' event;
+  // consumers should listen for it via onObscuraEvent and call registerPushToken(token).
+  requestPushPermission: (): Promise<boolean> => Bridge.requestPushPermission(),
+  registerPushToken: (token: string): Promise<void> => Bridge.registerPushToken(token),
+
   // Debug
   getDebugLog: (): Promise<string[]> => Bridge.getDebugLog(),
 
@@ -146,6 +152,7 @@ export type ObscuraEvent =
   | { type: 'typingStarted'; conversationId: string; authorDeviceId: string }
   | { type: 'typingStopped'; conversationId: string }
   | { type: 'connectionChanged'; state: ConnectionState }
+  | { type: 'pushTokenReceived'; token: string }
   | { type: 'debugLog'; message: string };
 
 export function onObscuraEvent(handler: (event: ObscuraEvent) => void) {

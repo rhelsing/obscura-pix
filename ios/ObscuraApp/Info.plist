@@ -41,6 +41,12 @@
 	<string>Obscura needs microphone access for voice notes</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Obscura needs photo library access to send photos</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<false/>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
