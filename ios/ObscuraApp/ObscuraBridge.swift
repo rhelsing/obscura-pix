@@ -19,6 +19,14 @@ class ObscuraBridge: RCTEventEmitter {
   private var debugLog: [String] = []
   private var fcmTokenObserver: NSObjectProtocol?
 
+  /// RCTEventEmitter requires we only `sendEventWithName` while JS has listeners
+  /// registered. Without this gate, early emits (e.g. an FCM token arriving before
+  /// the React tree mounts) put the old-arch bridge in a bad state and later emits
+  /// crash in -[RCTEventEmitter sendEventWithName:body:].
+  private var hasListeners = false
+  /// Events emitted before JS subscribes get queued here and flushed on `startObserving`.
+  private var pendingEvents: [[String: Any]] = []
+
   private static var baseDir: String {
     let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
       .appendingPathComponent("ObscuraData")
@@ -28,6 +36,16 @@ class ObscuraBridge: RCTEventEmitter {
 
   @objc override static func requiresMainQueueSetup() -> Bool { true }
   override func supportedEvents() -> [String]! { ["ObscuraEvent"] }
+
+  override func startObserving() {
+    hasListeners = true
+    // Flush anything queued while JS wasn't listening.
+    let queued = pendingEvents
+    pendingEvents.removeAll()
+    for body in queued { sendEvent(withName: "ObscuraEvent", body: body) }
+  }
+
+  override func stopObserving() { hasListeners = false }
 
   override init() {
     super.init()
@@ -54,7 +72,13 @@ class ObscuraBridge: RCTEventEmitter {
   }
 
   private func emit(_ body: [String: Any]) {
-    sendEvent(withName: "ObscuraEvent", body: body)
+    if hasListeners {
+      sendEvent(withName: "ObscuraEvent", body: body)
+    } else {
+      // Cap the queue so a never-subscribing JS doesn't leak memory.
+      if pendingEvents.count >= 200 { pendingEvents.removeFirst() }
+      pendingEvents.append(body)
+    }
   }
 
   private func makeClient(userId: String) throws -> ObscuraClient {

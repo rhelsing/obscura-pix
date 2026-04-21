@@ -70,25 +70,17 @@ export function ChatScreen({ friend, myUserId, myUsername, onBack, onViewPix }: 
 
   useEffect(() => {
     load();
-    console.log(`[typing-diag] ChatScreen mount convId=${convId}`);
     const sub = ObscuraEvents.addListener('ObscuraEvent', (event) => {
-      // Log EVERY event type we see so we know if typingChanged arrives at all
-      if (event.type === 'typingChanged') {
-        console.log(`[typing-diag] got typingChanged conv=${event.conversationId} typers=${JSON.stringify(event.typers)} matchesMine=${event.conversationId === convId}`);
-      }
       if (event.type === 'messageReceived') {
         load();
-        setTypers([]);
+        setTypers([]); // clear typing bubble when a real message arrives
       }
       if (event.type === 'typingChanged' && event.conversationId === convId) {
-        console.log(`[typing-diag] setTypers(${JSON.stringify(event.typers || [])})`);
         setTypers(event.typers || []);
       }
     });
-    Obscura.observeTyping(convId).then(() => console.log(`[typing-diag] observeTyping subscribed for ${convId}`))
-      .catch((e: any) => console.log(`[typing-diag] observeTyping FAILED: ${e.message}`));
+    Obscura.observeTyping(convId);
     return () => {
-      console.log(`[typing-diag] ChatScreen unmount convId=${convId}`);
       sub.remove();
       Obscura.stopObservingTyping(convId);
     };
@@ -118,10 +110,7 @@ export function ChatScreen({ friend, myUserId, myUsername, onBack, onViewPix }: 
 
   const onChangeText = (t: string) => {
     setText(t);
-    if (t.length > 0) {
-      console.log(`[typing-diag] sendTyping convId=${convId}`);
-      Obscura.sendTyping(convId).catch((e: any) => console.log(`[typing-diag] sendTyping FAIL: ${e.message}`));
-    }
+    if (t.length > 0) Obscura.sendTyping(convId);
   };
 
   const renderItem = ({ item }: { item: TimelineItem }) => {
