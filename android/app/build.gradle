@@ -137,6 +137,9 @@ dependencies {
 
     // ObscuraKit — E2E encrypted data layer
     implementation("com.obscura:obscura-kit:0.1.0")
+    // Compile-visibility for the kit's protobuf types (ReceivedMessage.raw.modelSync.model).
+    // Already present transitively via the kit at runtime — same version, no conflict.
+    implementation("com.google.protobuf:protobuf-java:3.25.3")
 
     // Android SQLDelight driver (replaces JVM driver from ObscuraKit)
     implementation("app.cash.sqldelight:android-driver:2.0.2")

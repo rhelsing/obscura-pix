@@ -77,53 +77,7 @@ class ObscuraMessagingService : FirebaseMessagingService() {
             else -> null
         }
 
-        if (text != null) postGenericNotification(text)
-    }
-
-    /**
-     * Post a local notification with ONLY the hardcoded text. Never accepts
-     * sender, content, or any identifying metadata — invariant enforced by
-     * the function signature.
-     */
-    private fun postGenericNotification(text: String) {
-        ensureChannel()
-
-        // Deep link intent — opens the app to main screen. NO conversationId,
-        // NO sender info in the intent extras. Tapping just opens the app.
-        val intent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra("screen", "chat") // screen name only, no IDs
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val notif = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_info) // TODO: app icon
-            .setContentTitle(text)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
-            .build()
-
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(NOTIFICATION_ID, notif)
-        Log.d(TAG, "Posted notification: $text")
-    }
-
-    private fun ensureChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            val existing = manager.getNotificationChannel(CHANNEL_ID)
-            if (existing == null) {
-                val channel = NotificationChannel(
-                    CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_DEFAULT
-                ).apply {
-                    description = "Notifications for new pix and messages"
-                }
-                manager.createNotificationChannel(channel)
-            }
-        }
+        // Shared with the live receive path (ObscuraBridgeModule) — identical UX.
+        if (text != null) NotificationHelper.postGeneric(applicationContext, text)
     }
 }

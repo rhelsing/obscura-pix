@@ -48,6 +48,10 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var client: ObscuraClient? = null
+
+    // Tracks app foreground/background (ProcessLifecycleOwner). Read from the incoming
+    // message loop to decide whether to post a notification — see startEventObservation().
+    @Volatile private var appInForeground = false
     private var eventJobs = mutableListOf<Job>()
     private val typingJobs = mutableMapOf<String, Job>()
     private val prefs: SharedPreferences =
@@ -86,6 +90,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         UiThreadUtil.runOnUiThread {
             ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
+                    appInForeground = true
                     val c = client ?: return
                     if (c.authState.value == AuthState.AUTHENTICATED &&
                         c.connectionState.value == ConnectionState.DISCONNECTED) {
@@ -98,6 +103,10 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                             }
                         }
                     }
+                }
+
+                override fun onStop(owner: LifecycleOwner) {
+                    appInForeground = false
                 }
             })
         }
@@ -303,6 +312,22 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                             })
                         }
                         sendEvent("ObscuraEvent", params)
+
+                        // Fix (A): this live envelope loop wins the single-consumer
+                        // incomingMessages Channel whenever the process is alive, so the FCM
+                        // drain (processPendingMessages) always sees an empty queue. Post the
+                        // notification HERE when the app is backgrounded. Generic text only
+                        // (model name comes from the authoritative MODEL_SYNC payload).
+                        if (!appInForeground) {
+                            val text = when (msg.raw?.modelSync?.model) {
+                                "pix" -> "New pix"
+                                "directMessage" -> "New message"
+                                else -> null
+                            }
+                            if (text != null) {
+                                NotificationHelper.postGeneric(reactApplicationContext, text)
+                            }
+                        }
                     }
                     // MODEL_SIGNAL typing handled by observeTyping() via SignalManager
                     "MODEL_SIGNAL" -> {}
