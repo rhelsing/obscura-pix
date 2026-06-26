@@ -13,7 +13,17 @@ class ObscuraBridge: RCTEventEmitter {
   /// instance without creating a retain cycle or forcing lifecycle ownership.
   private static weak var current: ObscuraBridge?
 
-  private var client: ObscuraClient?
+  /// Process-scoped so an FCM silent push can drain messages and post a
+  /// notification even when no RN bridge instance exists yet (cold-start wake).
+  /// Both the live bridge and the static `handleSilentPush` share this one client.
+  private static var sharedClient: ObscuraClient?
+  /// In-flight restore, so a cold-start push and the bridge's own init don't each
+  /// build a client on the same per-user DB.
+  private static var restoreTask: Task<ObscuraClient?, Never>?
+  private var client: ObscuraClient? {
+    get { Self.sharedClient }
+    set { Self.sharedClient = newValue }
+  }
   private var eventTask: Task<Void, Never>?
   private var typingTasks: [String: Task<Void, Never>] = [:]
   private var debugLog: [String] = []
@@ -81,8 +91,8 @@ class ObscuraBridge: RCTEventEmitter {
     }
   }
 
-  private func makeClient(userId: String) throws -> ObscuraClient {
-    let dir = Self.baseDir + "/\(userId)"
+  private static func makeClient(userId: String) throws -> ObscuraClient {
+    let dir = baseDir + "/\(userId)"
     let c = try ObscuraClient(apiURL: "https://obscura.barrelmaker.dev",
                                 dataDirectory: dir, userId: userId)
     c.sessionStorage = UserDefaultsSessionStorage()
@@ -126,16 +136,40 @@ class ObscuraBridge: RCTEventEmitter {
   }
 
   private func tryRestore() {
-    guard let saved = UserDefaultsSessionStorage().load(),
-          let userId = saved["userId"] as? String, !userId.isEmpty else {
-      log("no saved session"); return
+    Task { @MainActor in
+      if await Self.ensureClient() != nil { self.startEvents() }
     }
-    guard let c = try? makeClient(userId: userId) else { log("makeClient failed"); return }
-    self.client = c
-    Task {
-      do { try await c.restorePersistedSession(); startEvents(); log("session restored") }
-      catch { log("restore failed: \(error.localizedDescription)"); self.client = nil }
+  }
+
+  /// Get-or-restore the process-scoped client. Idempotent and concurrency-safe:
+  /// the bridge's init and a cold-start silent push can call this simultaneously
+  /// and they share one in-flight restore instead of building two clients on the
+  /// same per-user DB. Returns nil when there's no persisted session.
+  @MainActor
+  private static func ensureClient() async -> ObscuraClient? {
+    if let c = sharedClient { return c }
+    if let t = restoreTask { return await t.value }
+    let t = Task { @MainActor () -> ObscuraClient? in
+      defer { restoreTask = nil }
+      guard let saved = UserDefaultsSessionStorage().load(),
+            let userId = saved["userId"] as? String, !userId.isEmpty else {
+        NSLog("[ObscuraBridge] no saved session"); return nil
+      }
+      guard let c = try? makeClient(userId: userId) else {
+        NSLog("[ObscuraBridge] makeClient failed"); return nil
+      }
+      do {
+        try await c.restorePersistedSession()
+        sharedClient = c
+        NSLog("[ObscuraBridge] session restored")
+        return c
+      } catch {
+        NSLog("[ObscuraBridge] restore failed: \(error.localizedDescription)")
+        return nil
+      }
     }
+    restoreTask = t
+    return await t.value
   }
 
   // ─── Auth ──────────────────────────────────────────────
@@ -146,7 +180,7 @@ class ObscuraBridge: RCTEventEmitter {
       do {
         cleanup()
         let creds = try await ObscuraClient.registerAccount(username, password)
-        let c = try makeClient(userId: creds.userId)
+        let c = try Self.makeClient(userId: creds.userId)
         await c.restoreSession(token: creds.token, refreshToken: creds.refreshToken,
                                userId: creds.userId, deviceId: nil, username: username)
         try await c.provisionCurrentDevice()
@@ -161,7 +195,7 @@ class ObscuraBridge: RCTEventEmitter {
       do {
         cleanup()
         let creds = try await ObscuraClient.loginAccount(username, password)
-        let c = try makeClient(userId: creds.userId)
+        let c = try Self.makeClient(userId: creds.userId)
         self.client = c
         let scenario = try await c.loginSmart(username, password)
         startEvents()
@@ -345,15 +379,22 @@ class ObscuraBridge: RCTEventEmitter {
     }
   }
 
-  /// Called by AppDelegate when a silent push arrives. Drains the kit's envelope queue,
-  /// posts a generic local notification per the privacy contract (no sender/content),
-  /// then calls the OS completion handler. Returns false if no live bridge+client exists.
+  /// Called by AppDelegate when a silent push arrives. Restores the persisted
+  /// session if no client is live yet (cold-start wake — the RN bridge may never
+  /// have been constructed), drains the kit's envelope queue, posts a generic
+  /// local notification per the privacy contract (no sender/content), then calls
+  /// the OS completion handler. Always returns true; it owns the completion.
   @objc static func handleSilentPush(completion: @escaping (UIBackgroundFetchResult) -> Void) -> Bool {
-    guard let bridge = current, let client = bridge.client else { return false }
     Task { @MainActor in
+      guard let client = await ensureClient() else {
+        NSLog("[ObscuraBridge] silent push: no persisted session, ignoring")
+        completion(.noData)
+        return
+      }
       let counts = await client.processPendingMessages(timeout: 25)
-      bridge.log("silent push drained: pix=\(counts.pixCount) message=\(counts.messageCount) other=\(counts.otherCount)")
-      bridge.postGenericNotification(counts: counts)
+      NSLog("[ObscuraBridge] silent push drained: pix=%d message=%d other=%d",
+            counts.pixCount, counts.messageCount, counts.otherCount)
+      postGenericNotification(counts: counts)
       let hasNew = counts.pixCount + counts.messageCount + counts.otherCount > 0
       completion(hasNew ? .newData : .noData)
     }
@@ -363,7 +404,7 @@ class ObscuraBridge: RCTEventEmitter {
   /// Post a LOCAL notification with strictly generic text. The notification DB may be
   /// forensically extracted — we never write sender names, conversation IDs, or content.
   /// "Pix wins on tie" per the cross-platform contract with the Kotlin bridge.
-  private func postGenericNotification(counts: ProcessedCounts) {
+  private static func postGenericNotification(counts: ProcessedCounts) {
     let body: String
     if counts.pixCount > 0 { body = "New pix" }
     else if counts.messageCount > 0 { body = "New message" }

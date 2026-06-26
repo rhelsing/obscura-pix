@@ -3,10 +3,12 @@
 Shared contract between iOS and Android implementations. Both devs work from this document. Update when a decision changes.
 
 > **⚠️ As-built note:** This is the original *plan*. The privacy model, server contract, and
-> decisions below are still accurate, but the **client flow** turned out differently than
-> described in [Client Architecture](#client-architecture) — notifications are posted from the
-> live receive loop, not the FCM drain, because of a single-consumer channel race. For how the
-> system **actually works now**, see [NOTIFICATIONS_HOW_IT_WORKS.md](./NOTIFICATIONS_HOW_IT_WORKS.md).
+> decisions below are still accurate, but the **client flow** is structured differently than
+> described in [Client Architecture](#client-architecture): each platform now has a single
+> process-scoped owner of the kit client and a single consumer of `incomingMessages` that posts
+> the notification — created at process start, so silent pushes work even on a cold start. For
+> how the system **actually works now**, see
+> [NOTIFICATIONS_HOW_IT_WORKS.md](./NOTIFICATIONS_HOW_IT_WORKS.md).
 
 ## Privacy Model
 
