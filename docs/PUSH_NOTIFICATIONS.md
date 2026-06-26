@@ -2,6 +2,12 @@
 
 Shared contract between iOS and Android implementations. Both devs work from this document. Update when a decision changes.
 
+> **⚠️ As-built note:** This is the original *plan*. The privacy model, server contract, and
+> decisions below are still accurate, but the **client flow** turned out differently than
+> described in [Client Architecture](#client-architecture) — notifications are posted from the
+> live receive loop, not the FCM drain, because of a single-consumer channel race. For how the
+> system **actually works now**, see [NOTIFICATIONS_HOW_IT_WORKS.md](./NOTIFICATIONS_HOW_IT_WORKS.md).
+
 ## Privacy Model
 
 **Threat avoided:** iOS caches notification content to a SQLite database that forensic tools can extract ([404 Media article](https://www.404media.co/fbi-extracts-suspects-deleted-signal-messages-saved-in-iphone-notification-database-2/)).
