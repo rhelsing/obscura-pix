@@ -22,5 +22,9 @@ class MainApplication : Application(), ReactApplication {
   override fun onCreate() {
     super.onCreate()
     loadReactNative(this)
+    // Restore the persisted Obscura session (if any) and wire up the
+    // process-wide foreground tracker + message collectors BEFORE the RN
+    // bridge gets built. Lets FCM cold-starts work without a live bridge.
+    ObscuraSession.init(this)
   }
 }
