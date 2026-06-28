@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Image, StyleSheet } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackScreenProps, RootStackParamList } from '../navigation/types';
 import { colors } from '../styles';
 
 const TIMER_OPTIONS = [
@@ -9,17 +12,19 @@ const TIMER_OPTIONS = [
   { label: 'no limit', value: 0 },
 ];
 
-export function PhotoPreviewScreen({ photoPath, onSend, onRetake }: {
-  photoPath: string;
-  onSend: (opts: { caption: string; displayDuration: number }) => void;
-  onRetake: () => void;
-}) {
+export function PhotoPreviewScreen({ route }: RootStackScreenProps<'PhotoPreview'>) {
+  const { photo } = route.params;
+  const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [caption, setCaption] = useState('');
   const [duration, setDuration] = useState(5);
 
+  const onRetake = () => nav.goBack();
+  const onChoose = () =>
+    nav.navigate('RecipientPicker', { photo, caption, displayDuration: duration });
+
   return (
     <View style={ps.container}>
-      <Image source={{ uri: `file://${photoPath}` }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+      <Image source={{ uri: `file://${photo.path}` }} style={StyleSheet.absoluteFill} resizeMode="cover" />
 
       {/* Top: retake button */}
       <View style={ps.topBar}>
@@ -53,10 +58,7 @@ export function PhotoPreviewScreen({ photoPath, onSend, onRetake }: {
           ))}
         </View>
 
-        <TouchableOpacity
-          style={ps.sendBtn}
-          onPress={() => onSend({ caption, displayDuration: duration })}
-        >
+        <TouchableOpacity style={ps.sendBtn} onPress={onChoose}>
           <Text style={ps.sendBtnText}>choose recipients</Text>
         </TouchableOpacity>
       </View>

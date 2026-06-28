@@ -1,15 +1,19 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, FlatList, StyleSheet } from 'react-native';
-import { type Friend } from '../native/ObscuraModule';
+import { View, Text, TouchableOpacity, FlatList, StyleSheet, Alert } from 'react-native';
+import { useNavigation, CommonActions } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Obscura, type Friend } from '../native/ObscuraModule';
+import { useSession } from '../state/SessionContext';
+import type { RootStackScreenProps, RootStackParamList } from '../navigation/types';
 import { colors } from '../styles';
 
-export function RecipientPicker({ friends, onSend, onCancel }: {
-  friends: Friend[];
-  onSend: (recipients: Friend[], includeStory: boolean) => void;
-  onCancel: () => void;
-}) {
+export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker'>) {
+  const { photo, caption, displayDuration } = route.params;
+  const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { friends, myUsername } = useSession();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [includeStory, setIncludeStory] = useState(false);
+  const [sending, setSending] = useState(false);
 
   const toggle = (userId: string) => {
     setSelected(prev => {
@@ -19,10 +23,61 @@ export function RecipientPicker({ friends, onSend, onCancel }: {
     });
   };
 
-  const handleSend = () => {
+  const send = async () => {
     const recipients = friends.filter(f => selected.has(f.userId));
     if (recipients.length === 0 && !includeStory) return;
-    onSend(recipients, includeStory);
+    setSending(true);
+
+    const originalPath = photo.path;
+    let resizedPath: string | null = null;
+    try {
+      // Resize natively (bytes never round-trip through JS).
+      const resized = await Obscura.resizeImage(originalPath, 1080, 80).catch(() => null);
+      const uploadPath = resized?.path ?? originalPath;
+      if (resized) resizedPath = resized.path;
+
+      const attachment = await Obscura.uploadAttachment(uploadPath);
+
+      // Create Pix entry for each recipient.
+      for (const friend of recipients) {
+        await Obscura.createEntry('pix', {
+          recipientUsername: friend.username,
+          senderUsername: myUsername,
+          mediaRef: attachment.id,
+          contentKey: attachment.contentKey,
+          nonce: attachment.nonce,
+          caption,
+          displayDuration,
+        });
+      }
+
+      // Post to story if selected — same shape as pix.
+      if (includeStory) {
+        await Obscura.createEntry('story', {
+          content: caption || '',
+          authorUsername: myUsername,
+          mediaRef: attachment.id,
+          contentKey: attachment.contentKey,
+          nonce: attachment.nonce,
+        });
+      }
+
+      // Pop back to the main tabs (skipping PhotoPreview in the stack).
+      nav.dispatch(CommonActions.navigate({ name: 'MainTabs' }));
+      Alert.alert(
+        'Sent!',
+        `Sent to ${recipients.length} friend${recipients.length !== 1 ? 's' : ''}${includeStory ? ' + story' : ''}`,
+      );
+    } catch (e: any) {
+      Alert.alert('Send failed', e.message ?? String(e));
+      setSending(false);
+    } finally {
+      // Clean up temp files (original capture + resized intermediate).
+      Obscura.deleteFile(originalPath).catch(() => {});
+      if (resizedPath && resizedPath !== originalPath) {
+        Obscura.deleteFile(resizedPath).catch(() => {});
+      }
+    }
   };
 
   const count = selected.size + (includeStory ? 1 : 0);
@@ -30,7 +85,7 @@ export function RecipientPicker({ friends, onSend, onCancel }: {
   return (
     <View style={rp.container}>
       <View style={rp.header}>
-        <TouchableOpacity onPress={onCancel}>
+        <TouchableOpacity onPress={() => nav.goBack()} disabled={sending}>
           <Text style={rp.cancelText}>cancel</Text>
         </TouchableOpacity>
         <Text style={rp.title}>send to</Text>
@@ -38,7 +93,7 @@ export function RecipientPicker({ friends, onSend, onCancel }: {
       </View>
 
       {/* Story option */}
-      <TouchableOpacity style={rp.row} onPress={() => setIncludeStory(!includeStory)}>
+      <TouchableOpacity style={rp.row} onPress={() => setIncludeStory(!includeStory)} disabled={sending}>
         <View style={[rp.check, includeStory && rp.checkActive]}>
           {includeStory && <Text style={rp.checkMark}>{'V'}</Text>}
         </View>
@@ -54,7 +109,7 @@ export function RecipientPicker({ friends, onSend, onCancel }: {
         renderItem={({ item }) => {
           const isSelected = selected.has(item.userId);
           return (
-            <TouchableOpacity style={rp.row} onPress={() => toggle(item.userId)}>
+            <TouchableOpacity style={rp.row} onPress={() => toggle(item.userId)} disabled={sending}>
               <View style={[rp.check, isSelected && rp.checkActive]}>
                 {isSelected && <Text style={rp.checkMark}>{'V'}</Text>}
               </View>
@@ -69,12 +124,12 @@ export function RecipientPicker({ friends, onSend, onCancel }: {
       />
 
       <TouchableOpacity
-        style={[rp.sendBtn, count === 0 && rp.sendBtnDisabled]}
-        onPress={handleSend}
-        disabled={count === 0}
+        style={[rp.sendBtn, (count === 0 || sending) && rp.sendBtnDisabled]}
+        onPress={send}
+        disabled={count === 0 || sending}
       >
         <Text style={rp.sendBtnText}>
-          {count === 0 ? 'select recipients' : `send to ${count}`}
+          {sending ? 'sending…' : count === 0 ? 'select recipients' : `send to ${count}`}
         </Text>
       </TouchableOpacity>
     </View>

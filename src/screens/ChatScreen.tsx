@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   SafeAreaView, View, Text, TextInput, TouchableOpacity, FlatList,
-  KeyboardAvoidingView, Platform, Animated, StyleSheet,
+  KeyboardAvoidingView, Platform, Animated, StyleSheet, Alert,
 } from 'react-native';
-import { Obscura, onObscuraEvent, conversationId, type Friend, type ModelEntry } from '../native/ObscuraModule';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Obscura, onObscuraEvent, conversationId, type ModelEntry } from '../native/ObscuraModule';
+import { useSession } from '../state/SessionContext';
+import type { RootStackScreenProps, RootStackParamList, StoryGroup } from '../navigation/types';
 import { s, colors } from '../styles';
 
 // ─── Typing Bubble ──────────────────────────────────────
@@ -44,15 +48,24 @@ type TimelineItem = ModelEntry & { _kind: 'message' | 'pix' };
 
 // ─── Chat Screen ────────────────────────────────────────
 
-export function ChatScreen({ friend, myUserId, myUsername, onBack, onViewPix }: {
-  friend: Friend; myUserId: string; myUsername: string; onBack: () => void;
-  onViewPix?: (entry: ModelEntry) => void;
-}) {
+export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
+  const { friend } = route.params;
+  const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { myUserId, myUsername } = useSession();
   const [messages, setMessages] = useState<ModelEntry[]>([]);
   const [pixEntries, setPixEntries] = useState<ModelEntry[]>([]);
   const [text, setText] = useState('');
   const [typers, setTypers] = useState<string[]>([]);
   const convId = conversationId(myUserId, friend.userId);
+
+  const onViewPix = (entry: ModelEntry) => {
+    const group: StoryGroup = {
+      username: entry.data.senderUsername || '?',
+      stories: [entry],
+      isMe: false,
+    };
+    nav.navigate('StoryViewer', { groups: [group], startIndex: 0, markViewed: true });
+  };
 
   const load = useCallback(() => {
     Obscura.queryEntries('directMessage', { 'data.conversationId': convId })
@@ -103,7 +116,6 @@ export function ChatScreen({ friend, myUserId, myUsername, onBack, onViewPix }: 
       });
       load();
     } catch (e: any) {
-      const { Alert } = require('react-native');
       Alert.alert('Send failed', e.message);
     }
   };
@@ -133,7 +145,7 @@ export function ChatScreen({ friend, myUserId, myUsername, onBack, onViewPix }: 
     if (!iSent && !viewed) {
       // Received, unviewed — yellow "Tap to view" bar
       return (
-        <TouchableOpacity style={cs.pixBarFilled} onPress={() => onViewPix?.(item)}>
+        <TouchableOpacity style={cs.pixBarFilled} onPress={() => onViewPix(item)}>
           <Text style={cs.pixBarFilledText}>
             {item.data.caption ? `Tap to view: ${item.data.caption}` : 'Tap to view'}
           </Text>
@@ -171,11 +183,6 @@ export function ChatScreen({ friend, myUserId, myUsername, onBack, onViewPix }: 
 
   return (
     <SafeAreaView style={s.container}>
-      <View style={s.chatHeader}>
-        <TouchableOpacity onPress={onBack}><Text style={s.backBtn}>{'<'}</Text></TouchableOpacity>
-        <Text style={s.chatTitle}>{friend.username}</Text>
-      </View>
-
       <FlatList
         data={timeline}
         keyExtractor={(item, i) => item.id || `${i}`}

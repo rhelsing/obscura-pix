@@ -1,19 +1,16 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView, Modal, StyleSheet,
-  Dimensions, Animated, Image, Alert, ActivityIndicator,
+  View, Text, TouchableOpacity, ScrollView, StyleSheet,
+  Animated, Image, Alert, ActivityIndicator,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura, onObscuraEvent, type ModelEntry } from '../native/ObscuraModule';
+import { useSession } from '../state/SessionContext';
+import type { RootStackParamList, RootStackScreenProps, StoryGroup } from '../navigation/types';
 import { colors } from '../styles';
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const STORY_DURATION = 5000; // 5 seconds per story
-
-interface StoryGroup {
-  username: string;
-  stories: ModelEntry[];
-  isMe: boolean;
-}
 
 // ─── Story Circle (avatar with ring) ──────────────────────
 
@@ -35,14 +32,10 @@ function StoryCircle({ group, onPress }: { group: StoryGroup; onPress: () => voi
   );
 }
 
-// ─── Story Viewer (full-screen, auto-advance) ─────────────
+// ─── Story Viewer (full-screen, route-driven) ─────────────
 
-export function StoryViewer({ groups, startIndex, onClose, onViewed }: {
-  groups: StoryGroup[];
-  startIndex: number;
-  onClose: () => void;
-  onViewed?: (entry: ModelEntry) => void;
-}) {
+export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryViewer'>) {
+  const { groups, startIndex, markViewed } = route.params;
   const [groupIdx, setGroupIdx] = useState(startIndex);
   const [storyIdx, setStoryIdx] = useState(0);
   const [mediaUri, setMediaUri] = useState<string | null>(null);
@@ -53,19 +46,48 @@ export function StoryViewer({ groups, startIndex, onClose, onViewed }: {
   const group = groups[groupIdx];
   const story = group?.stories[storyIdx];
 
+  // Dedup `viewedAt` upserts so multiple exit paths don't double-fire for
+  // the same entry.
+  const viewedIdsRef = useRef<Set<string>>(new Set());
+
+  // If `markViewed` was requested, fire a viewedAt upsert on the currently
+  // displayed pix. LWW merges so the sender gets the receipt. The
+  // `entriesChanged` event then re-renders other screens reactively.
+  const markCurrentViewed = useCallback(() => {
+    if (!markViewed || !story) return;
+    if (viewedIdsRef.current.has(story.id)) return;
+    viewedIdsRef.current.add(story.id);
+    Obscura.upsertEntry('pix', story.id, {
+      ...story.data,
+      viewedAt: Date.now(),
+    }).catch(() => {});
+  }, [markViewed, story]);
+
+  // Catch ALL exit paths uniformly (header back, hardware back, iOS
+  // swipe-back, close button). Without this, hardware/swipe back would skip
+  // the viewedAt receipt entirely.
+  useEffect(() => {
+    const sub = navigation.addListener('beforeRemove', markCurrentViewed);
+    return sub;
+  }, [navigation, markCurrentViewed]);
+
+  const close = useCallback(() => {
+    markCurrentViewed();
+    navigation.goBack();
+  }, [markCurrentViewed, navigation]);
+
   const advance = useCallback(() => {
-    if (!group) { onClose(); return; }
-    // Notify viewer (for pix deletion)
-    if (story) onViewed?.(story);
+    if (!group) { navigation.goBack(); return; }
+    markCurrentViewed();
     if (storyIdx < group.stories.length - 1) {
       setStoryIdx(i => i + 1);
     } else if (groupIdx < groups.length - 1) {
       setGroupIdx(i => i + 1);
       setStoryIdx(0);
     } else {
-      onClose();
+      navigation.goBack();
     }
-  }, [group, groupIdx, storyIdx, story, groups.length, onClose, onViewed]);
+  }, [group, groupIdx, storyIdx, groups.length, markCurrentViewed, navigation]);
 
   const goBack = useCallback(() => {
     if (storyIdx > 0) {
@@ -123,7 +145,7 @@ export function StoryViewer({ groups, startIndex, onClose, onViewed }: {
     };
   }, [groupIdx, storyIdx, readyToPlay]);
 
-  if (!story) { onClose(); return null; }
+  if (!story) { navigation.goBack(); return null; }
 
   const timeAgo = (() => {
     const mins = Math.floor((Date.now() - story.timestamp) / 60000);
@@ -160,7 +182,7 @@ export function StoryViewer({ groups, startIndex, onClose, onViewed }: {
         </View>
         <Text style={sv.headerName}>{group.username}</Text>
         <Text style={sv.headerTime}>{timeAgo}</Text>
-        <TouchableOpacity onPress={onClose} style={sv.closeBtn}>
+        <TouchableOpacity onPress={close} style={sv.closeBtn}>
           <Text style={sv.closeBtnText}>X</Text>
         </TouchableOpacity>
       </View>
@@ -185,12 +207,12 @@ export function StoryViewer({ groups, startIndex, onClose, onViewed }: {
   );
 }
 
-// ─── Stories Screen ──────────────────────────────────────
+// ─── Stories Row (horizontal scroll, embedded in ChatList) ────────
 
-export function StoriesScreen({ myUsername }: { myUsername: string }) {
+export function StoriesRow() {
+  const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { myUsername } = useSession();
   const [stories, setStories] = useState<ModelEntry[]>([]);
-  const [viewerOpen, setViewerOpen] = useState(false);
-  const [viewerStartIdx, setViewerStartIdx] = useState(0);
 
   const load = useCallback(() => {
     Obscura.allEntries('story').then(s =>
@@ -206,7 +228,7 @@ export function StoriesScreen({ myUsername }: { myUsername: string }) {
     });
   }, [load]);
 
-  // Group stories by author, me first
+  // Group stories by author, me first.
   const groups: StoryGroup[] = (() => {
     const map = new Map<string, ModelEntry[]>();
     for (const s of stories) {
@@ -215,11 +237,9 @@ export function StoriesScreen({ myUsername }: { myUsername: string }) {
       map.get(author)!.push(s);
     }
     const result: StoryGroup[] = [];
-    // Me first (even if no stories — shows the "+" add button)
     const myStories = map.get(myUsername) || [];
     result.push({ username: myUsername, stories: myStories, isMe: true });
     map.delete(myUsername);
-    // Then friends
     for (const [username, entries] of map) {
       result.push({ username, stories: entries, isMe: false });
     }
@@ -229,13 +249,13 @@ export function StoriesScreen({ myUsername }: { myUsername: string }) {
   const openViewer = (idx: number) => {
     const group = groups[idx];
     if (group.isMe && group.stories.length === 0) {
-      // No stories yet — could open camera, for now show hint
       Alert.alert('My Story', 'Take a photo and select "my story" to post');
       return;
     }
     if (group.stories.length === 0) return;
-    setViewerStartIdx(idx);
-    setViewerOpen(true);
+    const populated = groups.filter(g => g.stories.length > 0);
+    const adjustedStart = Math.min(idx, populated.length - 1);
+    nav.navigate('StoryViewer', { groups: populated, startIndex: adjustedStart });
   };
 
   return (
@@ -246,14 +266,6 @@ export function StoriesScreen({ myUsername }: { myUsername: string }) {
           <StoryCircle key={g.username} group={g} onPress={() => openViewer(i)} />
         ))}
       </ScrollView>
-
-      <Modal visible={viewerOpen} animationType="fade" statusBarTranslucent>
-        <StoryViewer
-          groups={groups.filter(g => g.stories.length > 0)}
-          startIndex={Math.min(viewerStartIdx, groups.filter(g => g.stories.length > 0).length - 1)}
-          onClose={() => setViewerOpen(false)}
-        />
-      </Modal>
     </View>
   );
 }
@@ -295,5 +307,4 @@ const ss = StyleSheet.create({
   container: {},
   circleRow: { paddingTop: 8, paddingBottom: 8 },
   circleRowContent: { paddingHorizontal: 16 },
-  empty: { color: '#444', textAlign: 'center', marginTop: 48, fontSize: 14 },
 });

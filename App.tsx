@@ -1,337 +1,39 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import {
-  SafeAreaView, View, Text, TouchableOpacity, StatusBar, Alert,
-} from 'react-native';
-import { Obscura, onObscuraEvent, type Friend } from './src/native/ObscuraModule';import { obscuraSchema } from './src/models/schema';
-import { s, colors } from './src/styles';
+import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { StatusBar } from 'react-native';
 
-import { AuthScreen } from './src/screens/AuthScreen';
-import { CameraScreen } from './src/screens/CameraScreen';
-import { ChatScreen } from './src/screens/ChatScreen';
-import { ChatListScreen } from './src/screens/ChatListScreen';
-import { ProfileScreen } from './src/screens/ProfileScreen';
-import { SettingsScreen } from './src/screens/SettingsScreen';
-import { PhotoPreviewScreen } from './src/screens/PhotoPreviewScreen';
-import { RecipientPicker } from './src/screens/RecipientPicker';
-import { StoryViewer } from './src/screens/StoriesScreen';
-import type { PhotoFile } from 'react-native-vision-camera';
-
-// ─── Reactive Event Hook ─────────────────────────────────
-
-type Tab = 'chat' | 'camera';
-
-function useObscuraEvents(authed: boolean, onAuthLost?: () => void) {
-  const [friends, setFriends] = useState<Friend[]>([]);
-  const [pending, setPending] = useState<Friend[]>([]);
-  const [connState, setConnState] = useState('disconnected');
-
-  useEffect(() => {
-    const unsub = onObscuraEvent((event) => {
-      if (event.type === 'friendsUpdated') {
-        const all = event.friends || [];
-        setFriends(all.filter((f) => f.status === 'accepted'));
-        setPending(all.filter((f) => f.status !== 'accepted'));
-      } else if (event.type === 'connectionChanged') {
-        setConnState(event.state || 'disconnected');
-      } else if (event.type === 'authFailed' || (event.type === 'authStateChanged' && event.state === 'loggedOut')) {
-        onAuthLost?.();
-      }
-    });
-    if (!authed) return unsub;
-    Obscura.getFriends().then((all) => {
-      setFriends((all || []).filter((f) => f.status === 'accepted'));
-      setPending((all || []).filter((f) => f.status !== 'accepted'));
-    }).catch(() => {});
-    Obscura.getConnectionState().then((cs) => setConnState(cs || 'disconnected')).catch(() => {});
-    return unsub;
-  }, [authed]);
-
-  return { friends, pending, connState };
-}
-
-// ─── Main App ────────────────────────────────────────────
+import { SessionProvider } from './src/state/SessionContext';
+import { RootNavigator } from './src/navigation/RootNavigator';
+import { colors } from './src/styles';
 
 export default function App() {
-  const [authed, setAuthed] = useState(false);
-  const [tab, setTab] = useState<Tab>('camera');
-  const [screen, setScreen] = useState<string>('main');
-  const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
-  const [myUserId, setMyUserId] = useState('');
-  const [myUsername, setMyUsername] = useState('');
-
-  // Camera flow state
-  const [capturedPhoto, setCapturedPhoto] = useState<PhotoFile | null>(null);
-  const [sendOpts, setSendOpts] = useState<{ caption: string; displayDuration: number } | null>(null);
-
-  // Pix viewing state
-  const [viewingPix, setViewingPix] = useState<import('./src/native/ObscuraModule').ModelEntry | null>(null);
-
-  // Push-permission request is gated to once per session — OS caches the decision,
-  // but we also avoid re-prompting on every reconnect.
-  const pushRequestedRef = useRef(false);
-
-  const handleAuthLost = useCallback(() => {
-    setAuthed(false);
-    setMyUserId('');
-    setMyUsername('');
-    setSelectedFriend(null);
-    setScreen('main');
-    setTab('camera');
-    pushRequestedRef.current = false;
-  }, []);
-
-  const { friends, pending, connState } = useObscuraEvents(authed, handleAuthLost);
-
-  useEffect(() => {
-    Obscura.getAuthState().then(async (state) => {
-      if (state === 'authenticated') {
-        await Obscura.defineModels(obscuraSchema).catch(() => {});
-        Obscura.getUserId().then(id => setMyUserId(id || ''));
-        Obscura.getUsername().then(name => setMyUsername(name || ''));
-        setAuthed(true);
-      }
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!authed) return;
-    Obscura.getUserId().then(id => setMyUserId(id || ''));
-    Obscura.getUsername().then(name => setMyUsername(name || ''));
-  }, [authed]);
-
-  // Push notifications — request permission once per session after connect lands.
-  // Token arrives asynchronously as a 'pushTokenReceived' event (see listener below).
-  useEffect(() => {
-    if (!authed || connState !== 'connected') return;
-    if (pushRequestedRef.current) return;
-    pushRequestedRef.current = true;
-    Obscura.requestPushPermission().catch((e: unknown) => {
-      console.warn('[push] permission request failed:', e);
-    });
-  }, [authed, connState]);
-
-  // Register any FCM/APNS token the native side hands us. Fires on first launch,
-  // subsequent launches (cached), and token rotation. Server upserts by deviceId.
-  useEffect(() => {
-    return onObscuraEvent((event) => {
-      if (event.type !== 'pushTokenReceived' || !event.token) return;
-      const preview = event.token.slice(0, 8) + '...';
-      console.log('[push] token received:', preview);
-      Obscura.registerPushToken(event.token).catch((e: unknown) => {
-        console.warn('[push] token registration failed:', e);
-      });
-    });
-  }, []);
-
-  // Deep-link routing: cold-start (pulled once on mount) AND warm-start
-  // (via the `launchedFrom` event). Both deliver the same { screen } payload.
-  const routeFromDeepLink = useCallback((screen: string) => {
-    if (screen === 'chat') {
-      setScreen('main');
-      setTab('chat');
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!authed) return;
-    Obscura.getLaunchIntent().then(intent => {
-      if (intent?.screen) routeFromDeepLink(intent.screen);
-    }).catch(() => {});
-    return onObscuraEvent((event) => {
-      if (event.type === 'launchedFrom' && event.screen) routeFromDeepLink(event.screen);
-    });
-  }, [authed, routeFromDeepLink]);
-
-  const onLogout = () => { Obscura.logout(); handleAuthLost(); };
-  const openChat = (f: Friend) => { setSelectedFriend(f); setScreen('chat'); };
-
-  // ─── Camera flow handlers
-  const onPhotoCaptured = (photo: PhotoFile) => {
-    setCapturedPhoto(photo);
-    setScreen('preview');
-  };
-
-  const onPreviewSend = (opts: { caption: string; displayDuration: number }) => {
-    setSendOpts(opts);
-    setScreen('pick');
-  };
-
-  const onSendToRecipients = async (recipients: Friend[], includeStory: boolean) => {
-    if (!capturedPhoto || !sendOpts) return;
-    setScreen('main');
-    const originalPath = capturedPhoto.path;
-    let resizedPath: string | null = null;
-    try {
-      // Resize natively (bytes never round-trip through JS).
-      const resized = await Obscura.resizeImage(originalPath, 1080, 80).catch(() => null);
-      const uploadPath = resized?.path ?? originalPath;
-      if (resized) resizedPath = resized.path;
-
-      const attachment = await Obscura.uploadAttachment(uploadPath);
-
-      // Create Pix entry for each recipient
-      for (const friend of recipients) {
-        await Obscura.createEntry('pix', {
-          recipientUsername: friend.username,
-          senderUsername: myUsername,
-          mediaRef: attachment.id,
-          contentKey: attachment.contentKey,
-          nonce: attachment.nonce,
-          caption: sendOpts.caption,
-          displayDuration: sendOpts.displayDuration,
-        });
-      }
-
-      // Post to story if selected
-      if (includeStory) {
-        // Story shares the pix attachment shape: separate mediaRef/contentKey/
-        // nonce fields. (Used to be a JSON blob in `mediaUrl` — one shape per
-        // model is much cleaner for the cross-platform contract.)
-        await Obscura.createEntry('story', {
-          content: sendOpts.caption || '',
-          authorUsername: myUsername,
-          mediaRef: attachment.id,
-          contentKey: attachment.contentKey,
-          nonce: attachment.nonce,
-        });
-      }
-
-      Alert.alert('Sent!', `Sent to ${recipients.length} friend${recipients.length !== 1 ? 's' : ''}${includeStory ? ' + story' : ''}`);
-    } catch (e: any) {
-      Alert.alert('Send failed', e.message);
-    } finally {
-      // Clean up temp files (original capture + resized intermediate).
-      Obscura.deleteFile(originalPath).catch(() => {});
-      if (resizedPath && resizedPath !== originalPath) {
-        Obscura.deleteFile(resizedPath).catch(() => {});
-      }
-    }
-    setCapturedPhoto(null);
-    setSendOpts(null);
-  };
-
-  // ─── Not authed
-  if (!authed) return <AuthScreen onAuth={() => setAuthed(true)} />;
-
-  // ─── Photo preview (after capture)
-  if (screen === 'preview' && capturedPhoto) {
-    return (
-      <PhotoPreviewScreen
-        photoPath={capturedPhoto.path}
-        onSend={onPreviewSend}
-        onRetake={() => { setCapturedPhoto(null); setScreen('main'); }}
-      />
-    );
-  }
-
-  // ─── Recipient picker (after preview)
-  if (screen === 'pick') {
-    return (
-      <RecipientPicker
-        friends={friends}
-        onSend={onSendToRecipients}
-        onCancel={() => setScreen('preview')}
-      />
-    );
-  }
-
-  // ─── Pix viewer (full-screen, reuses story viewer)
-  if (viewingPix) {
-    const pixGroup = { username: viewingPix.data.senderUsername || '?', stories: [viewingPix], isMe: false };
-    return (
-      <StoryViewer
-        groups={[pixGroup]}
-        startIndex={0}
-        onClose={() => {
-          // Mark as viewed via upsert — LWW merges viewedAt, syncs to sender.
-          // The bridge will fire `entriesChanged{model:'pix'}` so other screens re-query.
-          Obscura.upsertEntry('pix', viewingPix.id, {
-            ...viewingPix.data,
-            viewedAt: Date.now(),
-          }).catch(() => {});
-          setViewingPix(null);
-        }}
-        onViewed={(entry) => {
-          Obscura.upsertEntry('pix', entry.id, {
-            ...entry.data,
-            viewedAt: Date.now(),
-          }).catch(() => {});
-        }}
-      />
-    );
-  }
-
-  // ─── Chat screen
-  if (screen === 'chat' && selectedFriend) {
-    return <ChatScreen friend={selectedFriend} myUserId={myUserId}
-      myUsername={myUsername} onBack={() => setScreen('main')}
-      onViewPix={(entry) => setViewingPix(entry)} />;
-  }
-
-  // ─── Full-screen overlays
-  if (screen === 'profile') {
-    return (
-      <SafeAreaView style={s.container}>
-        <View style={s.chatHeader}>
-          <TouchableOpacity onPress={() => setScreen('main')}><Text style={s.backBtn}>{'<'}</Text></TouchableOpacity>
-          <Text style={s.chatTitle}>profile</Text>
-        </View>
-        <ProfileScreen myUsername={myUsername} myUserId={myUserId} />
-      </SafeAreaView>
-    );
-  }
-
-  if (screen === 'settings') {
-    return (
-      <SafeAreaView style={s.container}>
-        <View style={s.chatHeader}>
-          <TouchableOpacity onPress={() => setScreen('main')}><Text style={s.backBtn}>{'<'}</Text></TouchableOpacity>
-          <Text style={s.chatTitle}>settings</Text>
-        </View>
-        <SettingsScreen myUsername={myUsername} myUserId={myUserId} onLogout={onLogout} />
-      </SafeAreaView>
-    );
-  }
-
-  // ─── Main tabbed view (camera-centric)
   return (
-    <SafeAreaView style={s.container}>
-      <StatusBar barStyle="light-content" />
-      <View style={s.topBar}>
-        <TouchableOpacity onPress={() => setScreen('profile')}>
-          <View style={[s.avatar, { width: 32, height: 32 }]}>
-            <Text style={[s.avatarText, { fontSize: 14 }]}>{myUsername[0]?.toUpperCase() || '?'}</Text>
-          </View>
-        </TouchableOpacity>
-        <Text style={s.topTitle}>obscura</Text>
-        <TouchableOpacity onPress={() => setScreen('settings')}>
-          <Text style={[s.connDot, { color: connState === 'connected' ? colors.connected : colors.disconnected }]}>{'...'}</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={{ flex: 1 }}>
-        {tab === 'chat' && (
-          <ChatListScreen
-            friends={friends}
-            pending={pending}
-            myUsername={myUsername}
-            onSelectFriend={openChat}
-            onViewPix={(entry) => setViewingPix(entry)}
-          />
-        )}
-        {tab === 'camera' && <CameraScreen onPhotoCaptured={onPhotoCaptured} />}
-      </View>
-
-      <View style={s.tabBar}>
-        <TouchableOpacity style={s.tab} onPress={() => setTab('chat')}>
-          <Text style={[s.tabText, tab === 'chat' && s.tabActive]}>chat</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={s.tab} onPress={() => setTab('camera')}>
-          <View style={s.cameraTab}>
-            <Text style={s.cameraTabIcon}>O</Text>
-          </View>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+    <SafeAreaProvider>
+      <SessionProvider>
+        <NavigationContainer
+          theme={{
+            dark: true,
+            colors: {
+              primary: colors.accent,
+              background: colors.bg,
+              card: colors.bg,
+              text: colors.text,
+              border: colors.border,
+              notification: colors.accent,
+            },
+            fonts: {
+              regular: { fontFamily: 'System', fontWeight: '400' },
+              medium: { fontFamily: 'System', fontWeight: '500' },
+              bold: { fontFamily: 'System', fontWeight: '700' },
+              heavy: { fontFamily: 'System', fontWeight: '900' },
+            },
+          }}
+        >
+          <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+          <RootNavigator />
+        </NavigationContainer>
+      </SessionProvider>
+    </SafeAreaProvider>
   );
 }
