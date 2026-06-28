@@ -62,6 +62,14 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
         });
       }
 
+      // Only clean up on success. On failure we leave the temp files in
+      // place so the user can retry without re-shooting the photo — the
+      // back button + PhotoPreview retake flow will clean up if abandoned.
+      Obscura.deleteFile(originalPath).catch(() => {});
+      if (resizedPath && resizedPath !== originalPath) {
+        Obscura.deleteFile(resizedPath).catch(() => {});
+      }
+
       // Pop back to the main tabs (skipping PhotoPreview in the stack).
       nav.dispatch(CommonActions.navigate({ name: 'MainTabs' }));
       Alert.alert(
@@ -71,12 +79,6 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
     } catch (e: any) {
       Alert.alert('Send failed', e.message ?? String(e));
       setSending(false);
-    } finally {
-      // Clean up temp files (original capture + resized intermediate).
-      Obscura.deleteFile(originalPath).catch(() => {});
-      if (resizedPath && resizedPath !== originalPath) {
-        Obscura.deleteFile(resizedPath).catch(() => {});
-      }
     }
   };
 

@@ -70,19 +70,19 @@ export function ChatListScreen() {
 
     const receivedNew = pixEntries.filter(p =>
       p.data.senderUsername === f.username && p.data.recipientUsername === myUsername
-      && !p.data._deleted && !p.data.viewedAt
+      && !p.data.viewedAt
     );
     const receivedViewed = pixEntries.filter(p =>
       p.data.senderUsername === f.username && p.data.recipientUsername === myUsername
-      && !p.data._deleted && !!p.data.viewedAt
+      && !!p.data.viewedAt
     );
     const sentPending = pixEntries.filter(p =>
       p.data.senderUsername === myUsername && p.data.recipientUsername === f.username
-      && !p.data._deleted && !p.data.viewedAt
+      && !p.data.viewedAt
     );
     const sentOpened = pixEntries.filter(p =>
       p.data.senderUsername === myUsername && p.data.recipientUsername === f.username
-      && !p.data._deleted && !!p.data.viewedAt
+      && !!p.data.viewedAt
     );
 
     const allPix = [...receivedNew, ...receivedViewed, ...sentPending, ...sentOpened]

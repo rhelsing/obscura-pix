@@ -94,6 +94,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
 
     companion object {
         @Volatile private var instance: ObscuraBridgeModule? = null
+        const val PUSH_PERMISSION_REQUEST_CODE = 42
         /**
          * Called from [MainActivity.onNewIntent] when a deep-link intent arrives
          * while the app is already running. Cold-start deep-links go through
@@ -101,6 +102,38 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
          */
         fun deliverLaunchedFrom(screen: String) {
             instance?.emit("launchedFrom") { putString("screen", screen) }
+        }
+
+        /**
+         * Called from [MainActivity.onRequestPermissionsResult] when the OS
+         * delivers a permission decision. Resolves the in-flight push-permission
+         * promise based on the user's choice.
+         */
+        fun deliverPermissionResult(requestCode: Int, grantResults: IntArray) {
+            if (requestCode != PUSH_PERMISSION_REQUEST_CODE) return
+            instance?.handlePushPermissionResult(grantResults)
+        }
+    }
+
+    // Pending push-permission state. Guarded by `pendingPermissionLock` so
+    // [requestPushPermission] and [handlePushPermissionResult] don't race.
+    private val pendingPermissionLock = Any()
+    @Volatile private var pendingPermissionPromise: Promise? = null
+
+    internal fun handlePushPermissionResult(grantResults: IntArray) {
+        val promise = synchronized(pendingPermissionLock) {
+            val p = pendingPermissionPromise
+            pendingPermissionPromise = null
+            p
+        } ?: return
+        val granted = grantResults.isNotEmpty() &&
+            grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            // Fetch the token now that we know the user said yes. Resolves
+            // the promise with true on success / rejects on FCM failure.
+            fetchAndDeliverToken(promise)
+        } else {
+            promise.resolve(false)
         }
     }
 
@@ -745,21 +778,57 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
 
     // ─── Push Notifications ─────────────────────────────────────────────────
 
+    /**
+     * Permission flow:
+     *   1. If POST_NOTIFICATIONS is already granted (or pre-Tiramisu where it
+     *      doesn't exist), skip straight to token fetch.
+     *   2. Otherwise, request via the activity. Result arrives via the
+     *      activity's onRequestPermissionsResult, which forwards to
+     *      [deliverPermissionResult] below.
+     *   3. On grant → fetch FCM token and deliver via the `pushTokenReceived`
+     *      event, then resolve the promise with `true`.
+     *      On deny → resolve `false` immediately, never fetch the token.
+     *
+     * We DO NOT register the token with our server here — that's a separate
+     * `registerPushToken` call from JS after the `pushTokenReceived` event.
+     * Reasoning: keep server-side state out of denial paths.
+     */
     @ReactMethod
     fun requestPushPermission(promise: Promise) {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            val activity = reactApplicationContext.currentActivity
-            if (activity != null) {
-                val granted = androidx.core.content.ContextCompat.checkSelfPermission(
-                    activity, android.Manifest.permission.POST_NOTIFICATIONS,
-                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                if (!granted) {
-                    androidx.core.app.ActivityCompat.requestPermissions(
-                        activity, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 42,
-                    )
-                }
-            }
+        // Pre-Tiramisu: notifications are always allowed at the OS level.
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
+            fetchAndDeliverToken(promise)
+            return
         }
+        val activity = reactApplicationContext.currentActivity
+        if (activity == null) {
+            // No activity (process backgrounded?) — defer the decision; reject
+            // so JS knows to retry rather than assume granted.
+            promise.reject("NO_ACTIVITY", "Cannot request permission without a foreground activity")
+            return
+        }
+        val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+            activity, android.Manifest.permission.POST_NOTIFICATIONS,
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            fetchAndDeliverToken(promise)
+            return
+        }
+        // Stash the promise; resolve it when the activity hands us the result.
+        synchronized(pendingPermissionLock) {
+            // Reject any previous in-flight request — only one user-facing
+            // prompt can be on screen at a time anyway.
+            pendingPermissionPromise?.reject("SUPERSEDED", "Replaced by a newer permission request")
+            pendingPermissionPromise = promise
+        }
+        androidx.core.app.ActivityCompat.requestPermissions(
+            activity,
+            arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+            PUSH_PERMISSION_REQUEST_CODE,
+        )
+    }
+
+    private fun fetchAndDeliverToken(promise: Promise) {
         try {
             com.google.firebase.messaging.FirebaseMessaging.getInstance().token
                 .addOnCompleteListener { task ->

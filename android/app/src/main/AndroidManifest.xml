@@ -38,11 +38,15 @@
         </intent-filter>
       </service>
 
-      <!-- Default notification channel (Android 8+) used for generic push notifications.
-           tools:replace overrides the empty default injected by @react-native-firebase/messaging. -->
+      <!-- Default notification channel (Android 8+) for any system-fallback FCM
+           notification. Must match the channel id NotificationHelper creates +
+           posts on — otherwise the system would silently auto-create a stub
+           "Miscellaneous" channel and our posts would lose IMPORTANCE_HIGH /
+           heads-up behavior. Server only sends silent pushes today so this
+           is dormant in practice, but it's a landmine to leave mismatched. -->
       <meta-data
         android:name="com.google.firebase.messaging.default_notification_channel_id"
-        android:value="obscura_default"
+        android:value="obscura_messages"
         tools:replace="android:value" />
     </application>
 </manifest>
