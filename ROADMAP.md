@@ -52,7 +52,14 @@ What's built, what's next.
 
 ## Phase 6: iOS
 
-- [ ] Implement `ObscuraBridge.swift` against the contract in `docs/BRIDGE.md`
+The cross-platform bridge contract (methods, events, payload shapes,
+atomicity / EXIF / OOM requirements) lives in `docs/BRIDGE.md`. The
+Android `ObscuraBridgeModule.kt` is the reference implementation. A Swift
+bridge implementing the same contract is the path to a TestFlight build.
+
+- [ ] Scaffold `ios/` from a fresh RN init at the same RN version as Android
+- [ ] Implement `ObscuraBridge.swift` against `docs/BRIDGE.md`
+- [ ] Wire `ObscuraKit-Swift` as a Swift Package dependency
 - [ ] App icons + launch screen assets
 - [ ] APNs entitlement + push token wiring
 - [ ] TestFlight build
