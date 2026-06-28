@@ -1,0 +1,87 @@
+version: 2
+updates:
+
+  # ─── npm ────────────────────────────────────────────────
+  # JS deps in package.json. Grouped where versions are coupled to avoid
+  # noisy "bump one of N peer-pinned packages" PRs.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      # The @react-native/* preset packages are version-locked to the
+      # react-native major.minor. Bumping them one at a time means one
+      # passing build per package; bumping together is the right shape.
+      react-native:
+        patterns:
+          - "react-native"
+          - "@react-native/*"
+          - "@react-native-community/*"
+      react-navigation:
+        patterns:
+          - "@react-navigation/*"
+      react:
+        patterns:
+          - "react"
+          - "react-test-renderer"
+          - "@types/react*"
+    ignore:
+      # React Native major bumps are coordinated (gradle, kotlin, libs).
+      # Patches and minors are fine to auto-PR; majors need human eyes.
+      - dependency-name: "react-native"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+
+  # ─── Android gradle (pix app) ───────────────────────────
+  - package-ecosystem: "gradle"
+    directory: "/android"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      firebase:
+        patterns:
+          - "com.google.firebase:*"
+      kotlinx:
+        patterns:
+          - "org.jetbrains.kotlinx:*"
+      androidx-lifecycle:
+        patterns:
+          - "androidx.lifecycle:*"
+      sqldelight:
+        patterns:
+          - "app.cash.sqldelight:*"
+    ignore:
+      # Owned by ObscuraKit-Kotlin — bumps must happen there first so the
+      # kit re-publishes against the new version, then pix follows.
+      - dependency-name: "org.signal:libsignal-android"
+      - dependency-name: "com.google.protobuf:protobuf-java"
+      # Bumped via the kit's own publication. Dependabot can't see
+      # mavenLocal anyway.
+      - dependency-name: "com.obscura:obscura-kit"
+      # RN gradle plugin owns the AGP version.
+      - dependency-name: "com.android.tools.build:gradle"
+
+  # ─── Android gradle (push-sender dev tool) ──────────────
+  - package-ecosystem: "gradle"
+    directory: "/tools/push-sender"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    groups:
+      kotlinx:
+        patterns:
+          - "org.jetbrains.kotlinx:*"
+
+  # ─── GitHub Actions ─────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
