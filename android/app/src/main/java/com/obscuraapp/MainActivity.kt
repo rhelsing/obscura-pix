@@ -47,4 +47,20 @@ class MainActivity : ReactActivity() {
       ObscuraBridgeModule.deliverLaunchedFrom(screen)
     }
   }
+
+  /**
+   * Forward permission decisions to the bridge so it can resolve the in-flight
+   * `requestPushPermission` promise correctly. Without this, the bridge has no
+   * way to know whether the user granted POST_NOTIFICATIONS and falls back to
+   * "always resolve true" — leaking a push-token registration to the server
+   * even when the user said no.
+   */
+  override fun onRequestPermissionsResult(
+    requestCode: Int,
+    permissions: Array<out String>,
+    grantResults: IntArray,
+  ) {
+    super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    ObscuraBridgeModule.deliverPermissionResult(requestCode, grantResults)
+  }
 }

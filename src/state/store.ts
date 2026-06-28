@@ -128,6 +128,10 @@ export function useSession() {
  * All entries for `model`, auto-loading on first call and auto-refreshing
  * on `messageReceived` / `entriesChanged` events (handled centrally in the
  * bootstrap subscription).
+ *
+ * Tombstones are filtered by the kit (LWWMap.all() drops isDeleted) — entries
+ * returned here are always live. Don't add `!p.data._deleted` checks at call
+ * sites; they'd be dead code.
  */
 export function useModelEntries(model: string): ModelEntry[] {
   const entries = useStore((s) => s.entries[model]);
