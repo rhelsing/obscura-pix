@@ -173,8 +173,8 @@ dependencies {
     implementation("com.google.protobuf:protobuf-java:3.25.3")
 
     // Android SQLDelight driver (replaces JVM driver from ObscuraKit)
-    implementation("app.cash.sqldelight:android-driver:2.0.2")
-    implementation("app.cash.sqldelight:coroutines-extensions:2.0.2")
+    implementation("app.cash.sqldelight:android-driver:2.3.2")
+    implementation("app.cash.sqldelight:coroutines-extensions:2.3.2")
 
     // libsignal Android native (replaces JVM variant from ObscuraKit)
     implementation("org.signal:libsignal-android:0.72.0")
