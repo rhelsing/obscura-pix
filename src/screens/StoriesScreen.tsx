@@ -3,8 +3,7 @@ import {
   View, Text, TouchableOpacity, ScrollView, Modal, StyleSheet,
   Dimensions, Animated, Image, Alert, ActivityIndicator,
 } from 'react-native';
-import { Obscura, type ModelEntry } from '../native/ObscuraModule';
-import { ObscuraEvents } from '../events';
+import { Obscura, onObscuraEvent, type ModelEntry } from '../native/ObscuraModule';
 import { colors } from '../styles';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
@@ -46,8 +45,10 @@ export function StoryViewer({ groups, startIndex, onClose, onViewed }: {
 }) {
   const [groupIdx, setGroupIdx] = useState(startIndex);
   const [storyIdx, setStoryIdx] = useState(0);
+  const [mediaUri, setMediaUri] = useState<string | null>(null);
+  const [mediaLoading, setMediaLoading] = useState(false);
   const progress = useRef(new Animated.Value(0)).current;
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const group = groups[groupIdx];
   const story = group?.stories[storyIdx];
@@ -75,7 +76,40 @@ export function StoryViewer({ groups, startIndex, onClose, onViewed }: {
     }
   }, [storyIdx, groupIdx]);
 
-  // Auto-advance timer — waits for media to load before starting
+  // Load media if story has an attachment — native decrypts to a cached
+  // file and returns the path, which we use as a `file://` URI. No base64
+  // payload in JS, no `data:` URI in Image.
+  useEffect(() => {
+    setMediaUri(null);
+    let attachmentId: string | undefined;
+    let contentKey: string | undefined;
+    let nonce: string | undefined;
+    if (story?.data.mediaUrl) {
+      try {
+        const ref = JSON.parse(story.data.mediaUrl);
+        attachmentId = ref.attachmentId; contentKey = ref.contentKey; nonce = ref.nonce;
+      } catch {}
+    } else if (story?.data.mediaRef) {
+      attachmentId = story.data.mediaRef; contentKey = story.data.contentKey; nonce = story.data.nonce;
+    }
+    if (!attachmentId || !contentKey || !nonce) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        setMediaLoading(true);
+        const path = await Obscura.downloadAttachment(attachmentId!, contentKey!, nonce!);
+        if (!cancelled) setMediaUri(`file://${path}`);
+      } catch (e) {
+        console.warn('Media load failed:', e);
+      } finally {
+        if (!cancelled) setMediaLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [story?.id]);
+
+  // Auto-advance timer — waits for media to load before starting.
+  // (Declared AFTER mediaLoading/mediaUri so the closure sees real state.)
   const hasMedia = !!(story?.data.mediaUrl || story?.data.mediaRef);
   const readyToPlay = !hasMedia || !mediaLoading;
 
@@ -98,40 +132,6 @@ export function StoryViewer({ groups, startIndex, onClose, onViewed }: {
   }, [groupIdx, storyIdx, readyToPlay]);
 
   if (!story) { onClose(); return null; }
-
-  // Load media if story has an attachment
-  const [mediaUri, setMediaUri] = useState<string | null>(null);
-  const [mediaLoading, setMediaLoading] = useState(false);
-
-  useEffect(() => {
-    setMediaUri(null);
-    // Resolve attachment — supports both story format (mediaUrl JSON) and pix format (separate fields)
-    let attachmentId: string | undefined;
-    let contentKey: string | undefined;
-    let nonce: string | undefined;
-    if (story.data.mediaUrl) {
-      try {
-        const ref = JSON.parse(story.data.mediaUrl);
-        attachmentId = ref.attachmentId; contentKey = ref.contentKey; nonce = ref.nonce;
-      } catch {}
-    } else if (story.data.mediaRef) {
-      attachmentId = story.data.mediaRef; contentKey = story.data.contentKey; nonce = story.data.nonce;
-    }
-    if (!attachmentId || !contentKey || !nonce) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        setMediaLoading(true);
-        const base64 = await Obscura.downloadAttachment(attachmentId!, contentKey!, nonce!);
-        if (!cancelled) setMediaUri(`data:image/jpeg;base64,${base64}`);
-      } catch (e) {
-        console.warn('Media load failed:', e);
-      } finally {
-        if (!cancelled) setMediaLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [story.id]);
 
   const timeAgo = (() => {
     const mins = Math.floor((Date.now() - story.timestamp) / 60000);
@@ -208,10 +208,10 @@ export function StoriesScreen({ myUsername }: { myUsername: string }) {
 
   useEffect(() => {
     load();
-    const sub = ObscuraEvents.addListener('ObscuraEvent', (event) => {
-      if (event.type === 'messageReceived') load();
+    return onObscuraEvent((event) => {
+      if (event.type === 'messageReceived' && event.model === 'story') load();
+      else if (event.type === 'entriesChanged' && event.model === 'story') load();
     });
-    return () => sub.remove();
   }, [load]);
 
   // Group stories by author, me first

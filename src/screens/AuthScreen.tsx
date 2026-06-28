@@ -26,7 +26,7 @@ export function AuthScreen({ onAuth }: { onAuth: () => void }) {
     try {
       const scenario = await Obscura.loginSmart(username, password);
       switch (scenario) {
-        case 'existingDevice': case 'onlyDevice':
+        case 'existingDevice':
           await Obscura.defineModels(obscuraSchema);
           await Obscura.connect();
           onAuth();

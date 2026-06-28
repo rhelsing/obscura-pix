@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert } from 'react-native';
-import { Obscura, type ModelEntry } from '../native/ObscuraModule';
-import { ObscuraEvents } from '../events';
+import { Obscura, onObscuraEvent, type ModelEntry } from '../native/ObscuraModule';
 import { s } from '../styles';
 
 export function ProfileScreen({ myUsername, myUserId }: { myUsername: string; myUserId: string }) {
@@ -11,10 +10,11 @@ export function ProfileScreen({ myUsername, myUserId }: { myUsername: string; my
 
   useEffect(() => {
     Obscura.allEntries('profile').then(setProfiles);
-    const sub = ObscuraEvents.addListener('ObscuraEvent', (event) => {
-      if (event.type === 'messageReceived') Obscura.allEntries('profile').then(setProfiles);
+    return onObscuraEvent((event) => {
+      if ((event.type === 'messageReceived' || event.type === 'entriesChanged') && event.model === 'profile') {
+        Obscura.allEntries('profile').then(setProfiles);
+      }
     });
-    return () => sub.remove();
   }, []);
 
   const save = async () => {

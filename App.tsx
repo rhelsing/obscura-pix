@@ -2,9 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   SafeAreaView, View, Text, TouchableOpacity, StatusBar, Alert,
 } from 'react-native';
-import { Obscura, type Friend } from './src/native/ObscuraModule';
+import { Obscura, onObscuraEvent, type Friend } from './src/native/ObscuraModule';
 import { obscuraSchema } from './src/models/schema';
-import { ObscuraEvents } from './src/events';
 import { s, colors } from './src/styles';
 
 import { AuthScreen } from './src/screens/AuthScreen';
@@ -28,24 +27,24 @@ function useObscuraEvents(authed: boolean, onAuthLost?: () => void) {
   const [connState, setConnState] = useState('disconnected');
 
   useEffect(() => {
-    const sub = ObscuraEvents.addListener('ObscuraEvent', (event) => {
+    const unsub = onObscuraEvent((event) => {
       if (event.type === 'friendsUpdated') {
         const all = event.friends || [];
-        setFriends(all.filter((f: Friend) => f.status === 'accepted'));
-        setPending(all.filter((f: Friend) => f.status !== 'accepted'));
-      }
-      if (event.type === 'connectionChanged') setConnState(event.state || 'disconnected');
-      if (event.type === 'authFailed' || (event.type === 'authStateChanged' && event.state === 'loggedOut')) {
+        setFriends(all.filter((f) => f.status === 'accepted'));
+        setPending(all.filter((f) => f.status !== 'accepted'));
+      } else if (event.type === 'connectionChanged') {
+        setConnState(event.state || 'disconnected');
+      } else if (event.type === 'authFailed' || (event.type === 'authStateChanged' && event.state === 'loggedOut')) {
         onAuthLost?.();
       }
     });
-    if (!authed) return () => sub.remove();
-    Obscura.getFriends().then((all: Friend[]) => {
-      setFriends((all || []).filter((f: Friend) => f.status === 'accepted'));
-      setPending((all || []).filter((f: Friend) => f.status !== 'accepted'));
+    if (!authed) return unsub;
+    Obscura.getFriends().then((all) => {
+      setFriends((all || []).filter((f) => f.status === 'accepted'));
+      setPending((all || []).filter((f) => f.status !== 'accepted'));
     }).catch(() => {});
-    Obscura.getConnectionState().then((cs: string) => setConnState(cs || 'disconnected')).catch(() => {});
-    return () => sub.remove();
+    Obscura.getConnectionState().then((cs) => setConnState(cs || 'disconnected')).catch(() => {});
+    return unsub;
   }, [authed]);
 
   return { friends, pending, connState };
@@ -67,7 +66,6 @@ export default function App() {
 
   // Pix viewing state
   const [viewingPix, setViewingPix] = useState<import('./src/native/ObscuraModule').ModelEntry | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
 
   // Push-permission request is gated to once per session — OS caches the decision,
   // but we also avoid re-prompting on every reconnect.
@@ -116,7 +114,7 @@ export default function App() {
   // Register any FCM/APNS token the native side hands us. Fires on first launch,
   // subsequent launches (cached), and token rotation. Server upserts by deviceId.
   useEffect(() => {
-    const sub = ObscuraEvents.addListener('ObscuraEvent', (event: { type: string; token?: string }) => {
+    return onObscuraEvent((event) => {
       if (event.type !== 'pushTokenReceived' || !event.token) return;
       const preview = event.token.slice(0, 8) + '...';
       console.log('[push] token received:', preview);
@@ -124,7 +122,6 @@ export default function App() {
         console.warn('[push] token registration failed:', e);
       });
     });
-    return () => sub.remove();
   }, []);
 
   const onLogout = () => { Obscura.logout(); handleAuthLost(); };
@@ -144,21 +141,15 @@ export default function App() {
   const onSendToRecipients = async (recipients: Friend[], includeStory: boolean) => {
     if (!capturedPhoto || !sendOpts) return;
     setScreen('main');
+    const originalPath = capturedPhoto.path;
+    let resizedPath: string | null = null;
     try {
-      // Resize photo to 1080px max, then read as base64
-      let photoPath = capturedPhoto.path;
-      try {
-        const { ImageResizer } = require('@bam.tech/react-native-image-resizer');
-        if (ImageResizer) {
-          const resized = await ImageResizer.createResizedImage(
-            `file://${photoPath}`, 1080, 1080, 'JPEG', 80, 0
-          );
-          photoPath = resized.path;
-        }
-      } catch (_) { /* resize unavailable — use original */ }
-      const base64 = await Obscura.readFileAsBase64(photoPath);
-      // Upload encrypted attachment
-      const attachment = await Obscura.uploadAttachment(base64);
+      // Resize natively (bytes never round-trip through JS).
+      const resized = await Obscura.resizeImage(originalPath, 1080, 80).catch(() => null);
+      const uploadPath = resized?.path ?? originalPath;
+      if (resized) resizedPath = resized.path;
+
+      const attachment = await Obscura.uploadAttachment(uploadPath);
 
       // Create Pix entry for each recipient
       for (const friend of recipients) {
@@ -191,8 +182,11 @@ export default function App() {
     } catch (e: any) {
       Alert.alert('Send failed', e.message);
     } finally {
-      // Clean up temp photo file
-      if (capturedPhoto?.path) Obscura.deleteFile(capturedPhoto.path).catch(() => {});
+      // Clean up temp files (original capture + resized intermediate).
+      Obscura.deleteFile(originalPath).catch(() => {});
+      if (resizedPath && resizedPath !== originalPath) {
+        Obscura.deleteFile(resizedPath).catch(() => {});
+      }
     }
     setCapturedPhoto(null);
     setSendOpts(null);
@@ -231,13 +225,13 @@ export default function App() {
         groups={[pixGroup]}
         startIndex={0}
         onClose={() => {
-          // Mark as viewed via upsert — LWW merges viewedAt, syncs to sender
+          // Mark as viewed via upsert — LWW merges viewedAt, syncs to sender.
+          // The bridge will fire `entriesChanged{model:'pix'}` so other screens re-query.
           Obscura.upsertEntry('pix', viewingPix.id, {
             ...viewingPix.data,
             viewedAt: Date.now(),
           }).catch(() => {});
           setViewingPix(null);
-          setRefreshKey(k => k + 1);
         }}
         onViewed={(entry) => {
           Obscura.upsertEntry('pix', entry.id, {
@@ -305,7 +299,6 @@ export default function App() {
             myUsername={myUsername}
             onSelectFriend={openChat}
             onViewPix={(entry) => setViewingPix(entry)}
-            refreshTrigger={refreshKey}
           />
         )}
         {tab === 'camera' && <CameraScreen onPhotoCaptured={onPhotoCaptured} />}

@@ -2,8 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList, Alert, StyleSheet, Modal,
 } from 'react-native';
-import { Obscura, type Friend, type ModelEntry } from '../native/ObscuraModule';
-import { ObscuraEvents } from '../events';
+import { Obscura, onObscuraEvent, type Friend, type ModelEntry } from '../native/ObscuraModule';
 import { StoriesScreen } from './StoriesScreen';
 import { colors } from '../styles';
 
@@ -26,13 +25,12 @@ interface FriendActivity {
   latestTimestamp: number;
 }
 
-export function ChatListScreen({ friends, pending, myUsername, onSelectFriend, onViewPix, refreshTrigger }: {
+export function ChatListScreen({ friends, pending, myUsername, onSelectFriend, onViewPix }: {
   friends: Friend[];
   pending: Friend[];
   myUsername: string;
   onSelectFriend: (f: Friend) => void;
   onViewPix: (entry: ModelEntry) => void;
-  refreshTrigger?: number;
 }) {
   const [codeInput, setCodeInput] = useState('');
   const [messages, setMessages] = useState<ModelEntry[]>([]);
@@ -40,22 +38,21 @@ export function ChatListScreen({ friends, pending, myUsername, onSelectFriend, o
 
   const load = useCallback(() => {
     Obscura.allEntries('directMessage').then(setMessages).catch(() => {});
-    Obscura.allEntries('pix').then(entries => {
-      for (const e of entries) console.log(`[ChatList] pix id=${e.id} viewedAt=${e.data.viewedAt} deleted=${e.data._deleted}`);
-      setPixEntries(entries);
-    }).catch(() => {});
+    Obscura.allEntries('pix').then(setPixEntries).catch(() => {});
   }, []);
 
   useEffect(() => {
     load();
-    const sub = ObscuraEvents.addListener('ObscuraEvent', (event) => {
-      if (event.type === 'messageReceived') load();
+    // Reacts to both remote arrivals (messageReceived) and local mutations
+    // like pix-viewed upserts (entriesChanged) — no manual refresh trigger needed.
+    return onObscuraEvent((event) => {
+      if (event.type === 'messageReceived' && (event.model === 'directMessage' || event.model === 'pix')) {
+        load();
+      } else if (event.type === 'entriesChanged' && (event.model === 'directMessage' || event.model === 'pix')) {
+        load();
+      }
     });
-    return () => sub.remove();
   }, [load]);
-
-  // Reload when triggered externally (e.g. after pix deletion)
-  useEffect(() => { load(); }, [refreshTrigger]);
 
   const addFriend = async () => {
     try { await Obscura.addFriendByCode(codeInput); setCodeInput(''); }
@@ -220,6 +217,7 @@ const cl = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
   iconZone: { width: 64, alignItems: 'center', justifyContent: 'center', paddingLeft: 16 },
   chatZone: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 4 },
+  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.accent, justifyContent: 'center', alignItems: 'center' },
   avatarPending: { backgroundColor: '#333' },
   avatarText: { color: '#000', fontWeight: '700', fontSize: 20 },
   // Pix state icons

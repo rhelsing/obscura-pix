@@ -47,87 +47,67 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     // ─── EventSink: kit events → JS ─────────────────────────────────────────
 
     private val eventSink = object : ObscuraSession.EventSink {
-        override fun onConnectionChanged(state: ConnectionState) {
-            emit("connectionChanged", "state" to when (state) {
+        override fun onConnectionChanged(state: ConnectionState) = emit("connectionChanged") {
+            putString("state", when (state) {
                 ConnectionState.DISCONNECTED -> "disconnected"
                 ConnectionState.CONNECTING -> "connecting"
                 ConnectionState.CONNECTED -> "connected"
             })
         }
-        override fun onAuthStateChanged(state: AuthState) {
-            emit("authStateChanged", "state" to when (state) {
+        override fun onAuthStateChanged(state: AuthState) = emit("authStateChanged") {
+            putString("state", when (state) {
                 AuthState.LOGGED_OUT -> "loggedOut"
                 AuthState.PENDING_APPROVAL -> "pendingApproval"
                 AuthState.AUTHENTICATED -> "authenticated"
             })
         }
-        override fun onFriendsUpdated(friends: List<FriendData>) {
+        override fun onFriendsUpdated(friends: List<FriendData>) = emit("friendsUpdated") {
             val arr = Arguments.createArray()
             for (f in friends) arr.pushMap(friendToMap(f, f.status.value))
-            sendEvent("ObscuraEvent", Arguments.createMap().apply {
-                putString("type", "friendsUpdated")
-                putArray("friends", arr)
-            })
+            putArray("friends", arr)
         }
         override fun onMessageReceived(msg: ReceivedMessage, modelName: String?) {
             if (msg.type == "MODEL_SYNC") {
-                sendEvent("ObscuraEvent", Arguments.createMap().apply {
-                    putString("type", "messageReceived")
-                    putString("model", modelName ?: "directMessage")
-                    putMap("entry", Arguments.createMap().apply {
-                        putString("id", java.util.UUID.randomUUID().toString())
-                        putDouble("timestamp", System.currentTimeMillis().toDouble())
-                        putString("authorDeviceId", msg.senderDeviceId ?: "")
-                        putMap("data", Arguments.createMap().apply {
-                            putString("text", msg.text)
-                            putString("sourceUserId", msg.sourceUserId)
-                        })
-                    })
-                })
+                // Payload is intentionally minimal — consumers re-query the ORM for the
+                // authoritative entries. Don't synthesize a fake id here.
+                emit("messageReceived") { putString("model", modelName ?: "directMessage") }
             } else if (msg.type == "FRIEND_REQUEST" || msg.type == "FRIEND_RESPONSE") {
                 Log.d(TAG, "Friend event: ${msg.type} accepted=${msg.accepted}")
             }
         }
-        override fun onDebugLog(message: String) {
-            sendEvent("ObscuraEvent", Arguments.createMap().apply {
-                putString("type", "debugLog")
-                putString("message", message)
-            })
-        }
-        override fun onAuthFailed(reason: String) {
-            sendEvent("ObscuraEvent", Arguments.createMap().apply {
-                putString("type", "authFailed")
-                putString("reason", reason)
-            })
-        }
-        override fun onPushToken(token: String) {
-            sendEvent("ObscuraEvent", Arguments.createMap().apply {
-                putString("type", "pushTokenReceived")
-                putString("token", token)
-            })
-        }
+        override fun onDebugLog(message: String) = emit("debugLog") { putString("message", message) }
+        override fun onAuthFailed(reason: String) = emit("authFailed") { putString("reason", reason) }
+        override fun onPushToken(token: String) = emit("pushTokenReceived") { putString("token", token) }
     }
 
     init {
         ObscuraSession.bindEventSink(eventSink)
     }
 
-    private fun sendEvent(eventName: String, params: WritableMap) {
+    /**
+     * Single event emitter. All `ObscuraEvent` payloads go through here.
+     *
+     * The wire shape is always: `{ type: <eventType>, ...fields }`.
+     * `build` populates the extra fields on top of `type`. Keeping every emission
+     * routed through this one helper means the Swift bridge has exactly one
+     * pattern to match.
+     */
+    private fun emit(type: String, build: WritableMap.() -> Unit = {}) {
+        val params = Arguments.createMap().apply {
+            putString("type", type)
+            build()
+        }
         try {
             reactApplicationContext
                 .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-                .emit(eventName, params)
+                .emit("ObscuraEvent", params)
         } catch (e: Exception) {
-            Log.w(TAG, "sendEvent failed (JS not ready?): ${e.message}")
+            Log.w(TAG, "emit($type) failed (JS not ready?): ${e.message}")
         }
     }
 
-    private fun emit(type: String, vararg fields: Pair<String, String>) {
-        sendEvent("ObscuraEvent", Arguments.createMap().apply {
-            putString("type", type)
-            for ((k, v) in fields) putString(k, v)
-        })
-    }
+    /** Fired after a successful local CRUD on a model. Lets screens re-query reactively. */
+    private fun emitEntriesChanged(model: String) = emit("entriesChanged") { putString("model", model) }
 
     // ─── Auth ───────────────────────────────────────────────────────────────
 
@@ -388,6 +368,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
             try {
                 val entry = requireClient().orm.model(model).create(jsonStringToMap(dataJson))
                 promise.resolve(entryToMap(entry))
+                emitEntriesChanged(model)
             } catch (e: Exception) {
                 Log.e(TAG, "createEntry($model) failed: ${e.message}")
                 promise.reject("CREATE_ERROR", e.message, e)
@@ -401,6 +382,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
             try {
                 val entry = requireClient().orm.model(model).upsert(id, jsonStringToMap(dataJson))
                 promise.resolve(entryToMap(entry))
+                emitEntriesChanged(model)
             } catch (e: Exception) {
                 promise.reject("UPSERT_ERROR", e.message, e)
             }
@@ -441,6 +423,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
             try {
                 requireClient().orm.model(model).delete(id)
                 promise.resolve(null)
+                emitEntriesChanged(model)
             } catch (e: Exception) {
                 promise.reject("DELETE_ERROR", e.message, e)
             }
@@ -481,13 +464,12 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
 
         typingJobs[conversationId] = scope.launch {
             model.observeTyping(conversationId).collectLatest { typers ->
-                val arr = Arguments.createArray()
-                for (t in typers) arr.pushString(t)
-                sendEvent("ObscuraEvent", Arguments.createMap().apply {
-                    putString("type", "typingChanged")
+                emit("typingChanged") {
                     putString("conversationId", conversationId)
+                    val arr = Arguments.createArray()
+                    for (t in typers) arr.pushString(t)
                     putArray("typers", arr)
-                })
+                }
             }
         }
         promise.resolve(null)
@@ -499,13 +481,16 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         promise.resolve(null)
     }
 
-    // ─── Attachments ────────────────────────────────────────────────────────
+    // ─── Attachments (path-based) ───────────────────────────────────────────
+    // Bytes never cross the bridge. JS hands us a file path; we read, encrypt,
+    // upload. On download, we decrypt to a deterministic cache path and return
+    // that path so JS can use it directly as a `file://` URI.
 
     @ReactMethod
-    fun uploadAttachment(base64Data: String, promise: Promise) {
+    fun uploadAttachment(filePath: String, promise: Promise) {
         scope.launch {
             try {
-                val bytes = Base64.decode(base64Data, Base64.DEFAULT)
+                val bytes = java.io.File(filePath).readBytes()
                 val encrypted = com.obscura.kit.crypto.AttachmentCrypto.encrypt(bytes)
                 val (id, _) = requireClient().uploadAttachment(encrypted.ciphertext)
                 promise.resolve(Arguments.createMap().apply {
@@ -523,27 +508,162 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     fun downloadAttachment(id: String, contentKey: String, nonce: String, promise: Promise) {
         scope.launch {
             try {
-                val keyBytes = Base64.decode(contentKey, Base64.DEFAULT)
-                val nonceBytes = Base64.decode(nonce, Base64.DEFAULT)
-                val data = requireClient().downloadDecryptedAttachment(id, keyBytes, nonceBytes)
-                promise.resolve(Base64.encodeToString(data, Base64.NO_WRAP))
-            } catch (e: Exception) {
-                promise.reject("DOWNLOAD_ERROR", e.message, e)
+                val dir = java.io.File(reactApplicationContext.cacheDir, "attachments").apply { mkdirs() }
+                // Sanitize the id to a safe filename — attachment ids are server-generated
+                // (UUIDs in practice) but we don't want any path traversal surprises.
+                val safe = id.replace(Regex("[^A-Za-z0-9_-]"), "_")
+                val dest = java.io.File(dir, "$safe.jpg")
+                if (!dest.exists() || dest.length() == 0L) {
+                    val keyBytes = Base64.decode(contentKey, Base64.DEFAULT)
+                    val nonceBytes = Base64.decode(nonce, Base64.DEFAULT)
+                    val data = requireClient().downloadDecryptedAttachment(id, keyBytes, nonceBytes)
+                    // Atomic publish: write to a tmp file then rename into place so a
+                    // concurrent reader never sees a partially-written file.
+                    val tmp = java.io.File(dir, "$safe.jpg.tmp")
+                    try {
+                        tmp.writeBytes(data)
+                        if (!tmp.renameTo(dest)) {
+                            // Fallback for the (unlikely) cross-mount rename failure.
+                            tmp.copyTo(dest, overwrite = true)
+                        }
+                    } finally {
+                        tmp.delete()
+                    }
+                }
+                promise.resolve(dest.absolutePath)
+            } catch (t: Throwable) {
+                promise.reject("DOWNLOAD_ERROR", t.message, t)
             }
         }
     }
 
+    // ─── Image processing (native, path-in/path-out) ────────────────────────
+
+    /**
+     * Resize the image at [srcPath] so its largest side is at most [maxDim] px,
+     * re-encoded as JPEG at [quality] (1-100). Honors the JPEG's EXIF
+     * `Orientation` tag — the output pixels are already in display orientation
+     * (front-camera selfies don't render rotated). Returns the new file path
+     * plus its post-rotation dimensions. The original file is left untouched.
+     *
+     * Memory: uses `inSampleSize` two-pass decoding so a 12 MP source doesn't
+     * allocate a 48 MB intermediate bitmap on low-memory devices.
+     */
     @ReactMethod
-    fun sendPhoto(friendUserId: String, base64Data: String, promise: Promise) {
+    fun resizeImage(srcPath: String, maxDim: Int, quality: Int, promise: Promise) {
         scope.launch {
             try {
-                val c = requireClient()
-                val bytes = Base64.decode(base64Data, Base64.DEFAULT)
-                val friend = c.friendList.value.find { it.userId == friendUserId }
-                if (friend != null) c.sendEncryptedAttachment(friend.username, bytes, "image/jpeg")
-                promise.resolve(null)
-            } catch (e: Exception) {
-                promise.reject("SEND_PHOTO_ERROR", e.message, e)
+                require(maxDim > 0) { "maxDim must be positive (got $maxDim)" }
+
+                // Pass 1: read bounds only.
+                val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                android.graphics.BitmapFactory.decodeFile(srcPath, bounds)
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+                    throw IllegalArgumentException("Could not decode image at $srcPath")
+                }
+
+                // Pass 2: sub-sampled decode keeps peak memory bounded.
+                val srcLargest = maxOf(bounds.outWidth, bounds.outHeight)
+                var sample = 1
+                while (sample * 2 <= srcLargest / maxDim) sample *= 2
+                val decoded = android.graphics.BitmapFactory.decodeFile(
+                    srcPath,
+                    android.graphics.BitmapFactory.Options().apply { inSampleSize = sample },
+                ) ?: throw IllegalArgumentException("Could not decode image at $srcPath")
+
+                // EXIF orientation — both the rotation and the flip variants used by
+                // Android front cameras. We bake the transform into the bitmap so the
+                // output JPEG has display-orientation pixels and no orientation tag.
+                val orientation = try {
+                    android.media.ExifInterface(srcPath).getAttributeInt(
+                        android.media.ExifInterface.TAG_ORIENTATION,
+                        android.media.ExifInterface.ORIENTATION_NORMAL,
+                    )
+                } catch (_: Throwable) { android.media.ExifInterface.ORIENTATION_NORMAL }
+
+                val matrix = android.graphics.Matrix()
+                when (orientation) {
+                    android.media.ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+                    android.media.ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+                    android.media.ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+                    android.media.ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+                    android.media.ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+                    android.media.ExifInterface.ORIENTATION_TRANSPOSE -> { matrix.postRotate(90f); matrix.postScale(-1f, 1f) }
+                    android.media.ExifInterface.ORIENTATION_TRANSVERSE -> { matrix.postRotate(-90f); matrix.postScale(-1f, 1f) }
+                }
+
+                // 90°/270° orientations swap apparent width/height for the scale check.
+                val swap = orientation == android.media.ExifInterface.ORIENTATION_ROTATE_90 ||
+                           orientation == android.media.ExifInterface.ORIENTATION_ROTATE_270 ||
+                           orientation == android.media.ExifInterface.ORIENTATION_TRANSPOSE ||
+                           orientation == android.media.ExifInterface.ORIENTATION_TRANSVERSE
+                val rotW = if (swap) decoded.height else decoded.width
+                val rotH = if (swap) decoded.width else decoded.height
+                val rotLargest = maxOf(rotW, rotH)
+                val scale = if (rotLargest <= maxDim) 1.0 else maxDim.toDouble() / rotLargest
+                if (scale != 1.0) matrix.postScale(scale.toFloat(), scale.toFloat())
+
+                val output = android.graphics.Bitmap.createBitmap(
+                    decoded, 0, 0, decoded.width, decoded.height, matrix, true,
+                )
+                if (output !== decoded) decoded.recycle()
+
+                val dir = java.io.File(reactApplicationContext.cacheDir, "resized").apply { mkdirs() }
+                val dest = java.io.File(dir, "img_${System.currentTimeMillis()}.jpg")
+                java.io.FileOutputStream(dest).use { out ->
+                    output.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality.coerceIn(1, 100), out)
+                }
+                val outW = output.width
+                val outH = output.height
+                output.recycle()
+
+                promise.resolve(Arguments.createMap().apply {
+                    putString("path", dest.absolutePath)
+                    putInt("width", outW)
+                    putInt("height", outH)
+                })
+            } catch (t: Throwable) {
+                // Catch Throwable, not Exception — Bitmap allocations can throw OOM
+                // (an Error, not an Exception); silently dropping that would leave
+                // the JS promise hanging forever.
+                Log.e(TAG, "resizeImage failed: ${t.message}")
+                promise.reject("RESIZE_ERROR", t.message, t)
+            }
+        }
+    }
+
+    /**
+     * Write a solid-color JPEG of the requested size to the cache and return
+     * the path. Replaces the JS-side BMP/base64 dance used by CameraScreen on
+     * emulators with no camera.
+     */
+    @ReactMethod
+    fun writeTestImage(width: Int, height: Int, promise: Promise) {
+        scope.launch {
+            try {
+                require(width in 1..8192 && height in 1..8192) {
+                    "dimensions out of range (got ${width}x${height})"
+                }
+                val color = android.graphics.Color.argb(
+                    255,
+                    (Math.random() * 256).toInt(),
+                    (Math.random() * 256).toInt(),
+                    (Math.random() * 256).toInt(),
+                )
+                val bmp = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+                bmp.eraseColor(color)
+                val dest = java.io.File(reactApplicationContext.cacheDir, "test_${System.currentTimeMillis()}.jpg")
+                java.io.FileOutputStream(dest).use { out ->
+                    bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)
+                }
+                bmp.recycle()
+                promise.resolve(Arguments.createMap().apply {
+                    putString("path", dest.absolutePath)
+                    putInt("width", width)
+                    putInt("height", height)
+                })
+            } catch (t: Throwable) {
+                promise.reject("TEST_IMAGE_ERROR", t.message, t)
             }
         }
     }
@@ -635,39 +755,11 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     @ReactMethod fun addListener(eventName: String) {}
     @ReactMethod fun removeListeners(count: Int) {}
 
-    // ─── File helpers (replaces react-native-fs) ────────────────────────────
-    // Minimal surface we actually need: a temp dir, base64 read/write, unlink.
-    // Keeping these on the bridge means one less native dep in the APK.
-
-    @ReactMethod
-    fun getCacheDir(promise: Promise) {
-        promise.resolve(reactApplicationContext.cacheDir.absolutePath)
-    }
-
-    @ReactMethod
-    fun writeBase64File(path: String, base64: String, promise: Promise) {
-        scope.launch {
-            try {
-                val bytes = Base64.decode(base64, Base64.DEFAULT)
-                java.io.File(path).writeBytes(bytes)
-                promise.resolve(null)
-            } catch (e: Throwable) {
-                promise.reject("WRITE_FAILED", e)
-            }
-        }
-    }
-
-    @ReactMethod
-    fun readFileAsBase64(path: String, promise: Promise) {
-        scope.launch {
-            try {
-                val bytes = java.io.File(path).readBytes()
-                promise.resolve(Base64.encodeToString(bytes, Base64.NO_WRAP))
-            } catch (e: Throwable) {
-                promise.reject("READ_FAILED", e)
-            }
-        }
-    }
+    // ─── File helpers ───────────────────────────────────────────────────────
+    // Just enough to let JS clean up temp files (e.g. vision-camera's capture path).
+    // Everything else that used to live here moved into the typed contract above
+    // (uploadAttachment, downloadAttachment, resizeImage, writeTestImage) so bytes
+    // never round-trip through the JS bridge as base64.
 
     @ReactMethod
     fun deleteFile(path: String, promise: Promise) {
