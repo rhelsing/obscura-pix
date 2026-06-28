@@ -3,8 +3,7 @@ import {
   SafeAreaView, View, Text, TextInput, TouchableOpacity, FlatList,
   KeyboardAvoidingView, Platform, Animated, StyleSheet,
 } from 'react-native';
-import { Obscura, conversationId, type Friend, type ModelEntry } from '../native/ObscuraModule';
-import { ObscuraEvents } from '../events';
+import { Obscura, onObscuraEvent, conversationId, type Friend, type ModelEntry } from '../native/ObscuraModule';
 import { s, colors } from '../styles';
 
 // ─── Typing Bubble ──────────────────────────────────────
@@ -70,18 +69,19 @@ export function ChatScreen({ friend, myUserId, myUsername, onBack, onViewPix }: 
 
   useEffect(() => {
     load();
-    const sub = ObscuraEvents.addListener('ObscuraEvent', (event) => {
-      if (event.type === 'messageReceived') {
+    const unsub = onObscuraEvent((event) => {
+      if (event.type === 'messageReceived' && (event.model === 'directMessage' || event.model === 'pix')) {
         load();
         setTypers([]); // clear typing bubble when a real message arrives
-      }
-      if (event.type === 'typingChanged' && event.conversationId === convId) {
+      } else if (event.type === 'entriesChanged' && (event.model === 'directMessage' || event.model === 'pix')) {
+        load();
+      } else if (event.type === 'typingChanged' && event.conversationId === convId) {
         setTypers(event.typers || []);
       }
     });
     Obscura.observeTyping(convId);
     return () => {
-      sub.remove();
+      unsub();
       Obscura.stopObservingTyping(convId);
     };
   }, [convId, load]);

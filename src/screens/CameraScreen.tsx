@@ -1,5 +1,5 @@
 import React, { useRef, useState, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Linking, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Linking } from 'react-native';
 import {
   Camera, useCameraDevice, useCameraPermission,
   type PhotoFile,
@@ -25,40 +25,11 @@ export function CameraScreen({ onPhotoCaptured }: {
   const flipCamera = () => setFacing(f => f === 'back' ? 'front' : 'back');
   const toggleFlash = () => setFlash(f => f === 'off' ? 'on' : 'off');
 
-  // Test photo for simulator — must be before any early returns (hooks rule)
+  // Emulator fallback — native side synthesizes a JPEG so the rest of the
+  // capture pipeline (resize / upload) sees the same shape as a real photo.
   const takeTestPhoto = useCallback(async () => {
-    const r = Math.floor(Math.random() * 256);
-    const g = Math.floor(Math.random() * 256);
-    const b = Math.floor(Math.random() * 256);
-    const w = 100, h = 100;
-    const rowSize = Math.ceil((w * 3) / 4) * 4;
-    const pixelDataSize = rowSize * h;
-    const fileSize = 54 + pixelDataSize;
-    const buf = new Uint8Array(fileSize);
-    buf[0] = 0x42; buf[1] = 0x4D;
-    buf[2] = fileSize & 0xFF; buf[3] = (fileSize >> 8) & 0xFF;
-    buf[4] = (fileSize >> 16) & 0xFF; buf[5] = (fileSize >> 24) & 0xFF;
-    buf[10] = 54; buf[14] = 40;
-    buf[18] = w & 0xFF; buf[19] = (w >> 8) & 0xFF;
-    buf[22] = h & 0xFF; buf[23] = (h >> 8) & 0xFF;
-    buf[26] = 1; buf[28] = 24;
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const offset = 54 + y * rowSize + x * 3;
-        buf[offset] = b; buf[offset + 1] = g; buf[offset + 2] = r;
-      }
-    }
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-    let base64 = '';
-    for (let i = 0; i < buf.length; i += 3) {
-      const a = buf[i], bb = buf[i + 1] || 0, c = buf[i + 2] || 0;
-      base64 += chars[a >> 2] + chars[((a & 3) << 4) | (bb >> 4)] +
-        (i + 1 < buf.length ? chars[((bb & 15) << 2) | (c >> 6)] : '=') +
-        (i + 2 < buf.length ? chars[c & 63] : '=');
-    }
-    const path = `${await Obscura.getCacheDir()}/test_photo_${Date.now()}.bmp`;
-    await Obscura.writeBase64File(path, base64);
-    onPhotoCaptured?.({ path, width: w, height: h } as any);
+    const img = await Obscura.writeTestImage(100, 100);
+    onPhotoCaptured?.({ path: img.path, width: img.width, height: img.height } as any);
   }, [onPhotoCaptured]);
 
   // Permission not granted yet

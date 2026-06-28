@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, TouchableOpacity, FlatList, StyleSheet } from 'react-native';
-import { Obscura, type ModelEntry } from '../native/ObscuraModule';
-import { ObscuraEvents } from '../events';
+import { Obscura, onObscuraEvent, type ModelEntry } from '../native/ObscuraModule';
 import { colors } from '../styles';
 
 function timeAgo(timestamp: number): string {
@@ -31,10 +30,10 @@ export function PixInbox({ myUsername, onViewPix }: {
 
   useEffect(() => {
     load();
-    const sub = ObscuraEvents.addListener('ObscuraEvent', (event) => {
-      if (event.type === 'messageReceived') load();
+    return onObscuraEvent((event) => {
+      if (event.type === 'messageReceived' && event.model === 'pix') load();
+      else if (event.type === 'entriesChanged' && event.model === 'pix') load();
     });
-    return () => sub.remove();
   }, [load]);
 
   return (
