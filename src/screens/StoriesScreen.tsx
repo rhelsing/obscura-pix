@@ -294,7 +294,7 @@ const sv = StyleSheet.create({
   content: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
   contentText: { color: '#fff', fontSize: 24, fontWeight: '600', textAlign: 'center' },
   captionOverlay: { color: '#fff', fontSize: 18, fontWeight: '600', textAlign: 'center', backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12, position: 'absolute', bottom: 80 },
-  tapZones: { ...StyleSheet.absoluteFillObject, flexDirection: 'row', top: 100 },
+  tapZones: { ...StyleSheet.absoluteFill, flexDirection: 'row', top: 100 },
   tapLeft: { flex: 1 },
   tapRight: { flex: 2 },
 });

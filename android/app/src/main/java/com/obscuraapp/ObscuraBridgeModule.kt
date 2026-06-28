@@ -635,6 +635,50 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     @ReactMethod fun addListener(eventName: String) {}
     @ReactMethod fun removeListeners(count: Int) {}
 
+    // ─── File helpers (replaces react-native-fs) ────────────────────────────
+    // Minimal surface we actually need: a temp dir, base64 read/write, unlink.
+    // Keeping these on the bridge means one less native dep in the APK.
+
+    @ReactMethod
+    fun getCacheDir(promise: Promise) {
+        promise.resolve(reactApplicationContext.cacheDir.absolutePath)
+    }
+
+    @ReactMethod
+    fun writeBase64File(path: String, base64: String, promise: Promise) {
+        scope.launch {
+            try {
+                val bytes = Base64.decode(base64, Base64.DEFAULT)
+                java.io.File(path).writeBytes(bytes)
+                promise.resolve(null)
+            } catch (e: Throwable) {
+                promise.reject("WRITE_FAILED", e)
+            }
+        }
+    }
+
+    @ReactMethod
+    fun readFileAsBase64(path: String, promise: Promise) {
+        scope.launch {
+            try {
+                val bytes = java.io.File(path).readBytes()
+                promise.resolve(Base64.encodeToString(bytes, Base64.NO_WRAP))
+            } catch (e: Throwable) {
+                promise.reject("READ_FAILED", e)
+            }
+        }
+    }
+
+    @ReactMethod
+    fun deleteFile(path: String, promise: Promise) {
+        try {
+            java.io.File(path).delete()
+            promise.resolve(null)
+        } catch (e: Throwable) {
+            promise.reject("DELETE_FAILED", e)
+        }
+    }
+
     @Suppress("DEPRECATION")
     override fun onCatalystInstanceDestroy() {
         super.onCatalystInstanceDestroy()
