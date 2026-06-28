@@ -76,28 +76,20 @@ export function StoryViewer({ groups, startIndex, onClose, onViewed }: {
     }
   }, [storyIdx, groupIdx]);
 
-  // Load media if story has an attachment — native decrypts to a cached
+  // Load media if the entry has an attachment — native decrypts to a cached
   // file and returns the path, which we use as a `file://` URI. No base64
-  // payload in JS, no `data:` URI in Image.
+  // payload in JS, no `data:` URI in Image. Story and pix share the shape.
   useEffect(() => {
     setMediaUri(null);
-    let attachmentId: string | undefined;
-    let contentKey: string | undefined;
-    let nonce: string | undefined;
-    if (story?.data.mediaUrl) {
-      try {
-        const ref = JSON.parse(story.data.mediaUrl);
-        attachmentId = ref.attachmentId; contentKey = ref.contentKey; nonce = ref.nonce;
-      } catch {}
-    } else if (story?.data.mediaRef) {
-      attachmentId = story.data.mediaRef; contentKey = story.data.contentKey; nonce = story.data.nonce;
-    }
-    if (!attachmentId || !contentKey || !nonce) return;
+    const mediaRef = story?.data.mediaRef as string | undefined;
+    const contentKey = story?.data.contentKey as string | undefined;
+    const nonce = story?.data.nonce as string | undefined;
+    if (!mediaRef || !contentKey || !nonce) return;
     let cancelled = false;
     (async () => {
       try {
         setMediaLoading(true);
-        const path = await Obscura.downloadAttachment(attachmentId!, contentKey!, nonce!);
+        const path = await Obscura.downloadAttachment(mediaRef, contentKey, nonce);
         if (!cancelled) setMediaUri(`file://${path}`);
       } catch (e) {
         console.warn('Media load failed:', e);
@@ -110,7 +102,7 @@ export function StoryViewer({ groups, startIndex, onClose, onViewed }: {
 
   // Auto-advance timer — waits for media to load before starting.
   // (Declared AFTER mediaLoading/mediaUri so the closure sees real state.)
-  const hasMedia = !!(story?.data.mediaUrl || story?.data.mediaRef);
+  const hasMedia = !!story?.data.mediaRef;
   const readyToPlay = !hasMedia || !mediaLoading;
 
   useEffect(() => {

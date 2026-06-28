@@ -166,15 +166,15 @@ export default function App() {
 
       // Post to story if selected
       if (includeStory) {
-        const storyMediaRef = JSON.stringify({
-          attachmentId: attachment.id,
-          contentKey: attachment.contentKey,
-          nonce: attachment.nonce,
-        });
+        // Story shares the pix attachment shape: separate mediaRef/contentKey/
+        // nonce fields. (Used to be a JSON blob in `mediaUrl` — one shape per
+        // model is much cleaner for the cross-platform contract.)
         await Obscura.createEntry('story', {
           content: sendOpts.caption || '',
           authorUsername: myUsername,
-          mediaUrl: storyMediaRef,
+          mediaRef: attachment.id,
+          contentKey: attachment.contentKey,
+          nonce: attachment.nonce,
         });
       }
 
