@@ -2,8 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   SafeAreaView, View, Text, TouchableOpacity, StatusBar, Alert,
 } from 'react-native';
-import { Obscura, onObscuraEvent, type Friend } from './src/native/ObscuraModule';
-import { obscuraSchema } from './src/models/schema';
+import { Obscura, onObscuraEvent, type Friend } from './src/native/ObscuraModule';import { obscuraSchema } from './src/models/schema';
 import { s, colors } from './src/styles';
 
 import { AuthScreen } from './src/screens/AuthScreen';
@@ -123,6 +122,25 @@ export default function App() {
       });
     });
   }, []);
+
+  // Deep-link routing: cold-start (pulled once on mount) AND warm-start
+  // (via the `launchedFrom` event). Both deliver the same { screen } payload.
+  const routeFromDeepLink = useCallback((screen: string) => {
+    if (screen === 'chat') {
+      setScreen('main');
+      setTab('chat');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!authed) return;
+    Obscura.getLaunchIntent().then(intent => {
+      if (intent?.screen) routeFromDeepLink(intent.screen);
+    }).catch(() => {});
+    return onObscuraEvent((event) => {
+      if (event.type === 'launchedFrom' && event.screen) routeFromDeepLink(event.screen);
+    });
+  }, [authed, routeFromDeepLink]);
 
   const onLogout = () => { Obscura.logout(); handleAuthLost(); };
   const openChat = (f: Friend) => { setSelectedFriend(f); setScreen('chat'); };

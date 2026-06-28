@@ -1,5 +1,6 @@
 package com.obscuraapp
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -12,8 +13,9 @@ import androidx.core.app.NotificationCompat
 /**
  * Single place that turns generic text into a local notification.
  *
- * Privacy invariant — enforced here, never relaxed: the text is ONLY ever
- * "New pix" / "New message". No sender, no content, no conversation/IDs.
+ * Privacy invariant — enforced here, never relaxed: the title and body are
+ * ONLY ever generic ("Obscura" / "New pix" / "New message"). No sender,
+ * no content, no conversation/IDs in the visible notification or its extras.
  *
  * Used by BOTH delivery paths so the UX is identical regardless of transport:
  *   - [ObscuraMessagingService] (FCM silent-push drain, when the process was dead)
@@ -23,19 +25,22 @@ import androidx.core.app.NotificationCompat
  */
 object NotificationHelper {
     private const val TAG = "ObscuraBridge"
-    private const val CHANNEL_ID = "obscura_default"
-    private const val CHANNEL_NAME = "Obscura"
+    private const val CHANNEL_ID = "obscura_messages"
+    private const val CHANNEL_NAME = "Obscura messages"
     private const val NOTIFICATION_ID = 1
 
     fun ensureChannel(context: Context) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (manager.getNotificationChannel(CHANNEL_ID) == null) {
-                manager.createNotificationChannel(
-                    NotificationChannel(CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_DEFAULT)
-                        .apply { description = "Notifications for new pix and messages" }
-                )
-            }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (manager.getNotificationChannel(CHANNEL_ID) == null) {
+            manager.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_HIGH)
+                    .apply {
+                        description = "Notifications for new pix and messages"
+                        enableVibration(true)
+                        lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                    }
+            )
         }
     }
 
@@ -55,8 +60,12 @@ object NotificationHelper {
 
         val notif = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(text)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentTitle("Obscura")
+            .setContentText(text)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setPriority(NotificationCompat.PRIORITY_HIGH) // pre-O fallback; channel wins on O+
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .build()

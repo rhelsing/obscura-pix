@@ -78,10 +78,29 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         override fun onDebugLog(message: String) = emit("debugLog") { putString("message", message) }
         override fun onAuthFailed(reason: String) = emit("authFailed") { putString("reason", reason) }
         override fun onPushToken(token: String) = emit("pushTokenReceived") { putString("token", token) }
+        override fun onAppStateChanged(state: ObscuraSession.AppState) = emit("appStateChanged") {
+            putString("state", when (state) {
+                ObscuraSession.AppState.ACTIVE -> "active"
+                ObscuraSession.AppState.BACKGROUND -> "background"
+            })
+        }
     }
 
     init {
+        instance = this
         ObscuraSession.bindEventSink(eventSink)
+    }
+
+    companion object {
+        @Volatile private var instance: ObscuraBridgeModule? = null
+        /**
+         * Called from [MainActivity.onNewIntent] when a deep-link intent arrives
+         * while the app is already running. Cold-start deep-links go through
+         * [getLaunchIntent] instead (the bridge isn't built yet at that point).
+         */
+        fun deliverLaunchedFrom(screen: String) {
+            instance?.emit("launchedFrom") { putString("screen", screen) }
+        }
     }
 
     /**
@@ -701,6 +720,28 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         }
     }
 
+    // ─── Deep linking ───────────────────────────────────────────────────────
+
+    /**
+     * Returns the cold-start deep-link target (currently just a "screen"
+     * extra set by [NotificationHelper]) and consumes the extra so subsequent
+     * calls return null. JS should call this once on app mount; warm-start
+     * deep-links arrive via the `launchedFrom` event instead.
+     */
+    @ReactMethod
+    fun getLaunchIntent(promise: Promise) {
+        val activity = reactApplicationContext.currentActivity
+        val intent = activity?.intent
+        val screen = intent?.getStringExtra("screen")
+        // Consume the extra so a config change / re-call doesn't re-trigger.
+        intent?.removeExtra("screen")
+        if (screen == null) {
+            promise.resolve(null)
+        } else {
+            promise.resolve(Arguments.createMap().apply { putString("screen", screen) })
+        }
+    }
+
     // ─── Push Notifications ─────────────────────────────────────────────────
 
     @ReactMethod
@@ -778,6 +819,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         typingJobs.values.forEach { it.cancel() }
         typingJobs.clear()
         scope.cancel()
+        instance = null
     }
 
     // ─── Marshallers ────────────────────────────────────────────────────────

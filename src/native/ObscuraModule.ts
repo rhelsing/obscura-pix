@@ -39,6 +39,12 @@ export interface AttachmentRef {
 
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected';
 export type AuthState = 'loggedOut' | 'authenticated' | 'pendingApproval';
+export type AppLifecycleState = 'active' | 'background';
+
+export interface LaunchIntent {
+  /** Screen the app should route to (set when launched via notification tap). */
+  screen: string;
+}
 
 export type LoginScenario =
   | 'existingDevice'
@@ -152,6 +158,14 @@ export const Obscura = {
   setSecureScreen: (enabled: boolean): Promise<void> => Bridge.setSecureScreen(enabled),
   /** Best-effort unlink. Used to clean up temp capture files. */
   deleteFile: (path: string): Promise<void> => Bridge.deleteFile(path),
+  /**
+   * Cold-start deep-link target — the screen the app was launched into via a
+   * notification tap. Returns null if the app wasn't launched from a deep
+   * link. The intent extra is consumed by the call, so re-calls return null.
+   * For warm-start deep-links (app already running, notification tapped),
+   * listen for the `launchedFrom` event instead.
+   */
+  getLaunchIntent: (): Promise<LaunchIntent | null> => Bridge.getLaunchIntent(),
 };
 
 // ─── Events ──────────────────────────────────────────────
@@ -166,6 +180,8 @@ export type ObscuraEvent =
   | { type: 'connectionChanged'; state: ConnectionState }
   | { type: 'authStateChanged'; state: AuthState }
   | { type: 'authFailed'; reason: string }
+  | { type: 'appStateChanged'; state: AppLifecycleState }
+  | { type: 'launchedFrom'; screen: string }
   | { type: 'friendsUpdated'; friends: Friend[] }
   | { type: 'messageReceived'; model: string }
   | { type: 'entriesChanged'; model: string }

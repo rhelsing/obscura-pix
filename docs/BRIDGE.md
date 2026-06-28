@@ -161,6 +161,25 @@ The source file is untouched in both cases.
 The JS layer listens for `pushTokenReceived` and calls `registerPushToken`
 to upsert it on the server.
 
+### Deep linking
+
+| Method | Args | Returns | Platforms |
+|---|---|---|---|
+| `getLaunchIntent()` | — | `{ screen: string } \| null` | both |
+
+`getLaunchIntent` returns the cold-start deep-link target and consumes it
+(repeat calls return null). Called once by JS on app mount. Warm-start
+deep-links (app already running, notification tapped) arrive via the
+[`launchedFrom`](#launchedfrom) event instead — the bridge isn't built yet
+at cold start so the pull API is the only way to learn about that case.
+
+The current schema is a single `screen` string. Implementations:
+- Android: read intent extras (`intent.getStringExtra("screen")`) in
+  the host activity, hook `onNewIntent` for warm starts.
+- iOS: read launch options / `UNNotificationResponse.userInfo` in
+  `application(_:didFinishLaunchingWithOptions:)` and the notification
+  delegate's `didReceive` callback.
+
 ### Misc
 
 | Method | Args | Returns | Platforms |
@@ -203,6 +222,18 @@ logout, and pending-approval transitions. JS treats `'loggedOut'` as
 `{ type: 'authFailed', reason: string }` — emitted when the kit's token
 refresh has exhausted its retry budget. JS treats this as "session is gone,
 route to AuthScreen."
+
+### `appStateChanged`
+`{ type: 'appStateChanged', state: 'active' | 'background' }` — emitted on
+process-wide foreground/background transitions. JS uses this to refresh
+data on resume or pause expensive listeners on background. Replayed once
+to a freshly-bound bridge so JS sees the current state without waiting for
+the next transition.
+
+### `launchedFrom`
+`{ type: 'launchedFrom', screen: string }` — emitted when a warm-start
+deep-link arrives (app already running, notification tapped). For cold
+starts use [`getLaunchIntent`](#deep-linking) instead.
 
 ### `friendsUpdated`
 `{ type: 'friendsUpdated', friends: Friend[] }` — emitted whenever the

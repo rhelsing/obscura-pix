@@ -1,5 +1,6 @@
 package com.obscuraapp
 
+import android.content.Intent
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
@@ -19,4 +20,18 @@ class MainActivity : ReactActivity() {
    */
   override fun createReactActivityDelegate(): ReactActivityDelegate =
       DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
+
+  /**
+   * Warm-start deep link: a notification tap (or any explicit launch intent)
+   * arriving while the activity already exists. Cold-start deep-links are
+   * pulled by JS via [ObscuraBridgeModule.getLaunchIntent] instead, because
+   * the bridge isn't constructed yet at cold-start time.
+   */
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    intent.getStringExtra("screen")?.let { screen ->
+      ObscuraBridgeModule.deliverLaunchedFrom(screen)
+    }
+  }
 }

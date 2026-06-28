@@ -60,7 +60,11 @@ object ObscuraSession {
         fun onDebugLog(message: String)
         fun onAuthFailed(reason: String)
         fun onPushToken(token: String)
+        fun onAppStateChanged(state: AppState)
     }
+
+    /** Process-wide app foreground/background. Matches the iOS-friendly minimal set. */
+    enum class AppState { ACTIVE, BACKGROUND }
 
     private lateinit var appContext: Context
     private val prefs: SharedPreferences by lazy {
@@ -107,6 +111,7 @@ object ObscuraSession {
             ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
                     appInForeground = true
+                    sink?.onAppStateChanged(AppState.ACTIVE)
                     val c = client ?: return
                     if (c.authState.value == AuthState.AUTHENTICATED &&
                         c.connectionState.value == ConnectionState.DISCONNECTED) {
@@ -118,7 +123,10 @@ object ObscuraSession {
                         }
                     }
                 }
-                override fun onStop(owner: LifecycleOwner) { appInForeground = false }
+                override fun onStop(owner: LifecycleOwner) {
+                    appInForeground = false
+                    sink?.onAppStateChanged(AppState.BACKGROUND)
+                }
             })
         }
 
@@ -135,6 +143,7 @@ object ObscuraSession {
     fun bindEventSink(s: EventSink) {
         sink = s
         // Replay current state so a freshly-bound bridge immediately sees correct UI.
+        s.onAppStateChanged(if (appInForeground) AppState.ACTIVE else AppState.BACKGROUND)
         val c = client ?: return
         s.onAuthStateChanged(c.authState.value)
         s.onConnectionChanged(c.connectionState.value)
