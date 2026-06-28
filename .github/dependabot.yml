@@ -25,7 +25,6 @@ updates:
       react:
         patterns:
           - "react"
-          - "react-test-renderer"
           - "@types/react*"
     ignore:
       # React Native major bumps are coordinated (gradle, kotlin, libs).
@@ -34,6 +33,21 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "react"
         update-types: ["version-update:semver-major"]
+      # vision-camera v5 is a nitro-modules rewrite — adds 2 native deps,
+      # completely different API. Deliberately held at v4.x.
+      - dependency-name: "react-native-vision-camera"
+        update-types: ["version-update:semver-major"]
+      # Peer-pinned by @react-native/* presets — can't move ahead of RN.
+      # Minors/patches still fine (rare, but possible).
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@babel/core"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@babel/runtime"
+        update-types: ["version-update:semver-major"]
+      # TypeScript: we deliberately accept patch/minor bumps. 5.9 → 6 was
+      # tested via CI and accepted. Leave room for future majors to also be
+      # auto-PR'd so we know about them.
 
   # ─── Android gradle (pix app) ───────────────────────────
   - package-ecosystem: "gradle"
@@ -52,19 +66,21 @@ updates:
       androidx-lifecycle:
         patterns:
           - "androidx.lifecycle:*"
-      sqldelight:
-        patterns:
-          - "app.cash.sqldelight:*"
     ignore:
       # Owned by ObscuraKit-Kotlin — bumps must happen there first so the
       # kit re-publishes against the new version, then pix follows.
+      # Verified: bumping sqldelight in pix alone breaks compileReleaseKotlin
+      # because the kit jar references the older API surface.
       - dependency-name: "org.signal:libsignal-android"
       - dependency-name: "com.google.protobuf:protobuf-java"
+      - dependency-name: "app.cash.sqldelight:*"
       # Bumped via the kit's own publication. Dependabot can't see
       # mavenLocal anyway.
       - dependency-name: "com.obscura:obscura-kit"
-      # RN gradle plugin owns the AGP version.
+      # RN gradle plugin owns the AGP version + tested gradle wrapper line.
       - dependency-name: "com.android.tools.build:gradle"
+      - dependency-name: "gradle"
+      - dependency-name: "gradle-wrapper"
 
   # ─── Android gradle (push-sender dev tool) ──────────────
   - package-ecosystem: "gradle"
