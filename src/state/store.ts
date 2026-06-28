@@ -29,6 +29,7 @@ interface ObscuraStore {
   authed: boolean;
   myUserId: string;
   myUsername: string;
+  myDeviceId: string;
   friends: Friend[];
   pending: Friend[];
   connState: ConnectionState;
@@ -48,6 +49,7 @@ interface ObscuraStore {
   _setBootstrapped: (v: boolean) => void;
   _setUserId: (id: string) => void;
   _setUsername: (name: string) => void;
+  _setDeviceId: (id: string) => void;
   _setFriendsAndPending: (friends: Friend[], pending: Friend[]) => void;
   _setConnState: (s: ConnectionState) => void;
   _setEntries: (model: string, entries: ModelEntry[]) => void;
@@ -58,6 +60,7 @@ export const useStore = create<ObscuraStore>((set) => ({
   authed: false,
   myUserId: '',
   myUsername: '',
+  myDeviceId: '',
   friends: [],
   pending: [],
   connState: 'disconnected',
@@ -71,6 +74,7 @@ export const useStore = create<ObscuraStore>((set) => ({
       authed: false,
       myUserId: '',
       myUsername: '',
+      myDeviceId: '',
       friends: [],
       pending: [],
       connState: 'disconnected',
@@ -82,6 +86,7 @@ export const useStore = create<ObscuraStore>((set) => ({
     authed: false,
     myUserId: '',
     myUsername: '',
+    myDeviceId: '',
     friends: [],
     pending: [],
     connState: 'disconnected',
@@ -91,6 +96,7 @@ export const useStore = create<ObscuraStore>((set) => ({
   _setBootstrapped: (v) => set({ bootstrapped: v }),
   _setUserId: (id) => set({ myUserId: id }),
   _setUsername: (name) => set({ myUsername: name }),
+  _setDeviceId: (id) => set({ myDeviceId: id }),
   _setFriendsAndPending: (friends, pending) => set({ friends, pending }),
   _setConnState: (s) => set({ connState: s }),
   _setEntries: (model, entries) => set((state) => ({
@@ -109,6 +115,7 @@ export function useSession() {
     authed: s.authed,
     myUserId: s.myUserId,
     myUsername: s.myUsername,
+    myDeviceId: s.myDeviceId,
     friends: s.friends,
     pending: s.pending,
     connState: s.connState,
@@ -214,6 +221,7 @@ export function ObscuraBootstrap(): null {
     });
     Obscura.getUserId().then((id) => useStore.getState()._setUserId(id || ''));
     Obscura.getUsername().then((name) => useStore.getState()._setUsername(name || ''));
+    Obscura.getDeviceId().then((id) => useStore.getState()._setDeviceId(id || ''));
     Obscura.getFriends().then((all) => {
       const list = all || [];
       useStore.getState()._setFriendsAndPending(

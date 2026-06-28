@@ -240,9 +240,13 @@ export function StoriesRow() {
       return;
     }
     if (group.stories.length === 0) return;
+    // Translate the index into the populated-only viewer list. `idx` is the
+    // tapped circle's position in the original `groups` array (which always
+    // has "me" at index 0, even when empty), so a naive Math.min(idx, ...)
+    // off-by-ones the start when "me" is empty and ≥2 friends have stories.
     const populated = groups.filter(g => g.stories.length > 0);
-    const adjustedStart = Math.min(idx, populated.length - 1);
-    nav.navigate('StoryViewer', { groups: populated, startIndex: adjustedStart });
+    const startIndex = populated.indexOf(group);
+    nav.navigate('StoryViewer', { groups: populated, startIndex });
   };
 
   return (

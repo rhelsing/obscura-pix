@@ -5,7 +5,7 @@ import { useSession, useModelEntries } from '../state/store';
 import { s } from '../styles';
 
 export function ProfileScreen() {
-  const { myUserId, myUsername } = useSession();
+  const { myUserId, myUsername, myDeviceId } = useSession();
   const profiles = useModelEntries('profile');
   const [displayName, setDisplayName] = useState(myUsername);
   const [bio, setBio] = useState('');
@@ -20,7 +20,11 @@ export function ProfileScreen() {
     } catch (e: any) { Alert.alert('Error', e.message); }
   };
 
-  const friendProfiles = profiles.filter(p => p.authorDeviceId !== myUserId);
+  // Filter on deviceId — `authorDeviceId` is the kit's per-device id, not
+  // the per-user id. Comparing it to `myUserId` (different namespace!) used
+  // to mean every entry passed the filter and your own profile showed up
+  // under "friend profiles".
+  const friendProfiles = profiles.filter(p => p.authorDeviceId !== myDeviceId);
 
   return (
     <ScrollView style={s.screen}>
