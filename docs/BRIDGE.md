@@ -187,6 +187,7 @@ The current schema is a single `screen` string. Implementations:
 | `getDebugLog()` | — | `string[]` | both |
 | `setSecureScreen(enabled)` | bool | `void` | android (no-op acceptable on iOS) |
 | `deleteFile(path)` | string | `void` | both |
+| `setClipboard(text)` | string | `void` | both |
 
 `setSecureScreen` should set `FLAG_SECURE` on Android (prevents app preview
 from appearing in recents / screenshots). A future iOS implementation
