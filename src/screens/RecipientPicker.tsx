@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, FlatList, StyleSheet, Alert } from 'react
 import { useNavigation, CommonActions } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura, type Friend } from '../native/ObscuraModule';
-import { useSession } from '../state/SessionContext';
+import { useSession } from '../state/store';
 import type { RootStackScreenProps, RootStackParamList } from '../navigation/types';
 import { colors } from '../styles';
 

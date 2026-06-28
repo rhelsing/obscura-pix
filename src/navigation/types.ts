@@ -10,6 +10,8 @@ export type MainTabParamList = {
 };
 
 export type RootStackParamList = {
+  /** Black placeholder shown only while the cold-start auth check is in flight. */
+  Splash: undefined;
   Auth: undefined;
   MainTabs: NavigatorScreenParams<MainTabParamList>;
   Chat: { friend: Friend };

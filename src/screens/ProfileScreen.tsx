@@ -1,26 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert } from 'react-native';
-import { Obscura, onObscuraEvent, type ModelEntry } from '../native/ObscuraModule';
-import { useSession } from '../state/SessionContext';
+import { Obscura } from '../native/ObscuraModule';
+import { useSession, useModelEntries } from '../state/store';
 import { s } from '../styles';
 
 export function ProfileScreen() {
   const { myUserId, myUsername } = useSession();
+  const profiles = useModelEntries('profile');
   const [displayName, setDisplayName] = useState(myUsername);
   const [bio, setBio] = useState('');
-  const [profiles, setProfiles] = useState<ModelEntry[]>([]);
 
   // Keep the display-name field in sync if myUsername arrives after mount.
   useEffect(() => { if (myUsername && !displayName) setDisplayName(myUsername); }, [myUsername, displayName]);
-
-  useEffect(() => {
-    Obscura.allEntries('profile').then(setProfiles);
-    return onObscuraEvent((event) => {
-      if ((event.type === 'messageReceived' || event.type === 'entriesChanged') && event.model === 'profile') {
-        Obscura.allEntries('profile').then(setProfiles);
-      }
-    });
-  }, []);
 
   const save = async () => {
     try {
