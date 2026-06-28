@@ -2,14 +2,15 @@ import React, { useRef, useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Linking } from 'react-native';
 import {
   Camera, useCameraDevice, useCameraPermission,
-  type PhotoFile,
 } from 'react-native-vision-camera';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura } from '../native/ObscuraModule';
+import type { RootStackParamList } from '../navigation/types';
 import { colors } from '../styles';
 
-export function CameraScreen({ onPhotoCaptured }: {
-  onPhotoCaptured?: (photo: PhotoFile) => void;
-}) {
+export function CameraScreen() {
+  const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { hasPermission, requestPermission } = useCameraPermission();
   const [facing, setFacing] = useState<'front' | 'back'>('back');
   const [flash, setFlash] = useState<'off' | 'on'>('off');
@@ -19,8 +20,10 @@ export function CameraScreen({ onPhotoCaptured }: {
   const takePhoto = useCallback(async () => {
     if (!camera.current) return;
     const photo = await camera.current.takePhoto({ flash });
-    onPhotoCaptured?.(photo);
-  }, [flash, onPhotoCaptured]);
+    nav.navigate('PhotoPreview', {
+      photo: { path: photo.path, width: photo.width, height: photo.height },
+    });
+  }, [flash, nav]);
 
   const flipCamera = () => setFacing(f => f === 'back' ? 'front' : 'back');
   const toggleFlash = () => setFlash(f => f === 'off' ? 'on' : 'off');
@@ -29,8 +32,10 @@ export function CameraScreen({ onPhotoCaptured }: {
   // capture pipeline (resize / upload) sees the same shape as a real photo.
   const takeTestPhoto = useCallback(async () => {
     const img = await Obscura.writeTestImage(100, 100);
-    onPhotoCaptured?.({ path: img.path, width: img.width, height: img.height } as any);
-  }, [onPhotoCaptured]);
+    nav.navigate('PhotoPreview', {
+      photo: { path: img.path, width: img.width, height: img.height },
+    });
+  }, [nav]);
 
   // Permission not granted yet
   if (!hasPermission) {

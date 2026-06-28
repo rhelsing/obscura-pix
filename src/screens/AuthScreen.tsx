@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { SafeAreaView, View, Text, TextInput, TouchableOpacity, Image } from 'react-native';
 import { Obscura } from '../native/ObscuraModule';
-import { obscuraSchema } from '../models/schema';
+import { useSession } from '../state/SessionContext';
 import { s } from '../styles';
 
-export function AuthScreen({ onAuth }: { onAuth: () => void }) {
+export function AuthScreen() {
+  const { setAuthed } = useSession();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [status, setStatus] = useState('');
@@ -14,9 +15,8 @@ export function AuthScreen({ onAuth }: { onAuth: () => void }) {
     setStatus('Registering...');
     try {
       await Obscura.register(username, password);
-      await Obscura.defineModels(obscuraSchema);
       await Obscura.connect();
-      onAuth();
+      setAuthed(true);
     } catch (e: any) { setStatus(e.message || 'Registration failed'); }
   };
 
@@ -27,15 +27,13 @@ export function AuthScreen({ onAuth }: { onAuth: () => void }) {
       const scenario = await Obscura.loginSmart(username, password);
       switch (scenario) {
         case 'existingDevice':
-          await Obscura.defineModels(obscuraSchema);
           await Obscura.connect();
-          onAuth();
+          setAuthed(true);
           break;
         case 'newDevice':
           await Obscura.loginAndProvision(username, password);
-          await Obscura.defineModels(obscuraSchema);
           await Obscura.connect();
-          onAuth();
+          setAuthed(true);
           break;
         case 'invalidCredentials': setStatus('Wrong password'); break;
         case 'userNotFound': setStatus('User not found'); break;

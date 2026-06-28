@@ -1,9 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, FlatList, Alert, StyleSheet, Modal,
+  View, Text, TextInput, TouchableOpacity, FlatList, Alert, StyleSheet,
+  Clipboard,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura, onObscuraEvent, type Friend, type ModelEntry } from '../native/ObscuraModule';
-import { StoriesScreen } from './StoriesScreen';
+import { useSession } from '../state/SessionContext';
+import { StoriesRow } from './StoriesScreen';
+import type { RootStackParamList, StoryGroup } from '../navigation/types';
 import { colors } from '../styles';
 
 function timeAgo(ts: number): string {
@@ -25,16 +30,21 @@ interface FriendActivity {
   latestTimestamp: number;
 }
 
-export function ChatListScreen({ friends, pending, myUsername, onSelectFriend, onViewPix }: {
-  friends: Friend[];
-  pending: Friend[];
-  myUsername: string;
-  onSelectFriend: (f: Friend) => void;
-  onViewPix: (entry: ModelEntry) => void;
-}) {
+export function ChatListScreen() {
+  const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { friends, pending, myUsername } = useSession();
   const [codeInput, setCodeInput] = useState('');
   const [messages, setMessages] = useState<ModelEntry[]>([]);
   const [pixEntries, setPixEntries] = useState<ModelEntry[]>([]);
+
+  const onViewPix = (entry: ModelEntry) => {
+    const group: StoryGroup = {
+      username: entry.data.senderUsername || '?',
+      stories: [entry],
+      isMe: false,
+    };
+    nav.navigate('StoryViewer', { groups: [group], startIndex: 0, markViewed: true });
+  };
 
   const load = useCallback(() => {
     Obscura.allEntries('directMessage').then(setMessages).catch(() => {});
@@ -59,6 +69,16 @@ export function ChatListScreen({ friends, pending, myUsername, onSelectFriend, o
     catch (e: any) { Alert.alert('Error', e.message); }
   };
 
+  const copyMyCode = async () => {
+    try {
+      const code = await Obscura.getFriendCode();
+      if (code) {
+        Clipboard.setString(code);
+        Alert.alert('Copied!', 'Friend code copied to clipboard');
+      }
+    } catch (e: any) { Alert.alert('Error', e.message); }
+  };
+
   // Build activity list — each friend with their latest chat + pix state
   const activities: FriendActivity[] = friends.map(f => {
     const friendMessages = messages.filter(m =>
@@ -66,7 +86,6 @@ export function ChatListScreen({ friends, pending, myUsername, onSelectFriend, o
     );
     const lastMessage = friendMessages.sort((a, b) => b.timestamp - a.timestamp)[0];
 
-    // Pix I received from this friend
     const receivedNew = pixEntries.filter(p =>
       p.data.senderUsername === f.username && p.data.recipientUsername === myUsername
       && !p.data._deleted && !p.data.viewedAt
@@ -75,7 +94,6 @@ export function ChatListScreen({ friends, pending, myUsername, onSelectFriend, o
       p.data.senderUsername === f.username && p.data.recipientUsername === myUsername
       && !p.data._deleted && !!p.data.viewedAt
     );
-    // Pix I sent to this friend
     const sentPending = pixEntries.filter(p =>
       p.data.senderUsername === myUsername && p.data.recipientUsername === f.username
       && !p.data._deleted && !p.data.viewedAt
@@ -85,7 +103,6 @@ export function ChatListScreen({ friends, pending, myUsername, onSelectFriend, o
       && !p.data._deleted && !!p.data.viewedAt
     );
 
-    // Most recent pix action determines icon
     const allPix = [...receivedNew, ...receivedViewed, ...sentPending, ...sentOpened]
       .sort((a, b) => b.timestamp - a.timestamp);
     const latest = allPix[0];
@@ -107,19 +124,11 @@ export function ChatListScreen({ friends, pending, myUsername, onSelectFriend, o
   return (
     <View style={{ flex: 1 }}>
       {/* Stories row */}
-      <StoriesScreen myUsername={myUsername} />
+      <StoriesRow />
 
       {/* Add friend */}
       <View style={cl.addRow}>
-        <TouchableOpacity style={cl.copyBtn} onPress={async () => {
-          try {
-            const code = await Obscura.getFriendCode();
-            if (code) {
-              try { const { Clipboard } = require('react-native'); Clipboard.setString(code); } catch {}
-              Alert.alert('Copied!', 'Friend code copied to clipboard');
-            }
-          } catch (e: any) { Alert.alert('Error', e.message); }
-        }}>
+        <TouchableOpacity style={cl.copyBtn} onPress={copyMyCode}>
           <Text style={cl.copyBtnText}>copy my code</Text>
         </TouchableOpacity>
       </View>
@@ -167,7 +176,7 @@ export function ChatListScreen({ friends, pending, myUsername, onSelectFriend, o
               {/* Left: pix icon — tap opens pix viewer */}
               <TouchableOpacity
                 style={cl.iconZone}
-                onPress={() => hasPix ? onViewPix(item.unopenedPix[0]) : onSelectFriend(item.friend)}
+                onPress={() => hasPix ? onViewPix(item.unopenedPix[0]) : nav.navigate('Chat', { friend: item.friend })}
               >
                 {item.pixState === 'received_new' ? (
                   <View style={cl.iconCircleFilled}>
@@ -187,7 +196,7 @@ export function ChatListScreen({ friends, pending, myUsername, onSelectFriend, o
               </TouchableOpacity>
 
               {/* Right: name + preview — tap opens chat */}
-              <TouchableOpacity style={cl.chatZone} onPress={() => onSelectFriend(item.friend)}>
+              <TouchableOpacity style={cl.chatZone} onPress={() => nav.navigate('Chat', { friend: item.friend })}>
                 <View style={cl.info}>
                   <Text style={cl.username}>{item.friend.username}</Text>
                   <Text style={cl.preview} numberOfLines={1}>{preview}</Text>

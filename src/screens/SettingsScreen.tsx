@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { Obscura } from '../native/ObscuraModule';
+import { useSession } from '../state/SessionContext';
 import { s } from '../styles';
 
-export function SettingsScreen({ myUsername, myUserId, onLogout }: {
-  myUsername: string; myUserId: string; onLogout: () => void;
-}) {
+export function SettingsScreen() {
+  const { myUserId, myUsername, logout } = useSession();
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const [showLog, setShowLog] = useState(false);
 
@@ -37,7 +37,7 @@ export function SettingsScreen({ myUsername, myUserId, onLogout }: {
 
       <TouchableOpacity
         style={[s.primaryBtn, { backgroundColor: '#333', marginTop: 24 }]}
-        onPress={onLogout}
+        onPress={logout}
       >
         <Text style={s.primaryBtnText}>log out</Text>
       </TouchableOpacity>
