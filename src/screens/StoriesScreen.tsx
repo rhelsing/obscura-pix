@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import {
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet,
   Animated, Image, Alert, ActivityIndicator,
 } from 'react-native';
@@ -98,20 +97,29 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
     }
   }, [storyIdx, groupIdx]);
 
+  // Resolve the attachment ref into a stable object so the load effect's
+  // dep array is honest. Without this, the effect either drops deps and
+  // gets a stale closure warning, or includes them and re-fires whenever
+  // React re-renders for any reason (sets up new fetches on every paint).
+  const attachment = useMemo(() => {
+    const mediaRef = story?.data.mediaRef as string | undefined;
+    const contentKey = story?.data.contentKey as string | undefined;
+    const nonce = story?.data.nonce as string | undefined;
+    if (!mediaRef || !contentKey || !nonce) return null;
+    return { mediaRef, contentKey, nonce };
+  }, [story?.data.mediaRef, story?.data.contentKey, story?.data.nonce]);
+
   // Load media if the entry has an attachment — native decrypts to a cached
   // file and returns the path, which we use as a `file://` URI. No base64
   // payload in JS, no `data:` URI in Image. Story and pix share the shape.
   useEffect(() => {
     setMediaUri(null);
-    const mediaRef = story?.data.mediaRef as string | undefined;
-    const contentKey = story?.data.contentKey as string | undefined;
-    const nonce = story?.data.nonce as string | undefined;
-    if (!mediaRef || !contentKey || !nonce) return;
+    if (!attachment) return;
     let cancelled = false;
     (async () => {
       try {
         setMediaLoading(true);
-        const path = await Obscura.downloadAttachment(mediaRef, contentKey, nonce);
+        const path = await Obscura.downloadAttachment(attachment.mediaRef, attachment.contentKey, attachment.nonce);
         if (!cancelled) setMediaUri(`file://${path}`);
       } catch (e) {
         console.warn('Media load failed:', e);
@@ -120,30 +128,37 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
       }
     })();
     return () => { cancelled = true; };
-  }, [story?.id]);
+  }, [attachment]);
 
   // Auto-advance timer — waits for media to load before starting.
   // (Declared AFTER mediaLoading/mediaUri so the closure sees real state.)
   const hasMedia = !!story?.data.mediaRef;
   const readyToPlay = !hasMedia || !mediaLoading;
 
+  // Keep advance current in a ref so the timer effect doesn't re-fire every
+  // time advance's identity changes (which is every story transition — would
+  // double-schedule the timer).
+  const advanceRef = useRef(advance);
+  useEffect(() => { advanceRef.current = advance; }, [advance]);
+
+  const displayDurationMs = story?.data.displayDuration
+    ? Number(story.data.displayDuration) * 1000
+    : STORY_DURATION;
+
   useEffect(() => {
     if (!readyToPlay) { progress.setValue(0); return; }
-    const entryDuration = story?.data.displayDuration
-      ? Number(story.data.displayDuration) * 1000
-      : STORY_DURATION;
-    const dur = entryDuration > 0 ? entryDuration : STORY_DURATION;
+    const dur = displayDurationMs > 0 ? displayDurationMs : STORY_DURATION;
     progress.setValue(0);
     const anim = Animated.timing(progress, {
       toValue: 1, duration: dur, useNativeDriver: false,
     });
     anim.start();
-    timerRef.current = setTimeout(advance, dur);
+    timerRef.current = setTimeout(() => advanceRef.current(), dur);
     return () => {
       anim.stop();
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [groupIdx, storyIdx, readyToPlay]);
+  }, [groupIdx, storyIdx, readyToPlay, displayDurationMs, progress]);
 
   if (!story) { navigation.goBack(); return null; }
 
@@ -160,17 +175,21 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
         <Image source={{ uri: mediaUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
       )}
 
-      {/* Progress bars */}
+      {/* Progress bars — only the currently-playing segment is Animated.
+          Past/future segments are plain Views with explicit widths because
+          React Native won't reset a previously-applied animated `width`
+          when you switch to a style object that omits the property. */}
       <View style={sv.progressRow}>
         {group.stories.map((_, i) => (
           <View key={i} style={sv.progressTrack}>
-            <Animated.View style={[
-              sv.progressFill,
-              i < storyIdx ? { flex: 1 } :
-              i === storyIdx ? { flex: 0, width: progress.interpolate({
-                inputRange: [0, 1], outputRange: ['0%', '100%'],
-              }) } : { flex: 0 },
-            ]} />
+            {i < storyIdx ? (
+              <View style={[sv.progressFill, sv.progressFillFull]} />
+            ) : i === storyIdx ? (
+              <Animated.View style={[
+                sv.progressFill,
+                { width: progress.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) },
+              ]} />
+            ) : null}
           </View>
         ))}
       </View>
@@ -214,22 +233,36 @@ export function StoriesRow() {
   const { myUsername } = useSession();
   const stories = useModelEntries('story');
 
-  // Group stories by author, me first. Newest stories first within a group.
+  // Group stories by author, me first. Within each group, oldest first so
+  // the viewer plays the day's stories in chronological order (Snapchat
+  // convention). Across groups, "me" is pinned to position 0; the rest are
+  // sorted by their most recent story so freshly-posting friends bubble up.
   const groups: StoryGroup[] = useMemo(() => {
-    const sorted = [...stories].sort((a, b) => b.timestamp - a.timestamp);
     const map = new Map<string, ModelEntry[]>();
-    for (const s of sorted) {
+    for (const s of stories) {
       const author = s.data.authorUsername || 'unknown';
       if (!map.has(author)) map.set(author, []);
       map.get(author)!.push(s);
+    }
+    for (const entries of map.values()) {
+      entries.sort((a, b) => a.timestamp - b.timestamp); // oldest first within a group
     }
     const result: StoryGroup[] = [];
     const myStories = map.get(myUsername) || [];
     result.push({ username: myUsername, stories: myStories, isMe: true });
     map.delete(myUsername);
-    for (const [username, entries] of map) {
-      result.push({ username, stories: entries, isMe: false });
-    }
+    const friendGroups = Array.from(map.entries()).map(([username, entries]) => ({
+      username,
+      stories: entries,
+      isMe: false,
+    }));
+    // Sort friend groups by their newest story (latest activity bubbles up)
+    friendGroups.sort((a, b) => {
+      const aLatest = a.stories[a.stories.length - 1]?.timestamp ?? 0;
+      const bLatest = b.stories[b.stories.length - 1]?.timestamp ?? 0;
+      return bLatest - aLatest;
+    });
+    result.push(...friendGroups);
     return result;
   }, [stories, myUsername]);
 
@@ -279,6 +312,7 @@ const sv = StyleSheet.create({
   progressRow: { flexDirection: 'row', paddingHorizontal: 8, paddingTop: 48, gap: 4 },
   progressTrack: { flex: 1, height: 2, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 1, overflow: 'hidden' },
   progressFill: { height: '100%', backgroundColor: '#fff', borderRadius: 1 },
+  progressFillFull: { width: '100%' },
   header: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 8 },
   headerAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#333', justifyContent: 'center', alignItems: 'center' },
   headerAvatarText: { color: '#fff', fontWeight: '700', fontSize: 14 },

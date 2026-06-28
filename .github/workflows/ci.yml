@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel in-progress runs for the same PR / branch so a force-push doesn't
+# pile up runners.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    name: TypeScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run typecheck
+
+  lint:
+    name: ESLint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      # `eslint .` fails on errors but not warnings — this PR establishes the
+      # gate, a follow-up cleans up the ~17 pre-existing warnings before we
+      # tighten to `--max-warnings 0`. Tracking that as a separate todo so
+      # this PR stays small.
+      - run: npm run lint
+
+  android:
+    name: Android Release Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - run: npm ci
+
+      # The Firebase Gradle plugin requires a google-services.json or the
+      # build fails. The real file is per-environment + gitignored, so we
+      # write a CI-only stub that has the right shape but a fake project.
+      # FCM doesn't actually fire from CI builds, so a fake project is fine.
+      - name: Write stub google-services.json
+        run: |
+          cat > android/app/google-services.json <<'JSON'
+          {
+            "project_info": {
+              "project_number": "000000000000",
+              "project_id": "ci-stub",
+              "storage_bucket": "ci-stub.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+                  "android_client_info": { "package_name": "com.obscuraapp.android" }
+                },
+                "oauth_client": [],
+                "api_key": [{ "current_key": "AIzaSy0000000000000000000000000000000000" }],
+                "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
+              }
+            ],
+            "configuration_version": "1"
+          }
+          JSON
+
+      - name: Assemble release APK
+        run: ./gradlew :app:assembleRelease --no-daemon
+        working-directory: android

@@ -8,7 +8,7 @@ const ObscuraBridge =
 
 // Stub for when native module isn't available (e.g. under jest).
 const noop = (..._args: any[]): Promise<any> => Promise.resolve(null);
-const Bridge = ObscuraBridge || new Proxy({}, { get: (_t, prop) => noop });
+const Bridge = ObscuraBridge || new Proxy({}, { get: (_t, _prop) => noop });
 
 // ─── Types ───────────────────────────────────────────────
 
