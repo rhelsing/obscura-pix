@@ -16,7 +16,7 @@ jobs:
     name: TypeScript
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -28,7 +28,7 @@ jobs:
     name: ESLint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout pix
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # The pix Android build depends on com.obscura:obscura-kit:0.1.0,
       # which is resolved via mavenLocal(). The kit lives in a sibling repo
@@ -53,7 +53,7 @@ jobs:
       # This couples pix CI's green to ObscuraKit-Kotlin's main being green,
       # which is the correct constraint.
       - name: Checkout ObscuraKit-Kotlin
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: rhelsing/ObscuraKit-Kotlin
           path: ObscuraKit-Kotlin
