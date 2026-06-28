@@ -9,7 +9,15 @@ export const obscuraSchema = {
     sync: 'gset',
   },
   story: {
-    fields: { content: 'string', authorUsername: 'string', mediaUrl: 'string?' },
+    fields: {
+      content: 'string',
+      authorUsername: 'string',
+      // Attachment fields — present iff the story has a photo (text-only stories
+      // omit all three). Same shape as pix so a single viewer can render both.
+      mediaRef: 'string?',
+      contentKey: 'string?',
+      nonce: 'string?',
+    },
     sync: 'gset',
     ttl: '24h',
   },
