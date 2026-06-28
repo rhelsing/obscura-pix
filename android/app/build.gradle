@@ -64,23 +64,10 @@ react {
     autolinkLibrariesWithApp()
 }
 
-/**
- * Set this to true to Run Proguard on Release builds to minify the Java bytecode.
- */
-def enableProguardInReleaseBuilds = false
+// R8 + resource shrinking are on for release. Keep rules live in proguard-rules.pro.
+def enableProguardInReleaseBuilds = true
 
-/**
- * The preferred build flavor of JavaScriptCore (JSC)
- *
- * For example, to use the international variant, you can use:
- * `def jscFlavor = io.github.react-native-community:jsc-android-intl:2026004.+`
- *
- * The international variant includes ICU i18n library and necessary data
- * allowing to use e.g. `Date.toLocaleString` and `String.localeCompare` that
- * give correct results when using with locales other than en-US. Note that
- * this variant is about 6MiB larger per architecture than default.
- */
-def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
+// JSC is intentionally unused — Hermes is enabled in gradle.properties.
 
 android {
     ndkVersion rootProject.ext.ndkVersion
@@ -107,9 +94,36 @@ android {
     }
 
     packaging {
+        // The libsignal-client JVM artifact bundles native libs for every desktop OS
+        // (macOS .dylib, Windows .dll, Linux/server .so) plus a `_testing` JNI variant
+        // we never call into. Strip them — they're ~90 MB of dead weight in the APK.
+        jniLibs {
+            excludes += [
+                "**/libsignal_jni_testing.so",
+            ]
+        }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "/META-INF/DEPENDENCIES"
+            excludes += [
+                "**/*.dylib",
+                "**/*.dll",
+                "**/*.pdb",
+                // .so files inside JAR roots (libsignal-client ships server-side natives
+                // at the JAR root, not under jni/; the Android JNI libs come from the
+                // libsignal-android AAR and aren't matched by this glob).
+                "*.so",
+            ]
+        }
+    }
+    // Per-ABI APKs cut sideload size ~4x. Keep the universal APK around so
+    // existing install scripts and CI continue to work.
+    splits {
+        abi {
+            enable true
+            reset()
+            include "arm64-v8a", "armeabi-v7a", "x86", "x86_64"
+            universalApk true
         }
     }
     signingConfigs {
@@ -137,6 +151,7 @@ android {
             // (required for Play); falls back to debug signing otherwise.
             signingConfig keystorePropertiesFile.exists() ? signingConfigs.release : signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
+            shrinkResources enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
     }
@@ -148,9 +163,8 @@ dependencies {
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
-    } else {
-        implementation jscFlavor
     }
+    // JSC fallback intentionally omitted — Hermes is on (gradle.properties).
 
     // ObscuraKit — E2E encrypted data layer
     implementation("com.obscura:obscura-kit:0.1.0")
