@@ -1,5 +1,6 @@
 package com.obscuraapp
 
+import android.content.Context
 import android.util.Base64
 import android.util.Log
 import com.facebook.react.bridge.*
@@ -809,6 +810,25 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
             promise.resolve(null)
         } catch (e: Throwable) {
             promise.reject("DELETE_FAILED", e)
+        }
+    }
+
+    // ─── Clipboard ──────────────────────────────────────────────────────────
+    // Native-side clipboard so we don't depend on RN core's deprecated
+    // Clipboard module or pull in @react-native-clipboard/clipboard for a
+    // single setString use case.
+
+    @ReactMethod
+    fun setClipboard(text: String, promise: Promise) {
+        UiThreadUtil.runOnUiThread {
+            try {
+                val cm = reactApplicationContext.getSystemService(Context.CLIPBOARD_SERVICE)
+                    as android.content.ClipboardManager
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("text", text))
+                promise.resolve(null)
+            } catch (e: Throwable) {
+                promise.reject("CLIPBOARD_FAILED", e)
+            }
         }
     }
 

@@ -158,6 +158,8 @@ export const Obscura = {
   setSecureScreen: (enabled: boolean): Promise<void> => Bridge.setSecureScreen(enabled),
   /** Best-effort unlink. Used to clean up temp capture files. */
   deleteFile: (path: string): Promise<void> => Bridge.deleteFile(path),
+  /** Write `text` to the system clipboard. Replaces RN core's deprecated Clipboard module. */
+  setClipboard: (text: string): Promise<void> => Bridge.setClipboard(text),
   /**
    * Cold-start deep-link target — the screen the app was launched into via a
    * notification tap. Returns null if the app wasn't launched from a deep

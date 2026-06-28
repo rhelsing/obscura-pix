@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList, Alert, StyleSheet,
-  Clipboard,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -55,14 +54,15 @@ export function ChatListScreen() {
     try {
       const code = await Obscura.getFriendCode();
       if (code) {
-        Clipboard.setString(code);
+        await Obscura.setClipboard(code);
         Alert.alert('Copied!', 'Friend code copied to clipboard');
       }
     } catch (e: any) { Alert.alert('Error', e.message); }
   };
 
-  // Build activity list — each friend with their latest chat + pix state
-  const activities: FriendActivity[] = friends.map(f => {
+  // Build activity list — each friend with their latest chat + pix state.
+  // Memoized so the four filter passes per friend don't run on every render.
+  const activities: FriendActivity[] = useMemo(() => friends.map(f => {
     const friendMessages = messages.filter(m =>
       m.data.senderUsername === f.username || m.data.conversationId?.includes(f.userId)
     );
@@ -101,7 +101,7 @@ export function ChatListScreen() {
       ...allPix.map(p => p.timestamp), 0
     );
     return { friend: f, lastMessage, unopenedPix: receivedNew, pixState, pixCount: receivedNew.length, latestTimestamp };
-  }).sort((a, b) => b.latestTimestamp - a.latestTimestamp);
+  }).sort((a, b) => b.latestTimestamp - a.latestTimestamp), [friends, messages, pixEntries, myUsername]);
 
   return (
     <View style={{ flex: 1 }}>
