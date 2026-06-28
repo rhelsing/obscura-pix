@@ -1,10 +1,10 @@
 import React, { useRef, useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Linking, Platform } from 'react-native';
-import RNFS from 'react-native-fs';
 import {
   Camera, useCameraDevice, useCameraPermission,
   type PhotoFile,
 } from 'react-native-vision-camera';
+import { Obscura } from '../native/ObscuraModule';
 import { colors } from '../styles';
 
 export function CameraScreen({ onPhotoCaptured }: {
@@ -56,8 +56,8 @@ export function CameraScreen({ onPhotoCaptured }: {
         (i + 1 < buf.length ? chars[((bb & 15) << 2) | (c >> 6)] : '=') +
         (i + 2 < buf.length ? chars[c & 63] : '=');
     }
-    const path = `${RNFS.TemporaryDirectoryPath}/test_photo_${Date.now()}.bmp`;
-    await RNFS.writeFile(path, base64, 'base64');
+    const path = `${await Obscura.getCacheDir()}/test_photo_${Date.now()}.bmp`;
+    await Obscura.writeBase64File(path, base64);
     onPhotoCaptured?.({ path, width: w, height: h } as any);
   }, [onPhotoCaptured]);
 
@@ -129,7 +129,7 @@ export function CameraScreen({ onPhotoCaptured }: {
 
 const cs = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
-  overlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'space-between' },
+  overlay: { ...StyleSheet.absoluteFill, justifyContent: 'space-between' },
   topControls: { flexDirection: 'row', justifyContent: 'flex-end', padding: 16, paddingTop: 8 },
   bottomControls: { paddingBottom: 16, paddingHorizontal: 24 },
   controlsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },

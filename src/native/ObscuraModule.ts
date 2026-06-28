@@ -141,6 +141,12 @@ export const Obscura = {
   // Screen security (FLAG_SECURE on Android, no-op on iOS for now)
   setSecureScreen: (enabled: boolean): Promise<void> => Bridge.setSecureScreen(enabled),
 
+  // Minimal file ops (replaces react-native-fs). Paths are absolute.
+  getCacheDir: (): Promise<string> => Bridge.getCacheDir(),
+  writeBase64File: (path: string, base64: string): Promise<void> => Bridge.writeBase64File(path, base64),
+  readFileAsBase64: (path: string): Promise<string> => Bridge.readFileAsBase64(path),
+  deleteFile: (path: string): Promise<void> => Bridge.deleteFile(path),
+
 };
 
 // ─── Event Subscriptions ─────────────────────────────────

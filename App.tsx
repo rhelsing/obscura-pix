@@ -6,7 +6,6 @@ import { Obscura, type Friend } from './src/native/ObscuraModule';
 import { obscuraSchema } from './src/models/schema';
 import { ObscuraEvents } from './src/events';
 import { s, colors } from './src/styles';
-import RNFS from 'react-native-fs';
 
 import { AuthScreen } from './src/screens/AuthScreen';
 import { CameraScreen } from './src/screens/CameraScreen';
@@ -157,7 +156,7 @@ export default function App() {
           photoPath = resized.path;
         }
       } catch (_) { /* resize unavailable — use original */ }
-      const base64 = await RNFS.readFile(photoPath, 'base64');
+      const base64 = await Obscura.readFileAsBase64(photoPath);
       // Upload encrypted attachment
       const attachment = await Obscura.uploadAttachment(base64);
 
@@ -193,7 +192,7 @@ export default function App() {
       Alert.alert('Send failed', e.message);
     } finally {
       // Clean up temp photo file
-      if (capturedPhoto?.path) RNFS.unlink(capturedPhoto.path).catch(() => {});
+      if (capturedPhoto?.path) Obscura.deleteFile(capturedPhoto.path).catch(() => {});
     }
     setCapturedPhoto(null);
     setSendOpts(null);
