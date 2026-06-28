@@ -44,7 +44,19 @@ jobs:
     name: Android Release Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout pix
+        uses: actions/checkout@v4
+
+      # The pix Android build depends on com.obscura:obscura-kit:0.1.0,
+      # which is resolved via mavenLocal(). The kit lives in a sibling repo
+      # — clone it and publish to local Maven so the pix build can find it.
+      # This couples pix CI's green to ObscuraKit-Kotlin's main being green,
+      # which is the correct constraint.
+      - name: Checkout ObscuraKit-Kotlin
+        uses: actions/checkout@v4
+        with:
+          repository: rhelsing/ObscuraKit-Kotlin
+          path: ObscuraKit-Kotlin
 
       - uses: actions/setup-node@v4
         with:
@@ -57,6 +69,10 @@ jobs:
           java-version: '21'
 
       - uses: gradle/actions/setup-gradle@v4
+
+      - name: Publish ObscuraKit-Kotlin to local Maven
+        run: ./gradlew :lib:publishToMavenLocal --no-daemon
+        working-directory: ObscuraKit-Kotlin
 
       - run: npm ci
 
