@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { SafeAreaView, View, Text, TextInput, TouchableOpacity, Image } from 'react-native';
 import { Obscura } from '../native/ObscuraModule';
-import { useSession } from '../state/SessionContext';
+import { useSession } from '../state/store';
 import { s } from '../styles';
 
 export function AuthScreen() {

@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet,
   Animated, Image, Alert, ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Obscura, onObscuraEvent, type ModelEntry } from '../native/ObscuraModule';
-import { useSession } from '../state/SessionContext';
+import { Obscura, type ModelEntry } from '../native/ObscuraModule';
+import { useSession, useModelEntries } from '../state/store';
 import type { RootStackParamList, RootStackScreenProps, StoryGroup } from '../navigation/types';
 import { colors } from '../styles';
 
@@ -212,26 +212,13 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
 export function StoriesRow() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { myUsername } = useSession();
-  const [stories, setStories] = useState<ModelEntry[]>([]);
+  const stories = useModelEntries('story');
 
-  const load = useCallback(() => {
-    Obscura.allEntries('story').then(s =>
-      setStories([...s].sort((a, b) => b.timestamp - a.timestamp))
-    );
-  }, []);
-
-  useEffect(() => {
-    load();
-    return onObscuraEvent((event) => {
-      if (event.type === 'messageReceived' && event.model === 'story') load();
-      else if (event.type === 'entriesChanged' && event.model === 'story') load();
-    });
-  }, [load]);
-
-  // Group stories by author, me first.
-  const groups: StoryGroup[] = (() => {
+  // Group stories by author, me first. Newest stories first within a group.
+  const groups: StoryGroup[] = useMemo(() => {
+    const sorted = [...stories].sort((a, b) => b.timestamp - a.timestamp);
     const map = new Map<string, ModelEntry[]>();
-    for (const s of stories) {
+    for (const s of sorted) {
       const author = s.data.authorUsername || 'unknown';
       if (!map.has(author)) map.set(author, []);
       map.get(author)!.push(s);
@@ -244,7 +231,7 @@ export function StoriesRow() {
       result.push({ username, stories: entries, isMe: false });
     }
     return result;
-  })();
+  }, [stories, myUsername]);
 
   const openViewer = (idx: number) => {
     const group = groups[idx];

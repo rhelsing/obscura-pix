@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   SafeAreaView, View, Text, TextInput, TouchableOpacity, FlatList,
   KeyboardAvoidingView, Platform, Animated, StyleSheet, Alert,
@@ -6,7 +6,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura, onObscuraEvent, conversationId, type ModelEntry } from '../native/ObscuraModule';
-import { useSession } from '../state/SessionContext';
+import { useSession, useModelEntries } from '../state/store';
 import type { RootStackScreenProps, RootStackParamList, StoryGroup } from '../navigation/types';
 import { s, colors } from '../styles';
 
@@ -52,11 +52,25 @@ export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
   const { friend } = route.params;
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { myUserId, myUsername } = useSession();
-  const [messages, setMessages] = useState<ModelEntry[]>([]);
-  const [pixEntries, setPixEntries] = useState<ModelEntry[]>([]);
+  const allMessages = useModelEntries('directMessage');
+  const allPix = useModelEntries('pix');
   const [text, setText] = useState('');
   const [typers, setTypers] = useState<string[]>([]);
   const convId = conversationId(myUserId, friend.userId);
+
+  // Per-conversation slice of the global cache.
+  const messages = useMemo(
+    () => allMessages.filter(m => m.data.conversationId === convId),
+    [allMessages, convId],
+  );
+  // Pix between me and this friend (sent or received).
+  const pixEntries = useMemo(
+    () => allPix.filter(p =>
+      (p.data.senderUsername === friend.username && p.data.recipientUsername === myUsername) ||
+      (p.data.senderUsername === myUsername && p.data.recipientUsername === friend.username)
+    ),
+    [allPix, friend.username, myUsername],
+  );
 
   const onViewPix = (entry: ModelEntry) => {
     const group: StoryGroup = {
@@ -67,27 +81,12 @@ export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
     nav.navigate('StoryViewer', { groups: [group], startIndex: 0, markViewed: true });
   };
 
-  const load = useCallback(() => {
-    Obscura.queryEntries('directMessage', { 'data.conversationId': convId })
-      .then(msgs => setMessages(msgs));
-    Obscura.allEntries('pix').then(all => {
-      // Pix between me and this friend (sent or received)
-      const relevant = all.filter(p =>
-        (p.data.senderUsername === friend.username && p.data.recipientUsername === myUsername) ||
-        (p.data.senderUsername === myUsername && p.data.recipientUsername === friend.username)
-      );
-      setPixEntries(relevant);
-    });
-  }, [convId, friend.username, myUsername]);
-
+  // Typing observer + bubble — separate from entry-cache subscriptions since
+  // typing isn't backed by entries.
   useEffect(() => {
-    load();
     const unsub = onObscuraEvent((event) => {
-      if (event.type === 'messageReceived' && (event.model === 'directMessage' || event.model === 'pix')) {
-        load();
+      if (event.type === 'messageReceived' && event.model === 'directMessage') {
         setTypers([]); // clear typing bubble when a real message arrives
-      } else if (event.type === 'entriesChanged' && (event.model === 'directMessage' || event.model === 'pix')) {
-        load();
       } else if (event.type === 'typingChanged' && event.conversationId === convId) {
         setTypers(event.typers || []);
       }
@@ -97,13 +96,13 @@ export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
       unsub();
       Obscura.stopObservingTyping(convId);
     };
-  }, [convId, load]);
+  }, [convId]);
 
-  // Build unified timeline sorted by timestamp
-  const timeline: TimelineItem[] = [
+  // Build unified timeline sorted by timestamp.
+  const timeline: TimelineItem[] = useMemo(() => [
     ...messages.map(m => ({ ...m, _kind: 'message' as const })),
     ...pixEntries.map(p => ({ ...p, _kind: 'pix' as const })),
-  ].sort((a, b) => a.timestamp - b.timestamp);
+  ].sort((a, b) => a.timestamp - b.timestamp), [messages, pixEntries]);
 
   const send = async () => {
     if (!text.trim()) return;
@@ -114,7 +113,6 @@ export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
       await Obscura.createEntry('directMessage', {
         conversationId: convId, content: msg, senderUsername: myUsername,
       });
-      load();
     } catch (e: any) {
       Alert.alert('Send failed', e.message);
     }

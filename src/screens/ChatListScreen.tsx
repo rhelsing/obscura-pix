@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList, Alert, StyleSheet,
   Clipboard,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Obscura, onObscuraEvent, type Friend, type ModelEntry } from '../native/ObscuraModule';
-import { useSession } from '../state/SessionContext';
+import { Obscura, type Friend, type ModelEntry } from '../native/ObscuraModule';
+import { useSession, useModelEntries } from '../state/store';
 import { StoriesRow } from './StoriesScreen';
 import type { RootStackParamList, StoryGroup } from '../navigation/types';
 import { colors } from '../styles';
@@ -33,9 +33,9 @@ interface FriendActivity {
 export function ChatListScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { friends, pending, myUsername } = useSession();
+  const messages = useModelEntries('directMessage');
+  const pixEntries = useModelEntries('pix');
   const [codeInput, setCodeInput] = useState('');
-  const [messages, setMessages] = useState<ModelEntry[]>([]);
-  const [pixEntries, setPixEntries] = useState<ModelEntry[]>([]);
 
   const onViewPix = (entry: ModelEntry) => {
     const group: StoryGroup = {
@@ -45,24 +45,6 @@ export function ChatListScreen() {
     };
     nav.navigate('StoryViewer', { groups: [group], startIndex: 0, markViewed: true });
   };
-
-  const load = useCallback(() => {
-    Obscura.allEntries('directMessage').then(setMessages).catch(() => {});
-    Obscura.allEntries('pix').then(setPixEntries).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    load();
-    // Reacts to both remote arrivals (messageReceived) and local mutations
-    // like pix-viewed upserts (entriesChanged) — no manual refresh trigger needed.
-    return onObscuraEvent((event) => {
-      if (event.type === 'messageReceived' && (event.model === 'directMessage' || event.model === 'pix')) {
-        load();
-      } else if (event.type === 'entriesChanged' && (event.model === 'directMessage' || event.model === 'pix')) {
-        load();
-      }
-    });
-  }, [load]);
 
   const addFriend = async () => {
     try { await Obscura.addFriendByCode(codeInput); setCodeInput(''); }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { Obscura } from '../native/ObscuraModule';
-import { useSession } from '../state/SessionContext';
+import { useSession } from '../state/store';
 import { s } from '../styles';
 
 export function SettingsScreen() {

@@ -5,7 +5,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { useSession } from '../state/SessionContext';
+import { useSession, useStore } from '../state/store';
 import { Obscura, onObscuraEvent } from '../native/ObscuraModule';
 import { colors } from '../styles';
 
@@ -91,10 +91,17 @@ function MainTabs() {
   );
 }
 
+// ─── Splash (during initial auth check) ──────────────────
+
+function SplashScreen() {
+  return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
+}
+
 // ─── Root Navigator ──────────────────────────────────────
 
 export function RootNavigator() {
   const { authed } = useSession();
+  const bootstrapped = useStore((s) => s.bootstrapped);
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   // Deep-link routing: cold-start pull AND warm-start event.
@@ -114,7 +121,11 @@ export function RootNavigator() {
 
   return (
     <RootStack.Navigator screenOptions={{ headerShown: false }}>
-      {!authed ? (
+      {!bootstrapped ? (
+        // Plain black screen while the cold-start auth check is in flight.
+        // Avoids flashing the AuthScreen for users who are already logged in.
+        <RootStack.Screen name="Splash" component={SplashScreen} />
+      ) : !authed ? (
         <RootStack.Screen name="Auth" component={AuthScreen} />
       ) : (
         <>
