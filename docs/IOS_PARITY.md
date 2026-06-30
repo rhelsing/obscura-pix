@@ -150,6 +150,72 @@ Remaining:
 Project edits were scripted with the `xcodeproj` gem (installed for Homebrew
 Ruby); re-runnable.
 
+## #14 — simulator run result
+
+Ran on an iPhone 17 simulator (iOS 26, arm64) with Metro: the app **builds,
+installs, launches, and renders the real shared-`src/` auth screen** ("OBSCURA —
+encrypted everything", sign up / log in). No redbox; the bootstrap's
+`getAuthState()` bridge round-trip routed correctly to AuthScreen. Because the
+bridge is registered via `RCT_EXTERN_MODULE` (load-time registration), this is
+the *real* native module, not the JS noop-Proxy fallback — i.e. the bridge is
+live at runtime, not merely compiling.
+
+Verified headless: build → launch → bridge load → bootstrap round-trip → UI render.
+Not yet exercised (needs UI interaction / a real device — the project's manual
+e2e norm): register/login round-trip to the server, chat/stories/pix flows, and
+push (#11, simulator-incompatible). Boot + launch recipe:
+`xcrun simctl boot <id>`; `npx react-native start`; build with
+`-destination 'id=<id>'`; `simctl install` + `simctl launch com.obscuraapp.ios`.
+
+## Push (#11) — implementation checklist
+
+Android registers an **FCM** token (`FirebaseMessaging.getInstance().token`) and
+the server/`tools/push-sender` send via FCM. For iOS to receive the same pushes,
+use **FCM-via-APNs** (not raw APNs), so the token registered with the server is
+an FCM registration token like Android's.
+
+1. **Firebase iOS SDK** — add `FirebaseMessaging` (+ `FirebaseCore`) to the
+   `Podfile` (`pod 'FirebaseMessaging'`) and `pod install`. `GoogleService-Info.plist`
+   is already in `ios/ObscuraApp/` (gitignored; fetch per env).
+2. **APNs entitlement** — add `aps-environment` (development/production) via an
+   `ObscuraApp.entitlements` file + Signing & Capabilities. Requires an Apple
+   Developer team + provisioning profile with Push Notifications enabled.
+3. **AppDelegate wiring** —
+   - `FirebaseApp.configure()` in `didFinishLaunchingWithOptions`.
+   - `Messaging.messaging().delegate = self`; `UNUserNotificationCenter.current().delegate = self`.
+   - `application.registerForRemoteNotifications()` after permission grant.
+   - `didRegisterForRemoteNotificationsWithDeviceToken` → `Messaging.messaging().apnsToken = deviceToken`.
+   - `messaging(_:didReceiveRegistrationToken:)` → forward the FCM token to the
+     bridge → emit `pushTokenReceived`.
+   - silent push (`content-available`) in `didReceiveRemoteNotification` →
+     drive `ObscuraSession` to drain pending messages (mirror Android
+     `ObscuraMessagingService` + `onPushWake`).
+   - local-notification posting when backgrounded (mirror `NotificationHelper`).
+   - notification tap → set `ObscuraBridge.pendingLaunchScreen` (cold start) or
+     call `ObscuraBridge.deliverLaunchedFrom(_:)` (warm start) — hooks already exist.
+4. **Bridge methods** — `requestPushPermission` (`UNUserNotificationCenter
+   .requestAuthorization`; resolve `true` ONLY on grant, then
+   `registerForRemoteNotifications`; resolve `false` on deny, no token) and
+   `registerPushToken(token)` → `client.registerPushToken(token)`.
+5. **Cannot be tested on a simulator** — APNs needs a real device + provisioning.
+
+## iOS CI (#15) — checklist
+
+Mirror the existing `android` job in `.github/workflows/ci.yml`, on a `macos`
+runner:
+1. Checkout pix, plus sibling checkouts the SPM local paths need:
+   `rhelsing/obscura-client-ios` at `../obscura-client-ios` AND its own sibling
+   dep `grdb-cipher-fork` at `../grdb-cipher-fork` (Package.swift references both).
+2. Build the libsignal FFI: `./App/build_ffi_ios.sh` in obscura-client-ios
+   (Rust + `rustup target add aarch64-apple-ios aarch64-apple-ios-sim`), OR
+   commit the prebuilt `.a` artifacts.
+3. `npm ci`; `cd ios && pod install`. If the runner's Ruby lacks `kconv`
+   (CocoaPods dependency), `gem install nkf` first (it ships `kconv.rb`).
+4. `xcodebuild -workspace ios/ObscuraApp.xcworkspace -scheme ObscuraApp
+   -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' build`
+   (the project already sets `EXCLUDED_ARCHS[sim]=x86_64` + deployment 16.0).
+5. Dependabot: add a CocoaPods (and/or Swift Package) ecosystem entry.
+
 ## Kit integration recipe (from the reference project)
 
 The kit ships a proven integration at
