@@ -160,10 +160,19 @@ bridge is registered via `RCT_EXTERN_MODULE` (load-time registration), this is
 the *real* native module, not the JS noop-Proxy fallback — i.e. the bridge is
 live at runtime, not merely compiling.
 
-Verified headless: build → launch → bridge load → bootstrap round-trip → UI render.
-Not yet exercised (needs UI interaction / a real device — the project's manual
-e2e norm): register/login round-trip to the server, chat/stories/pix flows, and
-push (#11, simulator-incompatible). Boot + launch recipe:
+Verified on the simulator: build → launch → **authenticated main UI** (header,
+profile avatar, chat tab) — i.e. the full auth flow (register/login → session
+persist → Keychain restore → connect) works end-to-end against the live server.
+`requestPushPermission()` fires the real `UNUserNotificationCenter` prompt. No
+redbox, no JS errors.
+
+Fixed during #14: the JS bootstrap calls `requestPushPermission()` unconditionally,
+so the deferred-#11 missing method redboxed every launch. Implemented the push
+permission + token-registration bridge methods (commit on `ios/foundation`).
+
+Still needs a real device / deeper interaction: chat/stories/pix message
+round-trips, and push *delivery* (#11 FCM/APNs, simulator-incompatible). Boot +
+launch recipe:
 `xcrun simctl boot <id>`; `npx react-native start`; build with
 `-destination 'id=<id>'`; `simctl install` + `simctl launch com.obscuraapp.ios`.
 
