@@ -17,6 +17,18 @@ local.properties
 keystore.properties
 .kotlin/
 
+# iOS / CocoaPods
+#
+ios/Pods/
+ios/build/
+ios/.xcode.env.local
+*.xcuserstate
+xcuserdata/
+
+# vendor
+#
+vendor/
+
 # node.js
 #
 node_modules/
