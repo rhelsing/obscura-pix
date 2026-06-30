@@ -118,11 +118,35 @@ Foundation built & verified (all `xcodebuild` green on arm64 simulator):
 - `ObscuraApp/ObscuraSession.swift` + `KeychainSession.swift` — client owner,
   Keychain persistence, restore-on-launch (deviceId-before-auth ordering).
 - `ObscuraApp/ObscuraBridge.swift` (+ `ObscuraBridge.m`) — `RCTEventEmitter`
-  skeleton; relays the kit's `observeEvents()` to the single `ObscuraEvent`
-  stream. RPC method bodies not yet implemented.
+  relaying the kit's `observeEvents()` to the single `ObscuraEvent` stream,
+  plus the RPC methods below.
 
-Remaining: bridge RPC methods (auth/state, friends/linking, ORM, typing,
-attachments, image, push/APNs, deep-link, misc), device run + JS verify, CI.
+Bridge RPC methods implemented + compiling (each `xcodebuild` green):
+- Auth + state-reads (register/loginSmart/loginAndProvision/connect/disconnect/
+  logout/get*) — onlyDevice maps to deviceMismatch (not in the JS union).
+- Friends + device linking (befriend/accept/getFriendCode/addFriendByCode/
+  getFriends/getPendingRequests/generateLinkCode/validateAndApproveLink).
+- ORM (defineModels/createEntry/upsertEntry/queryEntries/allEntries/deleteEntry)
+  — mutations emit `entriesChanged`.
+- Typing (sendTyping/stopTyping/observeTyping/stopObservingTyping → typingChanged),
+  on the "directMessage" model. Needed kit task #19 (untyped-Model typing).
+- Attachments (uploadAttachment/downloadAttachment) — atomic temp+rename cache,
+  sanitized ids, base64 key/nonce over the bridge, bytes via files.
+- Image (resizeImage EXIF/OOM-bounded via ImageIO thumbnail; writeTestImage).
+- Misc (setClipboard/deleteFile/setSecureScreen[no-op]) + camera/mic Info.plist.
+- Deep link + debug log (getLaunchIntent consume-once; getDebugLog from a
+  BridgeLogger ring buffer; launchedFrom hook for warm-start; appStateChanged
+  wired from ObscuraSession lifecycle).
+
+Remaining:
+- **Push (#11)** — the big one. Android uses FCM, so iOS parity needs the
+  Firebase iOS SDK (FirebaseMessaging) + APNs entitlement + AppDelegate wiring
+  (FirebaseApp.configure, Messaging delegate, registerForRemoteNotifications,
+  APNs→FCM token → pushTokenReceived, silent-push receiver, local notifications).
+  Untestable on the simulator — needs a real device + Apple provisioning.
+- **#14** device/sim run exercising the JS flows (the real behavioral test).
+- **#15** iOS CI job + Dependabot (CI must `gem install nkf` + build libsignal FFI).
+
 Project edits were scripted with the `xcodeproj` gem (installed for Homebrew
 Ruby); re-runnable.
 
