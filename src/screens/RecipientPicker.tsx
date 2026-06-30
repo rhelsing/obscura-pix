@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, FlatList, StyleSheet, Alert } from 'react-native';
 import { useNavigation, CommonActions } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Obscura } from '../native/ObscuraModule';
+import { Obscura, conversationId } from '../native/ObscuraModule';
 import { useSession } from '../state/store';
 import type { RootStackScreenProps, RootStackParamList } from '../navigation/types';
 import { colors } from '../styles';
@@ -10,7 +10,7 @@ import { colors } from '../styles';
 export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker'>) {
   const { photo, caption, displayDuration } = route.params;
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { friends, myUsername } = useSession();
+  const { friends, myUsername, myUserId } = useSession();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [includeStory, setIncludeStory] = useState(false);
   const [sending, setSending] = useState(false);
@@ -41,6 +41,7 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
       // Create Pix entry for each recipient.
       for (const friend of recipients) {
         await Obscura.createEntry('pix', {
+          conversationId: conversationId(myUserId, friend.userId),
           recipientUsername: friend.username,
           senderUsername: myUsername,
           mediaRef: attachment.id,
