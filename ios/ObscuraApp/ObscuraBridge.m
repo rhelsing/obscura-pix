@@ -85,4 +85,9 @@ RCT_EXTERN_METHOD(setSecureScreen:(BOOL)enabled
 RCT_EXTERN_METHOD(getLaunchIntent:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(getDebugLog:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
+// ── Push (task #11, partial — permission + token registration) ────────────
+RCT_EXTERN_METHOD(requestPushPermission:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(registerPushToken:(NSString *)token
+                  resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+
 @end

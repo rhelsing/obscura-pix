@@ -4,6 +4,7 @@ import ObscuraKit
 import UIKit
 import ImageIO
 import UniformTypeIdentifiers
+import UserNotifications
 
 /// Thin React Native bridge — the iOS analog of `ObscuraBridgeModule.kt`.
 /// Owns NO Obscura state: client lifecycle / persistence / app-state live in
@@ -642,6 +643,43 @@ extension ObscuraBridge {
     func setSecureScreen(_ enabled: Bool,
                          resolver resolve: RCTPromiseResolveBlock, rejecter reject: RCTPromiseRejectBlock) {
         resolve(nil)
+    }
+}
+
+// MARK: - Push (task #11, partial)
+//
+// Permission + token-registration are implemented (JS calls requestPushPermission
+// unconditionally at bootstrap, so these MUST exist). FCM/APNs token *delivery*
+// via pushTokenReceived still needs the Firebase SDK + AppDelegate wiring — see
+// docs/IOS_PARITY.md "Push (#11)". So no token is delivered yet; requestPush
+// only reports the permission result honestly.
+
+extension ObscuraBridge {
+
+    @objc(requestPushPermission:rejecter:)
+    func requestPushPermission(_ resolve: @escaping RCTPromiseResolveBlock,
+                               rejecter reject: @escaping RCTPromiseRejectBlock) {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
+            if let error = error {
+                reject("PUSH_PERMISSION_ERROR", error.localizedDescription, error); return
+            }
+            // Only-on-grant: register for remote notifications so APNs/FCM can
+            // later deliver a token (token plumbing lands with #11/Firebase).
+            if granted {
+                DispatchQueue.main.async { UIApplication.shared.registerForRemoteNotifications() }
+            }
+            resolve(granted)
+        }
+    }
+
+    @objc(registerPushToken:resolver:rejecter:)
+    func registerPushToken(_ token: String,
+                           resolver resolve: @escaping RCTPromiseResolveBlock,
+                           rejecter reject: @escaping RCTPromiseRejectBlock) {
+        Task {
+            do { try await client.registerPushToken(token); resolve(nil) }
+            catch { reject("REGISTER_TOKEN_ERROR", error.localizedDescription, error) }
+        }
     }
 }
 
