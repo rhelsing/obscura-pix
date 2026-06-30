@@ -7,6 +7,7 @@ export const obscuraSchema = {
   directMessage: {
     fields: { conversationId: 'string', content: 'string', senderUsername: 'string' },
     sync: 'gset',
+    direct: true, // 1:1 — target the conversation participants; never broadcast.
   },
   story: {
     fields: {
@@ -32,7 +33,10 @@ export const obscuraSchema = {
   },
   pix: {
     fields: {
-      recipientUsername: 'string',
+      // Canonical sorted "userIdA_userIdB" — targets both parties so the
+      // viewed-receipt (Bob → Alice) resolves in either direction.
+      conversationId: 'string',
+      recipientUsername: 'string', // "to" label / push text only now
       senderUsername: 'string',
       mediaRef: 'string',
       contentKey: 'string',
@@ -42,5 +46,6 @@ export const obscuraSchema = {
       viewedAt: 'number?',
     },
     sync: 'lww',
+    direct: true, // 1:1 — target the conversation participants; never broadcast.
   },
 };
