@@ -47,11 +47,14 @@ jobs:
       - name: Checkout pix
         uses: actions/checkout@v7
 
-      # The pix Android build depends on com.obscura:obscura-kit:0.1.0,
-      # which is resolved via mavenLocal(). The kit lives in a sibling repo
-      # — clone it and publish to local Maven so the pix build can find it.
-      # This couples pix CI's green to ObscuraKit-Kotlin's main being green,
-      # which is the correct constraint.
+      # The pix Android build consumes the kit via a Gradle composite build
+      # (settings.gradle includeBuild), NOT a published artifact. We check
+      # the kit out next to the pix build so `includeBuild` can find it and
+      # substitute com.obscura:obscura-kit -> the local :lib project, built
+      # from source. This keeps pix CI's green coupled to ObscuraKit-Kotlin's
+      # main being green — and, crucially, catches cross-repo toolchain drift
+      # (e.g. a kit Kotlin bump past pix's React-Native-pinned Kotlin) as a
+      # red build instead of a latent runtime surprise.
       - name: Checkout ObscuraKit-Kotlin
         uses: actions/checkout@v7
         with:
@@ -69,10 +72,6 @@ jobs:
           java-version: '21'
 
       - uses: gradle/actions/setup-gradle@v6
-
-      - name: Publish ObscuraKit-Kotlin to local Maven
-        run: ./gradlew :lib:publishToMavenLocal --no-daemon
-        working-directory: ObscuraKit-Kotlin
 
       - run: npm ci
 
@@ -107,3 +106,9 @@ jobs:
       - name: Assemble release APK
         run: ./gradlew :app:assembleRelease --no-daemon
         working-directory: android
+        env:
+          # The kit is checked out at $GITHUB_WORKSPACE/ObscuraKit-Kotlin;
+          # this gradle build runs from android/, so the kit sits at
+          # ../ObscuraKit-Kotlin. Locally the default in settings.gradle
+          # (../../ObscuraKit-Kotlin, kit as a sibling of obscura-pix) applies.
+          OBSCURA_KIT_PATH: ../ObscuraKit-Kotlin

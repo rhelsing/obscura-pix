@@ -4,3 +4,26 @@ extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autoli
 rootProject.name = 'ObscuraApp'
 include ':app'
 includeBuild('../node_modules/@react-native/gradle-plugin')
+
+// ── ObscuraKit-Kotlin composite build ───────────────────────────────
+// The kit is a sibling repo developed in lockstep with pix. Rather than
+// publish it to a registry (or the old publishToMavenLocal hack) and pin
+// a version, we compose its Gradle build directly. Edits to kit source
+// show up in pix on the next build with no publish step.
+//
+// `implementation("com.obscura:obscura-kit:0.1.0")` in app/build.gradle
+// stays as-is — the explicit substitution below rewrites it to the local
+// :lib project. The declared 0.1.0 is ignored while composed; it only
+// matters if/when we graduate the kit to a real published artifact.
+//
+// Path resolution:
+//   - Local dev: kit is a sibling of obscura-pix, so from android/ it's
+//     ../../ObscuraKit-Kotlin (the default below).
+//   - CI: the kit is checked out next to android/, so CI overrides via
+//     the OBSCURA_KIT_PATH env var (see .github/workflows/ci.yml).
+def obscuraKitPath = System.getenv('OBSCURA_KIT_PATH') ?: '../../ObscuraKit-Kotlin'
+includeBuild(obscuraKitPath) {
+    dependencySubstitution {
+        substitute(module('com.obscura:obscura-kit')).using(project(':lib'))
+    }
+}
