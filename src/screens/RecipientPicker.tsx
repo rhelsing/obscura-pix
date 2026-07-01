@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, FlatList, StyleSheet, Alert } from 'react-native';
-import { useNavigation, CommonActions } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura, conversationId } from '../native/ObscuraModule';
 import { useSession } from '../state/store';
@@ -71,8 +71,9 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
         Obscura.deleteFile(resizedPath).catch(() => {});
       }
 
-      // Pop back to the main tabs (skipping PhotoPreview in the stack).
-      nav.dispatch(CommonActions.navigate({ name: 'MainTabs' }));
+      // Pop the whole capture flow (PhotoPreview + RecipientPicker) off the
+      // stack so it can't be swiped/back-navigated into after sending.
+      nav.popToTop();
       Alert.alert(
         'Sent!',
         `Sent to ${recipients.length} friend${recipients.length !== 1 ? 's' : ''}${includeStory ? ' + story' : ''}`,

@@ -20,8 +20,11 @@ export function CameraScreen() {
   const takePhoto = useCallback(async () => {
     if (!camera.current) return;
     const photo = await camera.current.takePhoto({ flash });
+    // VisionCamera returns a file:// URL on iOS; the rest of the pipeline (preview,
+    // resizeImage, uploadAttachment) and the bridge contract expect a plain path.
+    const path = photo.path.replace(/^file:\/\//, '');
     nav.navigate('PhotoPreview', {
-      photo: { path: photo.path, width: photo.width, height: photo.height },
+      photo: { path, width: photo.width, height: photo.height },
     });
   }, [flash, nav]);
 
