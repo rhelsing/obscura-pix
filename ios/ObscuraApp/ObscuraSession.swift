@@ -80,11 +80,11 @@ final class ObscuraSession {
                 restored = nil
             }
             client = restored ?? (try! ObscuraClient(apiURL: ObscuraSession.apiURL))
-            client.logger = logger
+            configure(client)
             Task { await restore(saved) }
         } else {
             client = try! ObscuraClient(apiURL: ObscuraSession.apiURL)
-            client.logger = logger
+            configure(client)
         }
         observeAppLifecycle()
     }
@@ -101,20 +101,29 @@ final class ObscuraSession {
 
     // MARK: - Client lifecycle
 
+    /// Wire a client to this session: logger + re-persist on token rotation.
+    /// The `onSessionChanged` hook is what fixes the single-use-refresh-token
+    /// 401 — the kit rotates the refresh token on refresh, so we must re-save it
+    /// to the Keychain or a restored session uses a consumed token and 401s.
+    private func configure(_ c: ObscuraClient) {
+        c.logger = logger
+        c.onSessionChanged = { [weak self] in self?.saveSession() }
+    }
+
     /// Build a fresh user-scoped client (encrypted DB) for a known userId.
     /// `freshDirectory` wipes any prior data (register flow).
     func makeUserClient(userId: String, freshDirectory: Bool = false) throws -> ObscuraClient {
         let dir = ObscuraSession.userDir(userId)
         if freshDirectory { try? FileManager.default.removeItem(atPath: dir) }
         let c = try ObscuraClient(apiURL: ObscuraSession.apiURL, dataDirectory: dir, userId: userId)
-        c.logger = logger
+        configure(c)
         return c
     }
 
     /// Swap in a new live client; disconnect the old one and notify the bridge.
     func replaceClient(_ newClient: ObscuraClient) {
         client.disconnect()
-        newClient.logger = logger
+        configure(newClient)
         client = newClient
         onClientReplaced?(newClient)
     }
