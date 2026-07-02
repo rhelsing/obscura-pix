@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet,
-  Animated, Image, Alert, ActivityIndicator, useWindowDimensions,
+  Animated, Image, ActivityIndicator, useWindowDimensions,
 } from 'react-native';
 import Video from 'react-native-video';
 import { CaptionView, parseCaptionMeta } from '../components/Caption';
+import { toast } from '../components/Toast';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura, type ModelEntry } from '../native/ObscuraModule';
@@ -295,7 +296,7 @@ export function StoriesRow() {
   const openViewer = (idx: number) => {
     const group = groups[idx];
     if (group.isMe && group.stories.length === 0) {
-      Alert.alert('My Story', 'Take a photo and select "my story" to post');
+      toast.info('Take a photo and select "my story" to post');
       return;
     }
     if (group.stories.length === 0) return;

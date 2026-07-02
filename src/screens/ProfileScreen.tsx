@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, ScrollView, Alert,
+  View, Text, TextInput, TouchableOpacity, ScrollView,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Obscura } from '../native/ObscuraModule';
 import { logError, getJsLog } from '../utils/log';
+import { toast } from '../components/Toast';
 import { useSession, useModelEntries } from '../state/store';
 import { s, colors } from '../styles';
 import type { ConnectionState } from '../native/ObscuraModule';
@@ -47,8 +48,8 @@ export function ProfileScreen() {
   const save = async () => {
     try {
       await Obscura.upsertEntry('profile', `profile_${myUserId}`, { displayName, bio });
-      Alert.alert('Saved', 'Profile updated');
-    } catch (e: any) { Alert.alert('Error', e.message); }
+      toast.success('Profile updated');
+    } catch (e: any) { toast.error(e.message); }
   };
 
   // Filter on deviceId — `authorDeviceId` is the kit's per-device id, not

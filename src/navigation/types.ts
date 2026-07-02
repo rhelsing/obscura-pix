@@ -42,6 +42,8 @@ export type RootStackParamList = {
     markViewed?: boolean;
   };
   Profile: undefined;
+  AddFriend: undefined;
+  ScanFriend: undefined;
 };
 
 export interface StoryGroup {

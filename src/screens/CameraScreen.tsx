@@ -63,7 +63,7 @@ export function CameraScreen() {
   // Single gesture surface for pinch-zoom + double-tap-flip. Owning both in one
   // PanResponder avoids the pinch-vs-tap fight you'd get layering a JS tap
   // catcher over VisionCamera's built-in enableZoomGesture.
-  const gesture = useRef({ lastTap: 0, startDist: 0, startZoom: 1, moved: false, lastLoggedZoom: 1 });
+  const gesture = useRef({ lastTap: 0, startDist: 0, startZoom: 1, moved: false });
   const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -85,14 +85,7 @@ export function CameraScreen() {
           return;
         }
         const ratio = touchDist(touches) / gesture.current.startDist;
-        const next = clamp(gesture.current.startZoom * ratio, dev.minZoom, dev.maxZoom);
-        setZoom(next);
-        // [DEBUG #2] deduped zoom log — remove after tuning
-        const r = Math.round(next * 10) / 10;
-        if (r !== gesture.current.lastLoggedZoom) {
-          gesture.current.lastLoggedZoom = r;
-          console.log(`[zoom] ${r}x (min ${dev.minZoom} max ${dev.maxZoom})`);
-        }
+        setZoom(clamp(gesture.current.startZoom * ratio, dev.minZoom, dev.maxZoom));
       },
       onPanResponderRelease: () => {
         gesture.current.startDist = 0;
@@ -100,7 +93,6 @@ export function CameraScreen() {
         const now = Date.now();
         if (now - gesture.current.lastTap < DOUBLE_TAP_MS) {
           gesture.current.lastTap = 0;
-          console.log('[flip] via double-tap'); // [DEBUG #4] remove after verifying
           setFacing(f => (f === 'back' ? 'front' : 'back'));
           setZoom(1);
         } else {
@@ -112,15 +104,10 @@ export function CameraScreen() {
 
   const takePhoto = useCallback(async () => {
     if (!camera.current) return;
-    // [DEBUG #5] capture timing — remove after diagnosing lag
-    const t0 = Date.now();
-    console.log('[capture] takePhoto start');
     const photo = await camera.current.takePhoto({ flash });
-    console.log(`[capture] takePhoto returned +${Date.now() - t0}ms (${photo.width}x${photo.height})`);
     // VisionCamera returns a file:// URL on iOS; the rest of the pipeline (preview,
     // resizeImage, uploadAttachment) and the bridge contract expect a plain path.
     const path = photo.path.replace(/^file:\/\//, '');
-    console.log(`[capture] navigating to preview +${Date.now() - t0}ms`);
     nav.navigate('PhotoPreview', {
       photo: { path, width: photo.width, height: photo.height },
       mediaType: 'photo',
@@ -169,14 +156,10 @@ export function CameraScreen() {
   };
 
   const flipCamera = () => {
-    console.log('[flip] via button'); // [DEBUG #4] remove after verifying
     setFacing(f => f === 'back' ? 'front' : 'back');
     setZoom(1);
   };
   const toggleFlash = () => setFlash(f => f === 'off' ? 'on' : 'off');
-
-  // [DEBUG #2/#4] confirms the flip actually landed — remove after verifying
-  useEffect(() => { console.log(`[camera] facing=${facing}`); }, [facing]);
 
   // Emulator fallback — native side synthesizes a JPEG so the rest of the
   // capture pipeline (resize / upload) sees the same shape as a real photo.

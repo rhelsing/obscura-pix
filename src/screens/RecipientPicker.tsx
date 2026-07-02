@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, FlatList, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura, conversationId } from '../native/ObscuraModule';
 import { logError } from '../utils/log';
+import { toast } from '../components/Toast';
 import { useSession } from '../state/store';
 import type { RootStackScreenProps, RootStackParamList } from '../navigation/types';
 import { colors } from '../styles';
@@ -85,12 +86,11 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
       // Pop the whole capture flow (PhotoPreview + RecipientPicker) off the
       // stack so it can't be swiped/back-navigated into after sending.
       nav.popToTop();
-      Alert.alert(
-        'Sent!',
+      toast.success(
         `Sent to ${recipients.length} friend${recipients.length !== 1 ? 's' : ''}${includeStory ? ' + story' : ''}`,
       );
     } catch (e: any) {
-      Alert.alert('Send failed', e.message ?? String(e));
+      toast.error(e.message ?? String(e));
       setSending(false);
     }
   };

@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   SafeAreaView, View, Text, TextInput, TouchableOpacity, FlatList,
-  KeyboardAvoidingView, Platform, Animated, StyleSheet, Alert,
+  KeyboardAvoidingView, Platform, Animated, StyleSheet,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useHeaderHeight } from '@react-navigation/elements';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura, onObscuraEvent, conversationId, type ModelEntry } from '../native/ObscuraModule';
 import { useSession, useModelEntries } from '../state/store';
+import { toast } from '../components/Toast';
 import type { RootStackScreenProps, RootStackParamList, StoryGroup } from '../navigation/types';
 import { s, colors } from '../styles';
 
@@ -116,7 +117,7 @@ export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
         conversationId: convId, content: msg, senderUsername: myUsername,
       });
     } catch (e: any) {
-      Alert.alert('Send failed', e.message);
+      toast.error(e.message);
     }
   };
 

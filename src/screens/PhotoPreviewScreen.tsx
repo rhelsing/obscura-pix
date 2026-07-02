@@ -45,9 +45,6 @@ export function PhotoPreviewScreen({ route }: RootStackScreenProps<'PhotoPreview
   const [nearDelete, setNearDelete] = useState(false); // hovering the delete zone
   const nearDeleteRef = useRef(false);
 
-  // [DEBUG #5] preview mount → image visible = decode/display cost. Remove after diagnosing lag.
-  const mountedAt = useRef(Date.now()).current;
-
   // ─── Animated caption position (bar: vertical; bold: pan + rotate) ─────────
   // Animated drives smooth rendering; the mirrored refs are read at send time
   // (avoids the private Animated.__getValue()).
@@ -180,7 +177,6 @@ export function PhotoPreviewScreen({ route }: RootStackScreenProps<'PhotoPreview
   // ─── Actions ──────────────────────────────────────────────────────────────
   const onRetake = () => nav.goBack();
   const cycleFont = () => setFontIdx(i => (i + 1) % CAPTION_FONTS.length);
-  const startCaption = () => setEditing(true);
 
   const buildMeta = (): CaptionMeta | null => {
     if (!hasCaption) return null;
@@ -209,9 +205,12 @@ export function PhotoPreviewScreen({ route }: RootStackScreenProps<'PhotoPreview
 
   return (
     <View style={ps.container}>
-      {/* Tapping the photo (anywhere not the caption / buttons) drops the
-          keyboard — Snapchat behavior while composing a caption. */}
-      <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()} accessible={false}>
+      {/* Tap anywhere on the media to start typing a caption (Snapchat-style);
+          while the keyboard is up, a tap dismisses it instead. */}
+      <TouchableWithoutFeedback
+        onPress={() => { if (editing) Keyboard.dismiss(); else setEditing(true); }}
+        accessible={false}
+      >
         {isVideo ? (
           <Video
             source={{ uri: `file://${photo.path}` }}
@@ -227,8 +226,6 @@ export function PhotoPreviewScreen({ route }: RootStackScreenProps<'PhotoPreview
             style={StyleSheet.absoluteFill}
             resizeMode="cover"
             fadeDuration={0}
-            onLoadStart={() => console.log(`[preview] image onLoadStart +${Date.now() - mountedAt}ms`)}
-            onLoad={() => console.log(`[preview] image onLoad +${Date.now() - mountedAt}ms (${photo.width}x${photo.height})`)}
           />
         )}
       </TouchableWithoutFeedback>
@@ -353,11 +350,6 @@ export function PhotoPreviewScreen({ route }: RootStackScreenProps<'PhotoPreview
       {/* ── Bottom controls (hidden while keyboard up) ── */}
       {!keyboardUp && (
         <View style={ps.bottom} pointerEvents="box-none">
-          {!hasCaption && (
-            <TouchableOpacity style={ps.addTextBtn} onPress={startCaption}>
-              <Text style={ps.addTextBtnText}>add text</Text>
-            </TouchableOpacity>
-          )}
           <View style={ps.timerRow}>
             {TIMER_OPTIONS.map(opt => (
               <TouchableOpacity
@@ -410,11 +402,6 @@ const ps = StyleSheet.create({
   deletePillActive: { backgroundColor: '#ff3b30', borderColor: '#fff', transform: [{ scale: 1.1 }] },
   deleteIcon: { color: '#fff', fontSize: 16, fontWeight: '900' },
   deleteLabel: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  addTextBtn: {
-    alignSelf: 'center', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.5)', marginBottom: 16,
-  },
-  addTextBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   barPos: { position: 'absolute', left: 0, right: 0 },
   barEditWrap: { marginBottom: 12 },
   boldInput: { minWidth: 200, paddingHorizontal: 12 },

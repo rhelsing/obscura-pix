@@ -18,6 +18,9 @@ import { PhotoPreviewScreen } from '../screens/PhotoPreviewScreen';
 import { RecipientPicker } from '../screens/RecipientPicker';
 import { StoryViewer } from '../screens/StoriesScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
+import { AddFriendScreen } from '../screens/AddFriendScreen';
+import { ScanFriendScreen } from '../screens/ScanFriendScreen';
+import { AddFriendIcon } from '../components/AddFriendIcon';
 
 import type { RootStackParamList, MainTabParamList } from './types';
 
@@ -28,6 +31,16 @@ const MainTab = createBottomTabNavigator<MainTabParamList>();
 
 function TabBarLabel({ label, focused }: { label: string; focused: boolean }) {
   return <Text style={[tabStyles.label, focused && tabStyles.labelActive]}>{label}</Text>;
+}
+
+// Add-friend button — top-right on the Chats tab. Opens the AddFriend modal.
+function AddFriendHeaderButton() {
+  const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  return (
+    <TouchableOpacity onPress={() => nav.navigate('AddFriend')} style={headerStyles.btn}>
+      <AddFriendIcon size={24} color={colors.accent} />
+    </TouchableOpacity>
+  );
 }
 
 // ─── Main Tabs ───────────────────────────────────────────
@@ -63,6 +76,7 @@ function MainTabs() {
         options={{
           tabBarIcon: () => null,
           tabBarLabel: ({ focused }) => <TabBarLabel label="chat" focused={focused} />,
+          headerRight: () => <AddFriendHeaderButton />,
         }}
       />
       <MainTab.Screen
@@ -163,6 +177,22 @@ export function RootNavigator() {
               headerTitleStyle: { color: colors.text, fontWeight: '700' },
               title: 'profile',
             }}
+          />
+          <RootStack.Screen
+            name="AddFriend"
+            component={AddFriendScreen}
+            options={{
+              headerShown: true,
+              headerStyle: { backgroundColor: colors.bg },
+              headerTintColor: colors.accent,
+              headerTitleStyle: { color: colors.text, fontWeight: '700' },
+              title: 'add friend',
+            }}
+          />
+          <RootStack.Screen
+            name="ScanFriend"
+            component={ScanFriendScreen}
+            options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }}
           />
         </>
       )}
