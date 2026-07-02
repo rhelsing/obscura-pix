@@ -1,6 +1,7 @@
 import Foundation
 import React
 import ObscuraKit
+import AVFoundation
 import UIKit
 import ImageIO
 import UniformTypeIdentifiers
@@ -514,12 +515,14 @@ extension ObscuraBridge {
                 // Sanitize the (server-generated) id to a safe filename — no traversal.
                 let safe = String(String.UnicodeScalarView(
                     id.unicodeScalars.map { ObscuraBridge.safeIdChars.contains($0) ? $0 : "_" }))
-                let dest = dir.appendingPathComponent("\(safe).jpg")
-
-                // Cache hit — return immediately.
-                let size = (try? fm.attributesOfItem(atPath: dest.path)[.size] as? Int) ?? 0
-                if fm.fileExists(atPath: dest.path) && (size ?? 0) > 0 {
-                    resolve(dest.path); return
+                // Cache hit for any known extension — return immediately.
+                for ext in ["jpg", "mp4", "mov"] {
+                    let c = dir.appendingPathComponent("\(safe).\(ext)")
+                    if fm.fileExists(atPath: c.path),
+                       let attrs = try? fm.attributesOfItem(atPath: c.path),
+                       let sz = attrs[.size] as? Int, sz > 0 {
+                        resolve(c.path); return
+                    }
                 }
 
                 guard let keyData = Data(base64Encoded: contentKey),
@@ -529,8 +532,19 @@ extension ObscuraBridge {
                 let data = try await client.downloadDecryptedAttachment(
                     id: id, contentKey: keyData, nonce: nonceData)
 
+                // Pick the extension from the content so players that key off it
+                // (AVPlayer / ExoPlayer) can decode. Video is ISO-BMFF with an
+                // "ftyp" box at offset 4; brand "qt  " => QuickTime .mov.
+                var ext = "jpg"
+                let head = [UInt8](data.prefix(12))
+                if head.count >= 12, head[4] == 0x66, head[5] == 0x74, head[6] == 0x79, head[7] == 0x70 {
+                    let brand = String(bytes: head[8..<12], encoding: .ascii) ?? ""
+                    ext = brand == "qt  " ? "mov" : "mp4"
+                }
+                let dest = dir.appendingPathComponent("\(safe).\(ext)")
+
                 // Atomic publish: write a sibling temp, then rename into place.
-                let tmp = dir.appendingPathComponent("\(safe).jpg.tmp")
+                let tmp = dir.appendingPathComponent("\(safe).\(ext).tmp")
                 try data.write(to: tmp, options: .atomic)
                 if fm.fileExists(atPath: dest.path) { try? fm.removeItem(at: dest) }
                 try fm.moveItem(at: tmp, to: dest)
@@ -647,6 +661,26 @@ extension ObscuraBridge {
     func setSecureScreen(_ enabled: Bool,
                          resolver resolve: RCTPromiseResolveBlock, rejecter reject: RCTPromiseRejectBlock) {
         resolve(nil)
+    }
+
+    /// Spin up the audio HAL ahead of recording. Cold `AVAudioSession` activation
+    /// costs ~1.4s (it negotiates the category + powers the mic hardware); doing
+    /// it once when the camera screen appears makes VisionCamera's per-record
+    /// activation effectively instant. Idempotent + cheap to call repeatedly.
+    @objc(prewarmAudioSession:rejecter:)
+    func prewarmAudioSession(_ resolve: @escaping RCTPromiseResolveBlock,
+                             rejecter reject: @escaping RCTPromiseRejectBlock) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let session = AVAudioSession.sharedInstance()
+                try session.setCategory(.playAndRecord, mode: .videoRecording,
+                                         options: [.defaultToSpeaker, .allowBluetooth])
+                try session.setActive(true)
+                resolve(nil)
+            } catch {
+                reject("PREWARM_ERROR", error.localizedDescription, error)
+            }
+        }
     }
 }
 

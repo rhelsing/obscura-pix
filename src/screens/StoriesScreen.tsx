@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
   View, Text, TouchableOpacity, ScrollView, StyleSheet,
   Animated, Image, Alert, ActivityIndicator, useWindowDimensions,
 } from 'react-native';
+import Video from 'react-native-video';
 import { CaptionView, parseCaptionMeta } from '../components/Caption';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -147,9 +148,13 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
   const displayDurationMs = story?.data.displayDuration
     ? Number(story.data.displayDuration) * 1000
     : STORY_DURATION;
+  const isVideo = story?.data.mediaType === 'video';
 
   useEffect(() => {
     if (!readyToPlay) { progress.setValue(0); return; }
+    // Video drives its own advance via onEnd (plays to its natural length),
+    // so skip the fixed photo timer for it.
+    if (isVideo) { progress.setValue(0); return; }
     const dur = displayDurationMs > 0 ? displayDurationMs : STORY_DURATION;
     progress.setValue(0);
     const anim = Animated.timing(progress, {
@@ -161,7 +166,7 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
       anim.stop();
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [groupIdx, storyIdx, readyToPlay, displayDurationMs, progress]);
+  }, [groupIdx, storyIdx, readyToPlay, displayDurationMs, progress, isVideo]);
 
   if (!story) { navigation.goBack(); return null; }
 
@@ -173,10 +178,19 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
 
   return (
     <View style={sv.container}>
-      {/* Background image (if media) */}
-      {mediaUri && (
+      {/* Background media (if any) */}
+      {mediaUri && (isVideo ? (
+        <Video
+          source={{ uri: mediaUri, type: 'mp4' }}
+          style={StyleSheet.absoluteFill}
+          resizeMode="cover"
+          paused={!readyToPlay}
+          onEnd={() => advanceRef.current()}
+          onError={(e) => logError('storyVideo', e)}
+        />
+      ) : (
         <Image source={{ uri: mediaUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-      )}
+      ))}
 
       {/* Progress bars — only the currently-playing segment is Animated.
           Past/future segments are plain Views with explicit widths because

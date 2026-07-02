@@ -34,14 +34,25 @@ export function CameraScreen() {
   const camera = useRef<Camera>(null);
   const device = useCameraDevice(facing);
 
-  // Mic is needed for video audio; request once. Recording still works
-  // (silent) if denied — audio just won't be captured.
-  useEffect(() => { if (!hasMic) requestMic(); }, [hasMic, requestMic]);
-  // Cap capture resolution ~1080p. We downscale to 1080 before sending anyway,
-  // so this is lossless for the final image but cuts encode/write time. [DEBUG #5]
+  // Cap to a sane 1080p30 format. Without this VisionCamera picks a 120fps HEVC
+  // monster that makes the recording AssetWriter slow to start + huge files.
+  // We downscale photos to 1080 before sending anyway, so this is lossless there.
   const format = useCameraFormat(device, [
+    { fps: 30 },
+    { videoResolution: { width: 1920, height: 1080 } },
     { photoResolution: { width: 1920, height: 1080 } },
   ]);
+
+  // Mic for video audio — request once. Recording still works (silent) if denied.
+  useEffect(() => { if (!hasMic) requestMic(); }, [hasMic, requestMic]);
+
+  // Warm the audio HAL so hold-to-record starts instantly (cold AVAudioSession
+  // activation is ~1.4s on iOS). Warm on mount + re-warm after each recording,
+  // since VisionCamera deactivates the session when a recording ends.
+  const prewarmAudio = useCallback(() => {
+    Obscura.prewarmAudioSession().catch((e) => logError('prewarmAudio', e));
+  }, []);
+  useEffect(() => { prewarmAudio(); }, [prewarmAudio]);
 
   // Latest values the (once-created) PanResponder closures read from.
   const zoomRef = useRef(1);
@@ -124,17 +135,22 @@ export function CameraScreen() {
     if (!camera.current) return;
     setRecording(true);
     camera.current.startRecording({
+      // h264 for universal cross-platform playback (iOS defaults to HEVC, which
+      // isn't as reliably decodable on Android). videoBitRate="low" on <Camera>
+      // keeps the file small since we don't transcode.
+      videoCodec: 'h264',
       onRecordingFinished: (video) => {
         setRecording(false);
+        prewarmAudio(); // re-warm for the next record (VisionCamera just deactivated)
         const path = video.path.replace(/^file:\/\//, '');
         nav.navigate('PhotoPreview', {
           photo: { path, width: 0, height: 0 },
           mediaType: 'video',
         });
       },
-      onRecordingError: (e) => { setRecording(false); logError('record', e); },
+      onRecordingError: (e) => { setRecording(false); prewarmAudio(); logError('record', e); },
     });
-  }, [nav]);
+  }, [nav, prewarmAudio]);
 
   const stopRecording = useCallback(async () => {
     try { await camera.current?.stopRecording(); } catch (e) { logError('stopRecording', e); }
@@ -214,6 +230,8 @@ export function CameraScreen() {
         photo={true}
         video={true}
         audio={hasMic}
+        fps={30}
+        videoBitRate="low"
         photoQualityBalance="speed"
         zoom={zoom}
       />
@@ -250,9 +268,6 @@ export function CameraScreen() {
 
             <View style={cs.sideBtn} />
           </View>
-          <Text style={cs.hintText}>
-            {recording ? 'recording…' : 'tap for photo · hold for video'}
-          </Text>
         </View>
       </View>
     </SwipeNavigator>
@@ -276,7 +291,6 @@ const cs = StyleSheet.create({
   captureBtnActive: { borderColor: '#ff3b30' },
   captureBtnInner: { width: 62, height: 62, borderRadius: 31, backgroundColor: '#fff' },
   captureBtnInnerActive: { width: 34, height: 34, borderRadius: 8, backgroundColor: '#ff3b30' },
-  hintText: { color: 'rgba(255,255,255,0.85)', fontSize: 12, fontWeight: '600', textAlign: 'center', marginTop: 12 },
   permissionContainer: { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center', padding: 32 },
   permissionText: { color: '#fff', fontSize: 18, fontWeight: '600', marginBottom: 16 },
   permissionBtn: { backgroundColor: colors.accent, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12, marginBottom: 12 },

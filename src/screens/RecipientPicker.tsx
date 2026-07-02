@@ -9,7 +9,8 @@ import type { RootStackScreenProps, RootStackParamList } from '../navigation/typ
 import { colors } from '../styles';
 
 export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker'>) {
-  const { photo, caption, captionMeta, displayDuration } = route.params;
+  const { photo, mediaType = 'photo', caption, captionMeta, displayDuration } = route.params;
+  const isVideo = mediaType === 'video';
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { friends, myUsername, myUserId } = useSession();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -32,9 +33,13 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
     const originalPath = photo.path;
     let resizedPath: string | null = null;
     try {
-      // Resize natively (bytes never round-trip through JS).
-      const resized = await Obscura.resizeImage(originalPath, 1080, 80)
-        .catch((e) => { logError('resize', e); return null; });
+      // Photos resize natively (bytes never round-trip through JS). Video is
+      // uploaded as-is — resizeImage is image-only, and uploadAttachment is
+      // byte-opaque so the mp4 rides through unchanged.
+      const resized = isVideo
+        ? null
+        : await Obscura.resizeImage(originalPath, 1080, 80)
+            .catch((e) => { logError('resize', e); return null; });
       const uploadPath = resized?.path ?? originalPath;
       if (resized) resizedPath = resized.path;
 
@@ -49,6 +54,7 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
           mediaRef: attachment.id,
           contentKey: attachment.contentKey,
           nonce: attachment.nonce,
+          mediaType,
           caption,
           ...(captionMeta ? { captionMeta } : {}),
           displayDuration,
@@ -63,6 +69,7 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
           mediaRef: attachment.id,
           contentKey: attachment.contentKey,
           nonce: attachment.nonce,
+          mediaType,
           ...(captionMeta ? { captionMeta } : {}),
         });
       }

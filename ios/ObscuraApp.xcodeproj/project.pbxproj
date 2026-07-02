@@ -8,20 +8,20 @@
 
 /* Begin PBXBuildFile section */
 		0C80B921A6F3F58F76C31292 /* libPods-ObscuraApp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5DCACB8F33CDC322A6C60F78 /* libPods-ObscuraApp.a */; };
-		0DA5BA8067FF704BB82078F8 /* ObscuraApp/ObscuraBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A37E54F4484E1DFC5514BFBB /* ObscuraApp/ObscuraBridge.m */; };
+		0DA5BA8067FF704BB82078F8 /* ObscuraBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A37E54F4484E1DFC5514BFBB /* ObscuraBridge.m */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
-		2A25B6BA6346E5B2E025975A /* ObscuraApp/KeychainSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = B389CC240177117C3ED0446C /* ObscuraApp/KeychainSession.swift */; };
+		2A25B6BA6346E5B2E025975A /* KeychainSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = B389CC240177117C3ED0446C /* KeychainSession.swift */; };
 		66334826ACC6590D28987E84 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
-		9996910D1B340E197C5E445A /* ObscuraApp/ObscuraBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A5FB779AE63B4324AD7E05E /* ObscuraApp/ObscuraBridge.swift */; };
-		A34FF72BABD2AA3D3C7298B7 /* ObscuraApp/ObscuraSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04DA4A9CC1A1B5B2D06BCF3F /* ObscuraApp/ObscuraSession.swift */; };
+		9996910D1B340E197C5E445A /* ObscuraBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A5FB779AE63B4324AD7E05E /* ObscuraBridge.swift */; };
+		A34FF72BABD2AA3D3C7298B7 /* ObscuraSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04DA4A9CC1A1B5B2D06BCF3F /* ObscuraSession.swift */; };
 		EA12D49AABB929C53CDEC027 /* ObscuraKit in Frameworks */ = {isa = PBXBuildFile; productRef = 341F78DAE53D40FF1D97FDFB /* ObscuraKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		04DA4A9CC1A1B5B2D06BCF3F /* ObscuraApp/ObscuraSession.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ObscuraApp/ObscuraSession.swift; sourceTree = "<group>"; };
-		0A5FB779AE63B4324AD7E05E /* ObscuraApp/ObscuraBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ObscuraApp/ObscuraBridge.swift; sourceTree = "<group>"; };
+		04DA4A9CC1A1B5B2D06BCF3F /* ObscuraSession.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ObscuraApp/ObscuraSession.swift; sourceTree = "<group>"; };
+		0A5FB779AE63B4324AD7E05E /* ObscuraBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ObscuraApp/ObscuraBridge.swift; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* ObscuraApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ObscuraApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = ObscuraApp/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = ObscuraApp/Info.plist; sourceTree = "<group>"; };
@@ -31,8 +31,8 @@
 		5DCACB8F33CDC322A6C60F78 /* libPods-ObscuraApp.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-ObscuraApp.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = ObscuraApp/AppDelegate.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = ObscuraApp/LaunchScreen.storyboard; sourceTree = "<group>"; };
-		A37E54F4484E1DFC5514BFBB /* ObscuraApp/ObscuraBridge.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = ObscuraApp/ObscuraBridge.m; sourceTree = "<group>"; };
-		B389CC240177117C3ED0446C /* ObscuraApp/KeychainSession.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ObscuraApp/KeychainSession.swift; sourceTree = "<group>"; };
+		A37E54F4484E1DFC5514BFBB /* ObscuraBridge.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = ObscuraApp/ObscuraBridge.m; sourceTree = "<group>"; };
+		B389CC240177117C3ED0446C /* KeychainSession.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ObscuraApp/KeychainSession.swift; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -57,10 +57,10 @@
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
-				B389CC240177117C3ED0446C /* ObscuraApp/KeychainSession.swift */,
-				04DA4A9CC1A1B5B2D06BCF3F /* ObscuraApp/ObscuraSession.swift */,
-				0A5FB779AE63B4324AD7E05E /* ObscuraApp/ObscuraBridge.swift */,
-				A37E54F4484E1DFC5514BFBB /* ObscuraApp/ObscuraBridge.m */,
+				B389CC240177117C3ED0446C /* KeychainSession.swift */,
+				04DA4A9CC1A1B5B2D06BCF3F /* ObscuraSession.swift */,
+				0A5FB779AE63B4324AD7E05E /* ObscuraBridge.swift */,
+				A37E54F4484E1DFC5514BFBB /* ObscuraBridge.m */,
 			);
 			name = ObscuraApp;
 			sourceTree = "<group>";
@@ -163,7 +163,7 @@
 			);
 			mainGroup = 83CBB9F61A601CBA00E9B192;
 			packageReferences = (
-				1C243CB3AF1E9160BE44811C /* XCLocalSwiftPackageReference "../../obscura-client-ios" */,
+				1C243CB3AF1E9160BE44811C /* XCLocalSwiftPackageReference "obscura-client-ios" */,
 			);
 			productRefGroup = 83CBBA001A601CBA00E9B192 /* Products */;
 			projectDirPath = "";
@@ -212,13 +212,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-ObscuraApp/Pods-ObscuraApp-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-ObscuraApp/Pods-ObscuraApp-frameworks-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -255,13 +251,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-ObscuraApp/Pods-ObscuraApp-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-ObscuraApp/Pods-ObscuraApp-resources-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -276,10 +268,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
-				2A25B6BA6346E5B2E025975A /* ObscuraApp/KeychainSession.swift in Sources */,
-				A34FF72BABD2AA3D3C7298B7 /* ObscuraApp/ObscuraSession.swift in Sources */,
-				9996910D1B340E197C5E445A /* ObscuraApp/ObscuraBridge.swift in Sources */,
-				0DA5BA8067FF704BB82078F8 /* ObscuraApp/ObscuraBridge.m in Sources */,
+				2A25B6BA6346E5B2E025975A /* KeychainSession.swift in Sources */,
+				A34FF72BABD2AA3D3C7298B7 /* ObscuraSession.swift in Sources */,
+				9996910D1B340E197C5E445A /* ObscuraBridge.swift in Sources */,
+				0DA5BA8067FF704BB82078F8 /* ObscuraBridge.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -555,7 +547,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		1C243CB3AF1E9160BE44811C /* XCLocalSwiftPackageReference "../../obscura-client-ios" */ = {
+		1C243CB3AF1E9160BE44811C /* XCLocalSwiftPackageReference "obscura-client-ios" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = "../../obscura-client-ios";
 		};
@@ -564,7 +556,7 @@
 /* Begin XCSwiftPackageProductDependency section */
 		341F78DAE53D40FF1D97FDFB /* ObscuraKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 1C243CB3AF1E9160BE44811C /* XCLocalSwiftPackageReference "../../obscura-client-ios" */;
+			package = 1C243CB3AF1E9160BE44811C /* XCLocalSwiftPackageReference "obscura-client-ios" */;
 			productName = ObscuraKit;
 		};
 /* End XCSwiftPackageProductDependency section */
