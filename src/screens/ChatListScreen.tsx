@@ -7,6 +7,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura, type Friend, type ModelEntry } from '../native/ObscuraModule';
 import { useSession, useModelEntries } from '../state/store';
 import { StoriesRow } from './StoriesScreen';
+import { SwipeNavigator } from '../components/SwipeNavigator';
 import type { RootStackParamList, StoryGroup } from '../navigation/types';
 import { colors } from '../styles';
 
@@ -104,7 +105,10 @@ export function ChatListScreen() {
   }).sort((a, b) => b.latestTimestamp - a.latestTimestamp), [friends, messages, pixEntries, myUsername]);
 
   return (
-    <View style={{ flex: 1 }}>
+    <SwipeNavigator
+      // Chats is the left-hand tab; swipe left reveals the Camera on the right.
+      onSwipeLeft={() => nav.navigate('MainTabs', { screen: 'Camera' })}
+    >
       {/* Stories row */}
       <StoriesRow />
 
@@ -147,6 +151,8 @@ export function ChatListScreen() {
       <FlatList
         data={activities}
         keyExtractor={item => item.friend.userId}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         renderItem={({ item }) => {
           const hasPix = item.unopenedPix.length > 0;
           const preview = item.lastMessage?.data.content
@@ -196,7 +202,7 @@ export function ChatListScreen() {
             : null
         }
       />
-    </View>
+    </SwipeNavigator>
   );
 }
 

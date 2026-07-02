@@ -203,7 +203,8 @@ extension ObscuraBridge {
     func logout(_ resolve: @escaping RCTPromiseResolveBlock,
                 rejecter reject: @escaping RCTPromiseRejectBlock) {
         Task {
-            try? await ObscuraSession.shared.client.logout()
+            do { try await ObscuraSession.shared.client.logout() }
+            catch { ObscuraSession.shared.logger.log("logout: \(error)") }
             ObscuraSession.shared.clearSession()
             resolve(nil)
         }
@@ -320,10 +321,13 @@ extension ObscuraBridge {
 
     /// Parse a JSON object string from JS into `[String: Any]`.
     private func parseJSONObject(_ s: String) -> [String: Any] {
-        guard let d = s.data(using: .utf8),
-              let obj = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any]
-        else { return [:] }
-        return obj
+        guard let d = s.data(using: .utf8) else { return [:] }
+        do {
+            return (try JSONSerialization.jsonObject(with: d)) as? [String: Any] ?? [:]
+        } catch {
+            ObscuraSession.shared.logger.log("parseJSONObject failed: \(error)")
+            return [:]
+        }
     }
 
     /// `ModelEntry` -> the `{ id, data, timestamp, authorDeviceId }` shape JS expects.

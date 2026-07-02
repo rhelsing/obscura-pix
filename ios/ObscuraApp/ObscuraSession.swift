@@ -67,11 +67,18 @@ final class ObscuraSession {
 
     private init() {
         if let saved = KeychainSession.load() {
-            let restored = try? ObscuraClient(
-                apiURL: ObscuraSession.apiURL,
-                dataDirectory: ObscuraSession.userDir(saved.userId),
-                userId: saved.userId
-            )
+            var restored: ObscuraClient?
+            do {
+                restored = try ObscuraClient(
+                    apiURL: ObscuraSession.apiURL,
+                    dataDirectory: ObscuraSession.userDir(saved.userId),
+                    userId: saved.userId
+                )
+            } catch {
+                // Pre-init (self not fully constructed): NSLog rather than self.logger.
+                NSLog("[ObscuraSession] session restore: failed to open user client: %@", "\(error)")
+                restored = nil
+            }
             client = restored ?? (try! ObscuraClient(apiURL: ObscuraSession.apiURL))
             client.logger = logger
             Task { await restore(saved) }
@@ -140,7 +147,7 @@ final class ObscuraSession {
         let fresh = await client.ensureFreshToken()
         guard fresh else { clearSession(); return }
         saveSession()
-        do { try await client.connect() } catch { /* bridge observes connectionChanged */ }
+        do { try await client.connect() } catch { logger.log("restore connect failed: \(error)") }
     }
 
     // MARK: - App lifecycle
@@ -153,7 +160,7 @@ final class ObscuraSession {
             self.onAppStateChanged?(true)
             let c = self.client
             if c.authState == .authenticated && c.connectionState == .disconnected {
-                Task { try? await c.connect() }
+                Task { do { try await c.connect() } catch { self.logger.log("foreground reconnect failed: \(error)") } }
             }
         }
         nc.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in

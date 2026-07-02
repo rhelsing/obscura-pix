@@ -18,6 +18,11 @@ export const obscuraSchema = {
       mediaRef: 'string?',
       contentKey: 'string?',
       nonce: 'string?',
+      // 'photo' (default when absent) | 'video'. Opaque string.
+      mediaType: 'string?',
+      // Styled-caption blob (JSON: style/x/y/rot/color/font). Opaque string —
+      // the shape can evolve without a schema/contract change. See Caption.tsx.
+      captionMeta: 'string?',
     },
     sync: 'gset',
     ttl: '24h',
@@ -42,6 +47,11 @@ export const obscuraSchema = {
       contentKey: 'string',
       nonce: 'string',
       caption: 'string?',
+      // 'photo' (default when absent) | 'video'. Opaque string.
+      mediaType: 'string?',
+      // Styled-caption blob (JSON: style/x/y/rot/color/font). Opaque string —
+      // the shape can evolve without a schema/contract change. See Caption.tsx.
+      captionMeta: 'string?',
       displayDuration: 'number',
       viewedAt: 'number?',
     },

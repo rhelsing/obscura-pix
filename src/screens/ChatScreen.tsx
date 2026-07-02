@@ -4,6 +4,7 @@ import {
   KeyboardAvoidingView, Platform, Animated, StyleSheet, Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useHeaderHeight } from '@react-navigation/elements';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura, onObscuraEvent, conversationId, type ModelEntry } from '../native/ObscuraModule';
 import { useSession, useModelEntries } from '../state/store';
@@ -52,6 +53,7 @@ export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
   const { friend } = route.params;
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { myUserId, myUsername } = useSession();
+  const headerHeight = useHeaderHeight();
   const allMessages = useModelEntries('directMessage');
   const allPix = useModelEntries('pix');
   const [text, setText] = useState('');
@@ -181,19 +183,25 @@ export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
 
   return (
     <SafeAreaView style={s.container}>
-      <FlatList
-        data={timeline}
-        keyExtractor={(item, i) => item.id || `${i}`}
-        style={s.messageList}
-        renderItem={renderItem}
-        ListFooterComponent={typers.length > 0 ? (
-          <View style={[s.msgRow, s.msgRowLeft]}>
-            <TypingBubble />
-          </View>
-        ) : null}
-      />
+      <KeyboardAvoidingView
+        style={s.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={headerHeight}
+      >
+        <FlatList
+          data={timeline}
+          keyExtractor={(item, i) => item.id || `${i}`}
+          style={s.messageList}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          renderItem={renderItem}
+          ListFooterComponent={typers.length > 0 ? (
+            <View style={[s.msgRow, s.msgRowLeft]}>
+              <TypingBubble />
+            </View>
+          ) : null}
+        />
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={s.composer}>
           <TextInput style={s.composerInput} placeholder="message" placeholderTextColor="#999"
             value={text} onChangeText={onChangeText} />

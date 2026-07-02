@@ -3,12 +3,13 @@ import { View, Text, TouchableOpacity, FlatList, StyleSheet, Alert } from 'react
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura, conversationId } from '../native/ObscuraModule';
+import { logError } from '../utils/log';
 import { useSession } from '../state/store';
 import type { RootStackScreenProps, RootStackParamList } from '../navigation/types';
 import { colors } from '../styles';
 
 export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker'>) {
-  const { photo, caption, displayDuration } = route.params;
+  const { photo, caption, captionMeta, displayDuration } = route.params;
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { friends, myUsername, myUserId } = useSession();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -32,7 +33,8 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
     let resizedPath: string | null = null;
     try {
       // Resize natively (bytes never round-trip through JS).
-      const resized = await Obscura.resizeImage(originalPath, 1080, 80).catch(() => null);
+      const resized = await Obscura.resizeImage(originalPath, 1080, 80)
+        .catch((e) => { logError('resize', e); return null; });
       const uploadPath = resized?.path ?? originalPath;
       if (resized) resizedPath = resized.path;
 
@@ -48,6 +50,7 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
           contentKey: attachment.contentKey,
           nonce: attachment.nonce,
           caption,
+          ...(captionMeta ? { captionMeta } : {}),
           displayDuration,
         });
       }
@@ -60,15 +63,16 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
           mediaRef: attachment.id,
           contentKey: attachment.contentKey,
           nonce: attachment.nonce,
+          ...(captionMeta ? { captionMeta } : {}),
         });
       }
 
       // Only clean up on success. On failure we leave the temp files in
       // place so the user can retry without re-shooting the photo — the
       // back button + PhotoPreview retake flow will clean up if abandoned.
-      Obscura.deleteFile(originalPath).catch(() => {});
+      Obscura.deleteFile(originalPath).catch((e) => logError('cleanup.original', e));
       if (resizedPath && resizedPath !== originalPath) {
-        Obscura.deleteFile(resizedPath).catch(() => {});
+        Obscura.deleteFile(resizedPath).catch((e) => logError('cleanup.resized', e));
       }
 
       // Pop the whole capture flow (PhotoPreview + RecipientPicker) off the
