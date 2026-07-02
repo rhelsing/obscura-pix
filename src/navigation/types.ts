@@ -15,10 +15,17 @@ export type RootStackParamList = {
   Auth: undefined;
   MainTabs: NavigatorScreenParams<MainTabParamList>;
   Chat: { friend: Friend };
-  PhotoPreview: { photo: { path: string; width: number; height: number } };
+  PhotoPreview: {
+    photo: { path: string; width: number; height: number };
+    /** Defaults to 'photo' when omitted. */
+    mediaType?: 'photo' | 'video';
+  };
   RecipientPicker: {
     photo: { path: string; width: number; height: number };
+    mediaType?: 'photo' | 'video';
     caption: string;
+    /** Serialized CaptionMeta JSON blob (empty string when no caption). */
+    captionMeta: string;
     displayDuration: number;
   };
   StoryViewer: {
@@ -35,7 +42,8 @@ export type RootStackParamList = {
     markViewed?: boolean;
   };
   Profile: undefined;
-  Settings: undefined;
+  AddFriend: undefined;
+  ScanFriend: undefined;
 };
 
 export interface StoryGroup {

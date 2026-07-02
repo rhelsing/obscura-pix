@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { SafeAreaView, View, Text, TextInput, TouchableOpacity, Image } from 'react-native';
 import { Obscura } from '../native/ObscuraModule';
 import { useSession } from '../state/store';
+import { KeyboardScreen } from '../components/KeyboardScreen';
 import { s } from '../styles';
 
 export function AuthScreen() {
@@ -44,6 +45,7 @@ export function AuthScreen() {
 
   return (
     <SafeAreaView style={s.container}>
+      <KeyboardScreen>
       <View style={s.authBox}>
         <Image source={require('../assets/logo.png')} style={s.logoImg} resizeMode="contain" />
         <Text style={s.subtitle}>encrypted everything</Text>
@@ -61,6 +63,7 @@ export function AuthScreen() {
           </TouchableOpacity>
         </View>
       </View>
+      </KeyboardScreen>
     </SafeAreaView>
   );
 }

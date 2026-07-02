@@ -1,12 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, FlatList, Alert, StyleSheet,
+  View, Text, TouchableOpacity, FlatList, StyleSheet,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura, type Friend, type ModelEntry } from '../native/ObscuraModule';
 import { useSession, useModelEntries } from '../state/store';
 import { StoriesRow } from './StoriesScreen';
+import { SwipeNavigator } from '../components/SwipeNavigator';
 import type { RootStackParamList, StoryGroup } from '../navigation/types';
 import { colors } from '../styles';
 
@@ -34,7 +35,6 @@ export function ChatListScreen() {
   const { friends, pending, myUsername } = useSession();
   const messages = useModelEntries('directMessage');
   const pixEntries = useModelEntries('pix');
-  const [codeInput, setCodeInput] = useState('');
 
   const onViewPix = (entry: ModelEntry) => {
     const group: StoryGroup = {
@@ -43,21 +43,6 @@ export function ChatListScreen() {
       isMe: false,
     };
     nav.navigate('StoryViewer', { groups: [group], startIndex: 0, markViewed: true });
-  };
-
-  const addFriend = async () => {
-    try { await Obscura.addFriendByCode(codeInput); setCodeInput(''); }
-    catch (e: any) { Alert.alert('Error', e.message); }
-  };
-
-  const copyMyCode = async () => {
-    try {
-      const code = await Obscura.getFriendCode();
-      if (code) {
-        await Obscura.setClipboard(code);
-        Alert.alert('Copied!', 'Friend code copied to clipboard');
-      }
-    } catch (e: any) { Alert.alert('Error', e.message); }
   };
 
   // Build activity list — each friend with their latest chat + pix state.
@@ -104,24 +89,12 @@ export function ChatListScreen() {
   }).sort((a, b) => b.latestTimestamp - a.latestTimestamp), [friends, messages, pixEntries, myUsername]);
 
   return (
-    <View style={{ flex: 1 }}>
+    <SwipeNavigator
+      // Chats is the left-hand tab; swipe left reveals the Camera on the right.
+      onSwipeLeft={() => nav.navigate('MainTabs', { screen: 'Camera' })}
+    >
       {/* Stories row */}
       <StoriesRow />
-
-      {/* Add friend */}
-      <View style={cl.addRow}>
-        <TouchableOpacity style={cl.copyBtn} onPress={copyMyCode}>
-          <Text style={cl.copyBtnText}>copy my code</Text>
-        </TouchableOpacity>
-      </View>
-      <View style={cl.addRow}>
-        <TextInput style={cl.addInput}
-          placeholder="paste friend code" placeholderTextColor="#666"
-          value={codeInput} onChangeText={setCodeInput} />
-        <TouchableOpacity style={cl.addBtn} onPress={addFriend}>
-          <Text style={cl.addBtnText}>add</Text>
-        </TouchableOpacity>
-      </View>
 
       {/* Pending requests */}
       {pending.length > 0 && pending.map(f => (
@@ -147,6 +120,8 @@ export function ChatListScreen() {
       <FlatList
         data={activities}
         keyExtractor={item => item.friend.userId}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         renderItem={({ item }) => {
           const hasPix = item.unopenedPix.length > 0;
           const preview = item.lastMessage?.data.content
@@ -196,7 +171,7 @@ export function ChatListScreen() {
             : null
         }
       />
-    </View>
+    </SwipeNavigator>
   );
 }
 

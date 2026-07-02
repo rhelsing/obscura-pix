@@ -1,16 +1,19 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, FlatList, StyleSheet, Alert } from 'react-native';
-import { useNavigation, CommonActions } from '@react-navigation/native';
+import { View, Text, TouchableOpacity, FlatList, StyleSheet } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Obscura } from '../native/ObscuraModule';
+import { Obscura, conversationId } from '../native/ObscuraModule';
+import { logError } from '../utils/log';
+import { toast } from '../components/Toast';
 import { useSession } from '../state/store';
 import type { RootStackScreenProps, RootStackParamList } from '../navigation/types';
 import { colors } from '../styles';
 
 export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker'>) {
-  const { photo, caption, displayDuration } = route.params;
+  const { photo, mediaType = 'photo', caption, captionMeta, displayDuration } = route.params;
+  const isVideo = mediaType === 'video';
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { friends, myUsername } = useSession();
+  const { friends, myUsername, myUserId } = useSession();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [includeStory, setIncludeStory] = useState(false);
   const [sending, setSending] = useState(false);
@@ -31,8 +34,13 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
     const originalPath = photo.path;
     let resizedPath: string | null = null;
     try {
-      // Resize natively (bytes never round-trip through JS).
-      const resized = await Obscura.resizeImage(originalPath, 1080, 80).catch(() => null);
+      // Photos resize natively (bytes never round-trip through JS). Video is
+      // uploaded as-is — resizeImage is image-only, and uploadAttachment is
+      // byte-opaque so the mp4 rides through unchanged.
+      const resized = isVideo
+        ? null
+        : await Obscura.resizeImage(originalPath, 1080, 80)
+            .catch((e) => { logError('resize', e); return null; });
       const uploadPath = resized?.path ?? originalPath;
       if (resized) resizedPath = resized.path;
 
@@ -41,12 +49,15 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
       // Create Pix entry for each recipient.
       for (const friend of recipients) {
         await Obscura.createEntry('pix', {
+          conversationId: conversationId(myUserId, friend.userId),
           recipientUsername: friend.username,
           senderUsername: myUsername,
           mediaRef: attachment.id,
           contentKey: attachment.contentKey,
           nonce: attachment.nonce,
+          mediaType,
           caption,
+          ...(captionMeta ? { captionMeta } : {}),
           displayDuration,
         });
       }
@@ -59,25 +70,27 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
           mediaRef: attachment.id,
           contentKey: attachment.contentKey,
           nonce: attachment.nonce,
+          mediaType,
+          ...(captionMeta ? { captionMeta } : {}),
         });
       }
 
       // Only clean up on success. On failure we leave the temp files in
       // place so the user can retry without re-shooting the photo — the
       // back button + PhotoPreview retake flow will clean up if abandoned.
-      Obscura.deleteFile(originalPath).catch(() => {});
+      Obscura.deleteFile(originalPath).catch((e) => logError('cleanup.original', e));
       if (resizedPath && resizedPath !== originalPath) {
-        Obscura.deleteFile(resizedPath).catch(() => {});
+        Obscura.deleteFile(resizedPath).catch((e) => logError('cleanup.resized', e));
       }
 
-      // Pop back to the main tabs (skipping PhotoPreview in the stack).
-      nav.dispatch(CommonActions.navigate({ name: 'MainTabs' }));
-      Alert.alert(
-        'Sent!',
+      // Pop the whole capture flow (PhotoPreview + RecipientPicker) off the
+      // stack so it can't be swiped/back-navigated into after sending.
+      nav.popToTop();
+      toast.success(
         `Sent to ${recipients.length} friend${recipients.length !== 1 ? 's' : ''}${includeStory ? ' + story' : ''}`,
       );
     } catch (e: any) {
-      Alert.alert('Send failed', e.message ?? String(e));
+      toast.error(e.message ?? String(e));
       setSending(false);
     }
   };

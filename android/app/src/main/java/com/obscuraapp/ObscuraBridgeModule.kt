@@ -565,23 +565,37 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 // Sanitize the id to a safe filename — attachment ids are server-generated
                 // (UUIDs in practice) but we don't want any path traversal surprises.
                 val safe = id.replace(Regex("[^A-Za-z0-9_-]"), "_")
-                val dest = java.io.File(dir, "$safe.jpg")
-                if (!dest.exists() || dest.length() == 0L) {
-                    val keyBytes = Base64.decode(contentKey, Base64.DEFAULT)
-                    val nonceBytes = Base64.decode(nonce, Base64.DEFAULT)
-                    val data = requireClient().downloadDecryptedAttachment(id, keyBytes, nonceBytes)
-                    // Atomic publish: write to a tmp file then rename into place so a
-                    // concurrent reader never sees a partially-written file.
-                    val tmp = java.io.File(dir, "$safe.jpg.tmp")
-                    try {
-                        tmp.writeBytes(data)
-                        if (!tmp.renameTo(dest)) {
-                            // Fallback for the (unlikely) cross-mount rename failure.
-                            tmp.copyTo(dest, overwrite = true)
-                        }
-                    } finally {
-                        tmp.delete()
+                // Cache hit for any known extension — return immediately.
+                for (ext in listOf("jpg", "mp4", "mov")) {
+                    val c = java.io.File(dir, "$safe.$ext")
+                    if (c.exists() && c.length() > 0L) { promise.resolve(c.absolutePath); return@launch }
+                }
+
+                val keyBytes = Base64.decode(contentKey, Base64.DEFAULT)
+                val nonceBytes = Base64.decode(nonce, Base64.DEFAULT)
+                val data = requireClient().downloadDecryptedAttachment(id, keyBytes, nonceBytes)
+
+                // Pick the extension from the content so players that key off it
+                // (ExoPlayer / AVPlayer) can decode. Video is ISO-BMFF with an
+                // "ftyp" box at offset 4; brand "qt  " => QuickTime .mov.
+                val ext = if (data.size >= 12 &&
+                    data[4] == 0x66.toByte() && data[5] == 0x74.toByte() &&
+                    data[6] == 0x79.toByte() && data[7] == 0x70.toByte()) {
+                    if (String(data, 8, 4, Charsets.US_ASCII) == "qt  ") "mov" else "mp4"
+                } else "jpg"
+                val dest = java.io.File(dir, "$safe.$ext")
+
+                // Atomic publish: write to a tmp file then rename into place so a
+                // concurrent reader never sees a partially-written file.
+                val tmp = java.io.File(dir, "$safe.$ext.tmp")
+                try {
+                    tmp.writeBytes(data)
+                    if (!tmp.renameTo(dest)) {
+                        // Fallback for the (unlikely) cross-mount rename failure.
+                        tmp.copyTo(dest, overwrite = true)
                     }
+                } finally {
+                    tmp.delete()
                 }
                 promise.resolve(dest.absolutePath)
             } catch (t: Throwable) {
@@ -880,6 +894,14 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         } catch (e: Throwable) {
             promise.reject("DELETE_FAILED", e)
         }
+    }
+
+    // Parity with iOS `prewarmAudioSession`. Android's MediaRecorder audio init
+    // is fast (no slow AVAudioSession-style HAL negotiation), so this is a no-op;
+    // it exists so the JS bridge contract is identical on both platforms.
+    @ReactMethod
+    fun prewarmAudioSession(promise: Promise) {
+        promise.resolve(null)
     }
 
     // ─── Clipboard ──────────────────────────────────────────────────────────
