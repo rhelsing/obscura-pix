@@ -132,6 +132,16 @@ final class ObscuraSession {
 
     func saveSession() {
         guard let token = client.token, let userId = client.userId else { return }
+        // The socket requires a DEVICE-scoped token; a restored user-scoped token
+        // gets 403 "Device-scoped token required" on connect. Never persist a
+        // non-device-scoped token — this also makes persist-on-refresh safe if a
+        // refresh ever hands back a user-scoped token.
+        let deviceScoped = APIClient.extractDeviceId(token) != nil
+        logger.log("[auth] saveSession deviceScoped=\(deviceScoped)")
+        guard deviceScoped else {
+            logger.log("[auth] saveSession SKIPPED — token is not device-scoped")
+            return
+        }
         KeychainSession.save(SessionData(
             token: token,
             refreshToken: client.refreshToken,
@@ -146,6 +156,16 @@ final class ObscuraSession {
     // MARK: - Restore on launch
 
     private func restore(_ saved: SessionData) async {
+        // If the stored token isn't device-scoped (e.g. poisoned by a prior
+        // persist-on-refresh), it will 403 on connect. Clear it so a fresh login
+        // re-establishes a device-scoped session instead of looping.
+        let restoredScoped = APIClient.extractDeviceId(saved.token) != nil
+        logger.log("[auth] restore deviceScoped=\(restoredScoped)")
+        guard restoredScoped else {
+            logger.log("[auth] restore token not device-scoped — clearing session, re-login required")
+            clearSession()
+            return
+        }
         await client.restoreSession(
             token: saved.token,
             refreshToken: saved.refreshToken,
