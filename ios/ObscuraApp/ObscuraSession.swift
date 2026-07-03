@@ -66,13 +66,13 @@ final class ObscuraSession {
     var onAppStateChanged: ((Bool) -> Void)?
 
     private init() {
-        if let saved = KeychainSession.load() {
+        if let saved = KeychainSession.load(), let username = saved.username {
             var restored: ObscuraClient?
             do {
                 restored = try ObscuraClient(
                     apiURL: ObscuraSession.apiURL,
-                    dataDirectory: ObscuraSession.userDir(saved.userId),
-                    userId: saved.userId
+                    dataDirectory: ObscuraSession.userDir(username),
+                    userId: username
                 )
             } catch {
                 // Pre-init (self not fully constructed): NSLog rather than self.logger.
@@ -89,14 +89,15 @@ final class ObscuraSession {
         observeAppLifecycle()
     }
 
-    // MARK: - Per-user data directory (SQLCipher DB keyed by userId)
+    // MARK: - Per-user data directory (SQLCipher DB keyed by USERNAME — Android
+    // parity, so there's no throwaway login just to learn userId first).
 
     private static var baseDir: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("ObscuraData")
     }
-    static func userDir(_ userId: String) -> String {
-        baseDir.appendingPathComponent(userId).path
+    static func userDir(_ username: String) -> String {
+        baseDir.appendingPathComponent(username).path
     }
 
     // MARK: - Client lifecycle
@@ -110,12 +111,14 @@ final class ObscuraSession {
         c.onSessionChanged = { [weak self] in self?.saveSession() }
     }
 
-    /// Build a fresh user-scoped client (encrypted DB) for a known userId.
+    /// Build a fresh client (encrypted DB) keyed by username — Android parity.
+    /// The `userId:` arg is ONLY the DB-secret Keychain key; it does not set
+    /// client.userId (login does), so we never need a throwaway login first.
     /// `freshDirectory` wipes any prior data (register flow).
-    func makeUserClient(userId: String, freshDirectory: Bool = false) throws -> ObscuraClient {
-        let dir = ObscuraSession.userDir(userId)
+    func makeUserClient(username: String, freshDirectory: Bool = false) throws -> ObscuraClient {
+        let dir = ObscuraSession.userDir(username)
         if freshDirectory { try? FileManager.default.removeItem(atPath: dir) }
-        let c = try ObscuraClient(apiURL: ObscuraSession.apiURL, dataDirectory: dir, userId: userId)
+        let c = try ObscuraClient(apiURL: ObscuraSession.apiURL, dataDirectory: dir, userId: username)
         configure(c)
         return c
     }
@@ -132,16 +135,6 @@ final class ObscuraSession {
 
     func saveSession() {
         guard let token = client.token, let userId = client.userId else { return }
-        // The socket requires a DEVICE-scoped token; a restored user-scoped token
-        // gets 403 "Device-scoped token required" on connect. Never persist a
-        // non-device-scoped token — this also makes persist-on-refresh safe if a
-        // refresh ever hands back a user-scoped token.
-        let deviceScoped = APIClient.extractDeviceId(token) != nil
-        logger.log("[auth] saveSession deviceScoped=\(deviceScoped)")
-        guard deviceScoped else {
-            logger.log("[auth] saveSession SKIPPED — token is not device-scoped")
-            return
-        }
         KeychainSession.save(SessionData(
             token: token,
             refreshToken: client.refreshToken,
@@ -156,16 +149,6 @@ final class ObscuraSession {
     // MARK: - Restore on launch
 
     private func restore(_ saved: SessionData) async {
-        // If the stored token isn't device-scoped (e.g. poisoned by a prior
-        // persist-on-refresh), it will 403 on connect. Clear it so a fresh login
-        // re-establishes a device-scoped session instead of looping.
-        let restoredScoped = APIClient.extractDeviceId(saved.token) != nil
-        logger.log("[auth] restore deviceScoped=\(restoredScoped)")
-        guard restoredScoped else {
-            logger.log("[auth] restore token not device-scoped — clearing session, re-login required")
-            clearSession()
-            return
-        }
         await client.restoreSession(
             token: saved.token,
             refreshToken: saved.refreshToken,

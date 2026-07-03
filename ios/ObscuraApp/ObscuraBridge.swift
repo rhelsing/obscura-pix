@@ -117,9 +117,9 @@ extension ObscuraBridge {
                       rejecter reject: @escaping RCTPromiseRejectBlock) {
         Task {
             do {
-                // Get userId, build a user-scoped encrypted DB, provision this device.
+                // Register the account, build a username-keyed encrypted DB, provision this device.
                 let creds = try await ObscuraClient.registerAccount(username, password)
-                let c = try ObscuraSession.shared.makeUserClient(userId: creds.userId, freshDirectory: true)
+                let c = try ObscuraSession.shared.makeUserClient(username: username, freshDirectory: true)
                 await c.restoreSession(token: creds.token, refreshToken: creds.refreshToken,
                                        userId: creds.userId, deviceId: nil, username: username)
                 try await c.provisionCurrentDevice()
@@ -138,11 +138,11 @@ extension ObscuraBridge {
                     rejecter reject: @escaping RCTPromiseRejectBlock) {
         Task {
             do {
-                // Step 1: user-scoped login to learn userId, build the encrypted DB.
-                let shell = try await ObscuraClient.loginAccount(username, password)
-                let c = try ObscuraSession.shared.makeUserClient(userId: shell.userId)
+                // No throwaway login — the DB is keyed by username, so build the
+                // client directly and let its device-first loginSmart establish a
+                // single device-scoped session (Android parity).
+                let c = try ObscuraSession.shared.makeUserClient(username: username)
                 ObscuraSession.shared.replaceClient(c)
-                // Step 2: smart login decides what JS should do next.
                 let scenario = try await c.loginSmart(username, password)
                 let mapped: String
                 switch scenario {
