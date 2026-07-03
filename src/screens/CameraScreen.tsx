@@ -1,5 +1,5 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Pressable, StyleSheet, Linking, PanResponder, AppState } from 'react-native';
+import { View, Text, TouchableOpacity, Pressable, StyleSheet, Linking, PanResponder, AppState, Animated } from 'react-native';
 import {
   Camera, useCameraDevice, useCameraPermission, useCameraFormat, useMicrophonePermission,
 } from 'react-native-vision-camera';
@@ -132,6 +132,17 @@ export function CameraScreen() {
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didRecord = useRef(false);
 
+  // Simple shutter-button press feedback: scale down on touch, spring back on
+  // release. Native-driver so it's instant (<16ms) even while the ~440ms photo
+  // capture runs on the JS/native bridge — the button acknowledges the tap
+  // immediately instead of feeling unresponsive until the capture completes.
+  const shutterScale = useRef(new Animated.Value(1)).current;
+  const animateShutter = useCallback((to: number) => {
+    Animated.spring(shutterScale, {
+      toValue: to, useNativeDriver: true, speed: 40, bounciness: 6,
+    }).start();
+  }, [shutterScale]);
+
   const startRecording = useCallback(() => {
     if (!camera.current) return;
     setRecording(true);
@@ -160,10 +171,12 @@ export function CameraScreen() {
   // Press-in arms a hold timer; if held past the threshold we record, otherwise
   // the release fires a normal photo. Release always ends a recording.
   const onShutterPressIn = () => {
+    animateShutter(0.88);
     didRecord.current = false;
     holdTimer.current = setTimeout(() => { didRecord.current = true; startRecording(); }, HOLD_TO_RECORD_MS);
   };
   const onShutterPressOut = () => {
+    animateShutter(1);
     if (holdTimer.current) { clearTimeout(holdTimer.current); holdTimer.current = null; }
     if (didRecord.current) stopRecording();
     else takePhoto();
@@ -255,13 +268,15 @@ export function CameraScreen() {
               <Text style={cs.sideBtnText}>FLIP</Text>
             </TouchableOpacity>
 
-            <Pressable
-              onPressIn={onShutterPressIn}
-              onPressOut={onShutterPressOut}
-              style={[cs.captureBtn, recording && cs.captureBtnActive]}
-            >
-              <View style={[cs.captureBtnInner, recording && cs.captureBtnInnerActive]} />
-            </Pressable>
+            <Animated.View style={{ transform: [{ scale: shutterScale }] }}>
+              <Pressable
+                onPressIn={onShutterPressIn}
+                onPressOut={onShutterPressOut}
+                style={[cs.captureBtn, recording && cs.captureBtnActive]}
+              >
+                <View style={[cs.captureBtnInner, recording && cs.captureBtnInnerActive]} />
+              </Pressable>
+            </Animated.View>
 
             <View style={cs.sideBtn} />
           </View>
