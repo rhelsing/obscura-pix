@@ -1,14 +1,16 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { createMaterialTopTabNavigator, type MaterialTopTabBarProps } from '@react-navigation/material-top-tabs';
+import { View, Text, TouchableOpacity, StyleSheet, AppState } from 'react-native';
+import { useNavigation, useIsFocused, getFocusedRouteNameFromRoute, type RouteProp } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useSession, useStore } from '../state/store';
 import { Obscura, onObscuraEvent } from '../native/ObscuraModule';
 import { logError } from '../utils/log';
 import { colors } from '../styles';
+import { CameraActiveContext } from './CameraActiveContext';
 
 import { AuthScreen } from '../screens/AuthScreen';
 import { CameraScreen } from '../screens/CameraScreen';
@@ -25,12 +27,21 @@ import { AddFriendIcon } from '../components/AddFriendIcon';
 import type { RootStackParamList, MainTabParamList } from './types';
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
-const MainTab = createBottomTabNavigator<MainTabParamList>();
+const MainTab = createMaterialTopTabNavigator<MainTabParamList>();
 
 // ─── Tab Bar ─────────────────────────────────────────────
 
-function TabBarLabel({ label, focused }: { label: string; focused: boolean }) {
-  return <Text style={[tabStyles.label, focused && tabStyles.labelActive]}>{label}</Text>;
+// Profile avatar — top-left header button on both tabs.
+function ProfileAvatarButton() {
+  const { myUsername } = useSession();
+  const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  return (
+    <TouchableOpacity onPress={() => nav.navigate('Profile')} style={headerStyles.btn}>
+      <View style={headerStyles.avatar}>
+        <Text style={headerStyles.avatarText}>{myUsername[0]?.toUpperCase() || '?'}</Text>
+      </View>
+    </TouchableOpacity>
+  );
 }
 
 // Add-friend button — top-right on the Chats tab. Opens the AddFriend modal.
@@ -43,61 +54,88 @@ function AddFriendHeaderButton() {
   );
 }
 
+// Bottom tab bar for the swipe pager. Floats absolutely over the pager so the
+// full-bleed camera preview extends underneath it; background is solid on the
+// Chats tab and transparent on the Camera tab (matching the full-bleed look).
+function BottomTabBar({ state, navigation }: MaterialTopTabBarProps) {
+  const insets = useSafeAreaInsets();
+  const onCamera = state.routes[state.index]?.name === 'Camera';
+  return (
+    <View
+      style={[
+        tabStyles.bar,
+        {
+          paddingBottom: insets.bottom + 10,
+          backgroundColor: onCamera ? 'transparent' : colors.bg,
+          borderTopColor: onCamera ? 'transparent' : colors.border,
+        },
+      ]}
+    >
+      {state.routes.map((route, i) => {
+        const focused = state.index === i;
+        const label = route.name === 'Camera' ? 'camera' : 'chat';
+        const onPress = () => {
+          const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+          if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
+        };
+        return (
+          <TouchableOpacity key={route.key} style={tabStyles.tab} onPress={onPress}>
+            <Text style={[tabStyles.label, focused && tabStyles.labelActive]}>{label}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
 // ─── Main Tabs ───────────────────────────────────────────
 
 function MainTabs() {
-  const { myUsername } = useSession();
-  const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  // Keep the record-camera live while MainTabs is the foreground screen — true
+  // across a tab swipe (so the preview slides in live), false when a modal
+  // (ScanFriend's own camera, PhotoPreview) covers it or the app backgrounds.
+  const focused = useIsFocused();
+  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => setAppActive(s === 'active'));
+    return () => sub.remove();
+  }, []);
 
   return (
-    <MainTab.Navigator
-      screenOptions={{
-        // Slide-across transition when switching tabs (tap or swipe).
-        animation: 'shift',
-        headerStyle: { backgroundColor: colors.bg },
-        headerTitleStyle: { color: colors.text, fontWeight: '700' },
-        headerLeft: () => (
-          <TouchableOpacity onPress={() => nav.navigate('Profile')} style={headerStyles.btn}>
-            <View style={headerStyles.avatar}>
-              <Text style={headerStyles.avatarText}>{myUsername[0]?.toUpperCase() || '?'}</Text>
-            </View>
-          </TouchableOpacity>
-        ),
-        headerTitle: 'obscura',
-        headerTitleAlign: 'center',
-        tabBarStyle: { backgroundColor: colors.bg, borderTopColor: colors.border },
-        tabBarShowLabel: true,
-      }}
-      initialRouteName="Camera"
-    >
-      <MainTab.Screen
-        name="Chats"
-        component={ChatListScreen}
-        options={{
-          tabBarIcon: () => null,
-          tabBarLabel: ({ focused }) => <TabBarLabel label="chat" focused={focused} />,
-          headerRight: () => <AddFriendHeaderButton />,
-        }}
-      />
-      <MainTab.Screen
-        name="Camera"
-        component={CameraScreen}
-        options={{
-          tabBarIcon: () => null,
-          tabBarLabel: ({ focused }) => <TabBarLabel label="camera" focused={focused} />,
-          // Full-bleed camera: float both bars transparently over the preview so
-          // it fills the screen edge-to-edge like the photo preview does.
-          headerTransparent: true,
-          headerStyle: { backgroundColor: 'transparent' },
-          headerShadowVisible: false,
-          tabBarStyle: {
-            position: 'absolute', backgroundColor: 'transparent',
-            borderTopColor: 'transparent', elevation: 0,
-          },
-        }}
-      />
-    </MainTab.Navigator>
+    <CameraActiveContext.Provider value={focused && appActive}>
+      <MainTab.Navigator
+        initialRouteName="Camera"
+        tabBarPosition="bottom"
+        tabBar={BottomTabBar}
+        // Both screens stay mounted so the camera preview is live as it slides
+        // in under the finger; the pager provides the finger-tracking swipe.
+        screenOptions={{ lazy: false, swipeEnabled: true }}
+      >
+        <MainTab.Screen name="Chats" component={ChatListScreen} />
+        <MainTab.Screen name="Camera" component={CameraScreen} />
+      </MainTab.Navigator>
+    </CameraActiveContext.Provider>
   );
+}
+
+// Header options for MainTabs, driven by which tab is focused. Header is always
+// transparent (so the pager keeps a constant full-screen height — no layout
+// jump mid-swipe); only its background + right button change per tab.
+function mainTabsHeaderOptions({ route }: { route: RouteProp<RootStackParamList, 'MainTabs'> }) {
+  const tab = getFocusedRouteNameFromRoute(route) ?? 'Camera';
+  const isCamera = tab === 'Camera';
+  return {
+    headerShown: true,
+    headerTransparent: true,
+    headerStyle: { backgroundColor: isCamera ? 'transparent' : colors.bg },
+    headerShadowVisible: false,
+    headerTitle: 'obscura',
+    headerTitleAlign: 'center' as const,
+    headerTintColor: colors.text,
+    headerTitleStyle: { color: colors.text, fontWeight: '700' as const },
+    headerLeft: () => <ProfileAvatarButton />,
+    headerRight: () => (isCamera ? null : <AddFriendHeaderButton />),
+  };
 }
 
 // ─── Splash (during initial auth check) ──────────────────
@@ -138,7 +176,7 @@ export function RootNavigator() {
         <RootStack.Screen name="Auth" component={AuthScreen} />
       ) : (
         <>
-          <RootStack.Screen name="MainTabs" component={MainTabs} />
+          <RootStack.Screen name="MainTabs" component={MainTabs} options={mainTabsHeaderOptions} />
           <RootStack.Screen
             name="Chat"
             component={ChatScreen}
@@ -203,6 +241,12 @@ export function RootNavigator() {
 // ─── Styles ──────────────────────────────────────────────
 
 const tabStyles = StyleSheet.create({
+  bar: {
+    flexDirection: 'row',
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  tab: { flex: 1, alignItems: 'center' },
   label: { color: colors.textDim, fontSize: 13, fontWeight: '600' },
   labelActive: { color: colors.accent },
 });

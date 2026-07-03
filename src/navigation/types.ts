@@ -1,5 +1,5 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import type { MaterialTopTabScreenProps } from '@react-navigation/material-top-tabs';
 import type { CompositeScreenProps, NavigatorScreenParams } from '@react-navigation/native';
 import type { Friend, ModelEntry } from '../native/ObscuraModule';
 import type { PhotoFile } from 'react-native-vision-camera';
@@ -57,7 +57,7 @@ export type RootStackScreenProps<T extends keyof RootStackParamList> =
 
 export type MainTabScreenProps<T extends keyof MainTabParamList> =
   CompositeScreenProps<
-    BottomTabScreenProps<MainTabParamList, T>,
+    MaterialTopTabScreenProps<MainTabParamList, T>,
     NativeStackScreenProps<RootStackParamList>
   >;
 

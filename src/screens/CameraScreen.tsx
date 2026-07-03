@@ -1,14 +1,13 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Pressable, StyleSheet, Linking, PanResponder, AppState, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, Pressable, StyleSheet, Linking, PanResponder, Animated } from 'react-native';
 import {
   Camera, useCameraDevice, useCameraPermission, useCameraFormat, useMicrophonePermission,
 } from 'react-native-vision-camera';
-import { useNavigation, useIsFocused } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
-import { SwipeNavigator } from '../components/SwipeNavigator';
 import { Obscura } from '../native/ObscuraModule';
+import { useCameraActive } from '../navigation/CameraActiveContext';
 import { logError } from '../utils/log';
 import type { RootStackParamList } from '../navigation/types';
 import { colors } from '../styles';
@@ -16,7 +15,9 @@ import { colors } from '../styles';
 // Quick tap vs press-and-hold threshold for the shutter (ms).
 const HOLD_TO_RECORD_MS = 220;
 
-const DOUBLE_TAP_MS = 300;
+// Space the bottom controls clear of the floating tab bar (approx its height).
+const TAB_BAR_CLEARANCE = 56;
+
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const touchDist = (touches: { pageX: number; pageY: number }[]) =>
   Math.hypot(touches[0].pageX - touches[1].pageX, touches[0].pageY - touches[1].pageY);
@@ -26,7 +27,6 @@ export function CameraScreen() {
   const { hasPermission, requestPermission } = useCameraPermission();
   const { hasPermission: hasMic, requestPermission: requestMic } = useMicrophonePermission();
   const insets = useSafeAreaInsets();
-  const tabBarHeight = useBottomTabBarHeight();
   const [facing, setFacing] = useState<'front' | 'back'>('back');
   const [flash, setFlash] = useState<'off' | 'on'>('off');
   const [zoom, setZoom] = useState(1);
@@ -34,19 +34,15 @@ export function CameraScreen() {
   const camera = useRef<Camera>(null);
   const device = useCameraDevice(facing);
 
-  // VisionCamera must be deactivated whenever the screen loses focus (swiping to
-  // Chats) or the app backgrounds (screen lock). If it stays active=true across
-  // a lock/unlock, the OS reclaims the camera device while we're away and the
-  // session comes back bound to a dead device — a black preview stuck at 0 fps.
-  // Tying isActive to focus + app-state lets VisionCamera tear down and rebuild
-  // the session cleanly. Also stops us from holding the camera while off-screen.
-  const isFocused = useIsFocused();
-  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (s) => setAppActive(s === 'active'));
-    return () => sub.remove();
-  }, []);
-  const cameraActive = isFocused && appActive;
+  // Keep the VisionCamera session live only while the record-camera tab is
+  // actually on-screen and the app is foregrounded. MainTabs drives this via
+  // CameraActiveContext (MainTabs-focused && app-active): it stays true across a
+  // left/right tab swipe (so the preview slides in live, not black), but flips
+  // false when a modal covers MainTabs — notably ScanFriend, which opens its
+  // OWN camera and would otherwise collide with this one on CameraX — or when
+  // the app backgrounds (screen lock), which is what fixes the black-preview-
+  // after-unlock bug.
+  const cameraActive = useCameraActive();
 
   // Cap to a sane 1080p30 format. Without this VisionCamera picks a 120fps HEVC
   // monster that makes the recording AssetWriter slow to start + huge files.
@@ -74,22 +70,19 @@ export function CameraScreen() {
   const deviceRef = useRef(device);
   deviceRef.current = device;
 
-  // Single gesture surface for pinch-zoom + double-tap-flip. Owning both in one
-  // PanResponder avoids the pinch-vs-tap fight you'd get layering a JS tap
-  // catcher over VisionCamera's built-in enableZoomGesture.
-  const gesture = useRef({ lastTap: 0, startDist: 0, startZoom: 1, moved: false });
+  // Pinch-to-zoom gesture surface. Deliberately claims ONLY when a second
+  // finger is down — a single-finger horizontal drag is left for the tab pager
+  // (react-native-pager-view) so the swipe-to-Chats gesture tracks the finger.
+  // (Camera flip is the FLIP button; a 1-finger double-tap would fight the
+  // pager swipe, so it was removed.)
+  const gesture = useRef({ startDist: 0, startZoom: 1 });
   const pan = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        gesture.current.moved = false;
-        gesture.current.startDist = 0;
-      },
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (e) => e.nativeEvent.touches.length === 2,
       onPanResponderMove: (e) => {
         const touches = e.nativeEvent.touches;
         if (touches.length !== 2) return;
-        gesture.current.moved = true;
         const dev = deviceRef.current;
         if (!dev) return;
         // Establish the pinch baseline once the second finger is down.
@@ -101,18 +94,8 @@ export function CameraScreen() {
         const ratio = touchDist(touches) / gesture.current.startDist;
         setZoom(clamp(gesture.current.startZoom * ratio, dev.minZoom, dev.maxZoom));
       },
-      onPanResponderRelease: () => {
-        gesture.current.startDist = 0;
-        if (gesture.current.moved) return; // pinch/drag, not a tap
-        const now = Date.now();
-        if (now - gesture.current.lastTap < DOUBLE_TAP_MS) {
-          gesture.current.lastTap = 0;
-          setFacing(f => (f === 'back' ? 'front' : 'back'));
-          setZoom(1);
-        } else {
-          gesture.current.lastTap = now;
-        }
-      },
+      onPanResponderRelease: () => { gesture.current.startDist = 0; },
+      onPanResponderTerminate: () => { gesture.current.startDist = 0; },
     }),
   ).current;
 
@@ -226,11 +209,7 @@ export function CameraScreen() {
   }
 
   return (
-    <SwipeNavigator
-      style={cs.container}
-      // Camera is the right-hand tab; swipe right reveals Chats on the left.
-      onSwipeRight={() => nav.navigate('MainTabs', { screen: 'Chats' })}
-    >
+    <View style={cs.container}>
       <Camera
         ref={camera}
         style={StyleSheet.absoluteFill}
@@ -246,13 +225,13 @@ export function CameraScreen() {
         zoom={zoom}
       />
 
-      {/* Gesture surface: pinch-zoom + double-tap-flip. Sits above the preview
-          but below the controls overlay (which is box-none so empty areas fall
-          through to here while the buttons keep working). */}
+      {/* Pinch-zoom gesture surface. Claims only on a 2-finger move, so a
+          single-finger horizontal drag falls through to the tab pager for the
+          swipe-to-Chats transition. Below the controls overlay (box-none). */}
       <View style={StyleSheet.absoluteFill} {...pan.panHandlers} />
 
       {/* Controls overlay. Top/bottom are padded clear of the transparent
-          header + tab bar that now float over the full-bleed camera. */}
+          header + tab bar that float over the full-bleed camera. */}
       <View style={cs.overlay} pointerEvents="box-none">
         {/* Top controls */}
         <View style={[cs.topControls, { paddingTop: insets.top + 8 }]}>
@@ -262,7 +241,7 @@ export function CameraScreen() {
         </View>
 
         {/* Bottom controls */}
-        <View style={[cs.bottomControls, { paddingBottom: tabBarHeight + 20 }]}>
+        <View style={[cs.bottomControls, { paddingBottom: insets.bottom + TAB_BAR_CLEARANCE }]}>
           <View style={cs.controlsRow}>
             <TouchableOpacity style={cs.sideBtn} onPress={flipCamera}>
               <Text style={cs.sideBtnText}>FLIP</Text>
@@ -282,7 +261,7 @@ export function CameraScreen() {
           </View>
         </View>
       </View>
-    </SwipeNavigator>
+    </View>
   );
 }
 

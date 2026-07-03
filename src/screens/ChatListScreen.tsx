@@ -4,10 +4,10 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Obscura, type Friend, type ModelEntry } from '../native/ObscuraModule';
 import { useSession, useModelEntries } from '../state/store';
 import { StoriesRow } from './StoriesScreen';
-import { SwipeNavigator } from '../components/SwipeNavigator';
 import type { RootStackParamList, StoryGroup } from '../navigation/types';
 import { colors } from '../styles';
 
@@ -32,6 +32,7 @@ interface FriendActivity {
 
 export function ChatListScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const insets = useSafeAreaInsets();
   const { friends, pending, myUsername } = useSession();
   const messages = useModelEntries('directMessage');
   const pixEntries = useModelEntries('pix');
@@ -89,10 +90,9 @@ export function ChatListScreen() {
   }).sort((a, b) => b.latestTimestamp - a.latestTimestamp), [friends, messages, pixEntries, myUsername]);
 
   return (
-    <SwipeNavigator
-      // Chats is the left-hand tab; swipe left reveals the Camera on the right.
-      onSwipeLeft={() => nav.navigate('MainTabs', { screen: 'Camera' })}
-    >
+    // Full-screen page under the floating transparent header (pad content clear
+    // of it). Horizontal swipe is owned by the tab pager, not this screen.
+    <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top + 44 }}>
       {/* Stories row */}
       <StoriesRow />
 
@@ -170,8 +170,9 @@ export function ChatListScreen() {
             ? <Text style={cl.empty}>no friends yet — share your code</Text>
             : null
         }
+        contentContainerStyle={{ paddingBottom: insets.bottom + 56 }}
       />
-    </SwipeNavigator>
+    </View>
   );
 }
 
