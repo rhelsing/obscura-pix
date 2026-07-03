@@ -1,9 +1,9 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Pressable, StyleSheet, Linking, PanResponder } from 'react-native';
+import { View, Text, TouchableOpacity, Pressable, StyleSheet, Linking, PanResponder, AppState } from 'react-native';
 import {
   Camera, useCameraDevice, useCameraPermission, useCameraFormat, useMicrophonePermission,
 } from 'react-native-vision-camera';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -33,6 +33,20 @@ export function CameraScreen() {
   const [recording, setRecording] = useState(false);
   const camera = useRef<Camera>(null);
   const device = useCameraDevice(facing);
+
+  // VisionCamera must be deactivated whenever the screen loses focus (swiping to
+  // Chats) or the app backgrounds (screen lock). If it stays active=true across
+  // a lock/unlock, the OS reclaims the camera device while we're away and the
+  // session comes back bound to a dead device — a black preview stuck at 0 fps.
+  // Tying isActive to focus + app-state lets VisionCamera tear down and rebuild
+  // the session cleanly. Also stops us from holding the camera while off-screen.
+  const isFocused = useIsFocused();
+  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => setAppActive(s === 'active'));
+    return () => sub.remove();
+  }, []);
+  const cameraActive = isFocused && appActive;
 
   // Cap to a sane 1080p30 format. Without this VisionCamera picks a 120fps HEVC
   // monster that makes the recording AssetWriter slow to start + huge files.
@@ -209,7 +223,7 @@ export function CameraScreen() {
         style={StyleSheet.absoluteFill}
         device={device}
         format={format}
-        isActive={true}
+        isActive={cameraActive}
         photo={true}
         video={true}
         audio={hasMic}
