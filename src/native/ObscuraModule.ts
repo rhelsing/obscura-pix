@@ -156,6 +156,12 @@ export const Obscura = {
   getDebugLog: (): Promise<string[]> => Bridge.getDebugLog(),
   /** FLAG_SECURE on Android, no-op on iOS for now. */
   setSecureScreen: (enabled: boolean): Promise<void> => Bridge.setSecureScreen(enabled),
+  /**
+   * Warm up the audio HAL so video recording starts instantly. Cold
+   * AVAudioSession activation on iOS costs ~1.4s; call this when the camera
+   * appears. No-op on Android (fast audio init). Idempotent.
+   */
+  prewarmAudioSession: (): Promise<void> => Bridge.prewarmAudioSession(),
   /** Best-effort unlink. Used to clean up temp capture files. */
   deleteFile: (path: string): Promise<void> => Bridge.deleteFile(path),
   /** Write `text` to the system clipboard. Replaces RN core's deprecated Clipboard module. */

@@ -6,6 +6,7 @@ import {
   type Friend, type ConnectionState, type ModelEntry,
 } from '../native/ObscuraModule';
 import { obscuraSchema } from '../models/schema';
+import { logError } from '../utils/log';
 
 /**
  * Process-wide store for session state and ORM entry caches.
@@ -69,7 +70,7 @@ export const useStore = create<ObscuraStore>((set) => ({
   setAuthed: (v) => set({ authed: v }),
 
   logout: async () => {
-    try { await Obscura.logout(); } catch {}
+    try { await Obscura.logout(); } catch (e) { logError('logout', e); }
     set({
       authed: false,
       myUserId: '',
@@ -139,7 +140,7 @@ export function useModelEntries(model: string): ModelEntry[] {
     if (entries !== undefined) return;
     Obscura.allEntries(model).then((es) => {
       useStore.getState()._setEntries(model, es ?? []);
-    }).catch(() => {});
+    }).catch((e) => logError('entries.load:' + model, e));
   }, [model, entries]);
   return entries ?? [];
 }
@@ -163,7 +164,7 @@ export function ObscuraBootstrap(): null {
       .then((state) => {
         if (state === 'authenticated') useStore.getState().setAuthed(true);
       })
-      .catch(() => {})
+      .catch((e) => logError('bootstrap.authState', e))
       .finally(() => {
         useStore.getState()._setBootstrapped(true);
       });
@@ -208,7 +209,7 @@ export function ObscuraBootstrap(): null {
           if (s.entries[event.model] === undefined) return;
           Obscura.allEntries(event.model).then((es) => {
             useStore.getState()._setEntries(event.model, es ?? []);
-          }).catch(() => {});
+          }).catch((e) => logError('entries.refresh:' + event.model, e));
           return;
         }
       }
@@ -232,10 +233,10 @@ export function ObscuraBootstrap(): null {
         list.filter((f) => f.status === 'accepted'),
         list.filter((f) => f.status !== 'accepted'),
       );
-    }).catch(() => {});
+    }).catch((e) => logError('bootstrap.friends', e));
     Obscura.getConnectionState().then((cs) => {
       useStore.getState()._setConnState(cs || 'disconnected');
-    }).catch(() => {});
+    }).catch((e) => logError('bootstrap.conn', e));
   }, [authed]);
 
   // Push permission — request once per session after first connect.

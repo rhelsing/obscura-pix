@@ -7,6 +7,7 @@ export const obscuraSchema = {
   directMessage: {
     fields: { conversationId: 'string', content: 'string', senderUsername: 'string' },
     sync: 'gset',
+    direct: true, // 1:1 — target the conversation participants; never broadcast.
   },
   story: {
     fields: {
@@ -17,6 +18,11 @@ export const obscuraSchema = {
       mediaRef: 'string?',
       contentKey: 'string?',
       nonce: 'string?',
+      // 'photo' (default when absent) | 'video'. Opaque string.
+      mediaType: 'string?',
+      // Styled-caption blob (JSON: style/x/y/rot/color/font). Opaque string —
+      // the shape can evolve without a schema/contract change. See Caption.tsx.
+      captionMeta: 'string?',
     },
     sync: 'gset',
     ttl: '24h',
@@ -32,15 +38,24 @@ export const obscuraSchema = {
   },
   pix: {
     fields: {
-      recipientUsername: 'string',
+      // Canonical sorted "userIdA_userIdB" — targets both parties so the
+      // viewed-receipt (Bob → Alice) resolves in either direction.
+      conversationId: 'string',
+      recipientUsername: 'string', // "to" label / push text only now
       senderUsername: 'string',
       mediaRef: 'string',
       contentKey: 'string',
       nonce: 'string',
       caption: 'string?',
+      // 'photo' (default when absent) | 'video'. Opaque string.
+      mediaType: 'string?',
+      // Styled-caption blob (JSON: style/x/y/rot/color/font). Opaque string —
+      // the shape can evolve without a schema/contract change. See Caption.tsx.
+      captionMeta: 'string?',
       displayDuration: 'number',
       viewedAt: 'number?',
     },
     sync: 'lww',
+    direct: true, // 1:1 — target the conversation participants; never broadcast.
   },
 };

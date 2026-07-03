@@ -35,14 +35,16 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Obscura uses the camera to capture photos you send to friends.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string></string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Obscura uses the microphone for video messages.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Obscura can attach photos from your library.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
+	<!-- UIAppFonts intentionally omitted until the .ttf files exist in the bundle.
+	     Add the 5 entries back (or run `npx react-native-asset`) once assets/fonts
+	     is populated — see assets/fonts/README.md. Listing missing files here makes
+	     iOS log "GSFont: file doesn't exist" at launch. -->
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>

@@ -5,6 +5,7 @@ import { StatusBar } from 'react-native';
 
 import { ObscuraBootstrap } from './src/state/store';
 import { RootNavigator } from './src/navigation/RootNavigator';
+import { ToastHost } from './src/components/Toast';
 import { colors } from './src/styles';
 
 export default function App() {
@@ -33,6 +34,7 @@ export default function App() {
         <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
         <RootNavigator />
       </NavigationContainer>
+      <ToastHost />
     </SafeAreaProvider>
   );
 }

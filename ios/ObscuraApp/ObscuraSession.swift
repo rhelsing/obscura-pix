@@ -66,48 +66,67 @@ final class ObscuraSession {
     var onAppStateChanged: ((Bool) -> Void)?
 
     private init() {
-        if let saved = KeychainSession.load() {
-            let restored = try? ObscuraClient(
-                apiURL: ObscuraSession.apiURL,
-                dataDirectory: ObscuraSession.userDir(saved.userId),
-                userId: saved.userId
-            )
+        if let saved = KeychainSession.load(), let username = saved.username {
+            var restored: ObscuraClient?
+            do {
+                restored = try ObscuraClient(
+                    apiURL: ObscuraSession.apiURL,
+                    dataDirectory: ObscuraSession.userDir(username),
+                    userId: username
+                )
+            } catch {
+                // Pre-init (self not fully constructed): NSLog rather than self.logger.
+                NSLog("[ObscuraSession] session restore: failed to open user client: %@", "\(error)")
+                restored = nil
+            }
             client = restored ?? (try! ObscuraClient(apiURL: ObscuraSession.apiURL))
-            client.logger = logger
+            configure(client)
             Task { await restore(saved) }
         } else {
             client = try! ObscuraClient(apiURL: ObscuraSession.apiURL)
-            client.logger = logger
+            configure(client)
         }
         observeAppLifecycle()
     }
 
-    // MARK: - Per-user data directory (SQLCipher DB keyed by userId)
+    // MARK: - Per-user data directory (SQLCipher DB keyed by USERNAME — Android
+    // parity, so there's no throwaway login just to learn userId first).
 
     private static var baseDir: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("ObscuraData")
     }
-    static func userDir(_ userId: String) -> String {
-        baseDir.appendingPathComponent(userId).path
+    static func userDir(_ username: String) -> String {
+        baseDir.appendingPathComponent(username).path
     }
 
     // MARK: - Client lifecycle
 
-    /// Build a fresh user-scoped client (encrypted DB) for a known userId.
-    /// `freshDirectory` wipes any prior data (register flow).
-    func makeUserClient(userId: String, freshDirectory: Bool = false) throws -> ObscuraClient {
-        let dir = ObscuraSession.userDir(userId)
-        if freshDirectory { try? FileManager.default.removeItem(atPath: dir) }
-        let c = try ObscuraClient(apiURL: ObscuraSession.apiURL, dataDirectory: dir, userId: userId)
+    /// Wire a client to this session: logger + re-persist on token rotation.
+    /// The `onSessionChanged` hook is what fixes the single-use-refresh-token
+    /// 401 — the kit rotates the refresh token on refresh, so we must re-save it
+    /// to the Keychain or a restored session uses a consumed token and 401s.
+    private func configure(_ c: ObscuraClient) {
         c.logger = logger
+        c.onSessionChanged = { [weak self] in self?.saveSession() }
+    }
+
+    /// Build a fresh client (encrypted DB) keyed by username — Android parity.
+    /// The `userId:` arg is ONLY the DB-secret Keychain key; it does not set
+    /// client.userId (login does), so we never need a throwaway login first.
+    /// `freshDirectory` wipes any prior data (register flow).
+    func makeUserClient(username: String, freshDirectory: Bool = false) throws -> ObscuraClient {
+        let dir = ObscuraSession.userDir(username)
+        if freshDirectory { try? FileManager.default.removeItem(atPath: dir) }
+        let c = try ObscuraClient(apiURL: ObscuraSession.apiURL, dataDirectory: dir, userId: username)
+        configure(c)
         return c
     }
 
     /// Swap in a new live client; disconnect the old one and notify the bridge.
     func replaceClient(_ newClient: ObscuraClient) {
         client.disconnect()
-        newClient.logger = logger
+        configure(newClient)
         client = newClient
         onClientReplaced?(newClient)
     }
@@ -140,7 +159,7 @@ final class ObscuraSession {
         let fresh = await client.ensureFreshToken()
         guard fresh else { clearSession(); return }
         saveSession()
-        do { try await client.connect() } catch { /* bridge observes connectionChanged */ }
+        do { try await client.connect() } catch { logger.log("restore connect failed: \(error)") }
     }
 
     // MARK: - App lifecycle
@@ -153,7 +172,7 @@ final class ObscuraSession {
             self.onAppStateChanged?(true)
             let c = self.client
             if c.authState == .authenticated && c.connectionState == .disconnected {
-                Task { try? await c.connect() }
+                Task { do { try await c.connect() } catch { self.logger.log("foreground reconnect failed: \(error)") } }
             }
         }
         nc.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in

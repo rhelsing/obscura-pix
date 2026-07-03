@@ -259,6 +259,7 @@ object ObscuraSession {
                 sync = model.optString("sync", "gset"),
                 ttl = if (model.has("ttl") && !model.isNull("ttl")) model.getString("ttl") else null,
                 private = model.optBoolean("private", false),
+                direct = model.optBoolean("direct", false),
             )
         }
         c.orm.define(models)

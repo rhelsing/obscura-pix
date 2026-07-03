@@ -10,6 +10,7 @@ export const colors = {
   border: '#222',
   error: '#f55',
   connected: '#4f4',
+  connecting: '#fd0',
   disconnected: '#f44',
 };
 
@@ -46,6 +47,9 @@ export const s = StyleSheet.create({
   empty: { color: colors.textMuted, textAlign: 'center', marginTop: 32, fontSize: 14 },
   hint: { color: colors.textMuted, fontSize: 12, marginTop: 4, marginBottom: 12 },
   settingsLabel: { color: colors.text, fontSize: 18, fontWeight: '600' },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, marginBottom: 12 },
+  statusDot: { fontSize: 14 },
+  statusText: { color: colors.text, fontSize: 15, fontWeight: '600' },
   chatHeader: { flexDirection: 'row', alignItems: 'center', padding: 12, paddingTop: Platform.OS === 'android' ? 40 : 12, gap: 12 },
   backBtn: { color: colors.accent, fontSize: 32, fontWeight: '300' },
   chatTitle: { color: colors.text, fontSize: 20, fontWeight: '700' },

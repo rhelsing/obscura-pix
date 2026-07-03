@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet,
-  Animated, Image, Alert, ActivityIndicator,
+  Animated, Image, ActivityIndicator, useWindowDimensions,
 } from 'react-native';
+import Video from 'react-native-video';
+import { CaptionView, parseCaptionMeta } from '../components/Caption';
+import { toast } from '../components/Toast';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura, type ModelEntry } from '../native/ObscuraModule';
+import { logError } from '../utils/log';
 import { useSession, useModelEntries } from '../state/store';
 import type { RootStackParamList, RootStackScreenProps, StoryGroup } from '../navigation/types';
 import { colors } from '../styles';
@@ -39,6 +43,7 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
   const [storyIdx, setStoryIdx] = useState(0);
   const [mediaUri, setMediaUri] = useState<string | null>(null);
   const [mediaLoading, setMediaLoading] = useState(false);
+  const { width: W, height: H } = useWindowDimensions();
   const progress = useRef(new Animated.Value(0)).current;
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -59,7 +64,7 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
     Obscura.upsertEntry('pix', story.id, {
       ...story.data,
       viewedAt: Date.now(),
-    }).catch(() => {});
+    }).catch((e) => logError('viewonce.upsert:' + story.id, e));
   }, [markViewed, story]);
 
   // Catch ALL exit paths uniformly (header back, hardware back, iOS
@@ -144,9 +149,13 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
   const displayDurationMs = story?.data.displayDuration
     ? Number(story.data.displayDuration) * 1000
     : STORY_DURATION;
+  const isVideo = story?.data.mediaType === 'video';
 
   useEffect(() => {
     if (!readyToPlay) { progress.setValue(0); return; }
+    // Video drives its own advance via onEnd (plays to its natural length),
+    // so skip the fixed photo timer for it.
+    if (isVideo) { progress.setValue(0); return; }
     const dur = displayDurationMs > 0 ? displayDurationMs : STORY_DURATION;
     progress.setValue(0);
     const anim = Animated.timing(progress, {
@@ -158,7 +167,7 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
       anim.stop();
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [groupIdx, storyIdx, readyToPlay, displayDurationMs, progress]);
+  }, [groupIdx, storyIdx, readyToPlay, displayDurationMs, progress, isVideo]);
 
   if (!story) { navigation.goBack(); return null; }
 
@@ -170,10 +179,19 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
 
   return (
     <View style={sv.container}>
-      {/* Background image (if media) */}
-      {mediaUri && (
+      {/* Background media (if any) */}
+      {mediaUri && (isVideo ? (
+        <Video
+          source={{ uri: mediaUri, type: 'mp4' }}
+          style={StyleSheet.absoluteFill}
+          resizeMode="cover"
+          paused={!readyToPlay}
+          onEnd={() => advanceRef.current()}
+          onError={(e) => logError('storyVideo', e)}
+        />
+      ) : (
         <Image source={{ uri: mediaUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-      )}
+      ))}
 
       {/* Progress bars — only the currently-playing segment is Animated.
           Past/future segments are plain Views with explicit widths because
@@ -206,16 +224,25 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
         </TouchableOpacity>
       </View>
 
-      {/* Content */}
+      {/* Text-only content (no media) — centered */}
       <View style={sv.content}>
         {mediaLoading && <ActivityIndicator color="#fff" size="large" />}
         {(() => {
           const text = story.data.content || story.data.caption || '';
-          if (!text) return null;
-          if (mediaUri) return <Text style={sv.captionOverlay}>{text}</Text>;
+          if (!text || mediaUri) return null; // captions over media handled below
           return <Text style={sv.contentText}>{text}</Text>;
         })()}
       </View>
+
+      {/* Styled caption over media — positioned/rotated from captionMeta.
+          Falls back to the legacy bottom overlay for entries without meta. */}
+      {mediaUri && (() => {
+        const text = story.data.content || story.data.caption || '';
+        if (!text) return null;
+        const meta = parseCaptionMeta(story.data.captionMeta);
+        if (meta) return <CaptionView meta={meta} text={text} width={W} height={H} />;
+        return <Text style={sv.captionOverlay}>{text}</Text>;
+      })()}
 
       {/* Tap zones: left = back, right = next */}
       <View style={sv.tapZones}>
@@ -269,7 +296,7 @@ export function StoriesRow() {
   const openViewer = (idx: number) => {
     const group = groups[idx];
     if (group.isMe && group.stories.length === 0) {
-      Alert.alert('My Story', 'Take a photo and select "my story" to post');
+      toast.info('Take a photo and select "my story" to post');
       return;
     }
     if (group.stories.length === 0) return;

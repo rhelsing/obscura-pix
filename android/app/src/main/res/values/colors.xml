@@ -1,0 +1,6 @@
+<resources>
+    <!-- App background (matches colors.bg '#000' in src/styles.ts). Used as the
+         window background so cold launch shows the app's dark background instead
+         of a white flash before the camera preview renders. -->
+    <color name="windowBg">#000000</color>
+</resources>
