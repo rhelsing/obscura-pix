@@ -19,6 +19,18 @@ import org.json.JSONObject
 private const val TAG = "ObscuraBridge"
 
 /**
+ * Single mapping from the kit's [ConnectionState] to the JS wire string (the
+ * `ConnectionState` union in ObscuraModule.ts). Kept in one place so getState and
+ * the connectionChanged event can never drift.
+ */
+private fun ConnectionState.toJsString(): String = when (this) {
+    ConnectionState.DISCONNECTED -> "disconnected"
+    ConnectionState.CONNECTING -> "connecting"
+    ConnectionState.RECONNECTING -> "reconnecting"
+    ConnectionState.CONNECTED -> "connected"
+}
+
+/**
  * Thin React Native bridge. Owns NO Obscura state — all client lifecycle,
  * message dispatch, foreground tracking and notification posting lives in
  * [ObscuraSession]. This class:
@@ -49,11 +61,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
 
     private val eventSink = object : ObscuraSession.EventSink {
         override fun onConnectionChanged(state: ConnectionState) = emit("connectionChanged") {
-            putString("state", when (state) {
-                ConnectionState.DISCONNECTED -> "disconnected"
-                ConnectionState.CONNECTING -> "connecting"
-                ConnectionState.CONNECTED -> "connected"
-            })
+            putString("state", state.toJsString())
         }
         override fun onAuthStateChanged(state: AuthState) = emit("authStateChanged") {
             putString("state", when (state) {
@@ -171,7 +179,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 Log.d(TAG, "register: $username")
                 val c = ObscuraSession.createClient(username)
                 c.register(username, password)
-                ObscuraSession.saveSession()
+                c.persistSession()
                 promise.resolve(null)
             } catch (e: Exception) {
                 Log.e(TAG, "register failed: ${e.message}")
@@ -195,7 +203,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                     LoginScenario.USER_NOT_FOUND -> "userNotFound"
                 }
                 Log.d(TAG, "loginSmart result: $scenario")
-                if (result.scenario == LoginScenario.EXISTING_DEVICE) ObscuraSession.saveSession()
+                if (result.scenario == LoginScenario.EXISTING_DEVICE) c.persistSession()
                 promise.resolve(scenario)
             } catch (e: Exception) {
                 Log.e(TAG, "loginSmart failed: ${e.message}")
@@ -211,7 +219,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 Log.d(TAG, "loginAndProvision: $username")
                 val c = ObscuraSession.createClient(username)
                 c.loginAndProvision(username, password)
-                ObscuraSession.saveSession()
+                c.persistSession()
                 promise.resolve(null)
             } catch (e: Exception) {
                 Log.e(TAG, "loginAndProvision failed: ${e.message}")
@@ -225,10 +233,9 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         scope.launch {
             try {
                 Log.d(TAG, "connect")
-                val c = requireClient()
-                c.ensureFreshToken()
-                c.connect()
-                ObscuraSession.saveSession()
+                // Kit's connect() refreshes the token and persists the rotated
+                // session itself — no app-side pre/post steps needed.
+                requireClient().connect()
                 promise.resolve(null)
             } catch (e: Exception) {
                 Log.e(TAG, "connect failed: ${e.message}")
@@ -253,9 +260,11 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     fun logout(promise: Promise) {
         scope.launch {
             try {
+                // Kit's logout() tears down the connection AND clears its persisted
+                // SessionStorage, so cold start won't try to restore. App only drops
+                // the client instance.
                 try { requireClient().logout() } catch (_: Exception) {}
                 ObscuraSession.destroyClient()
-                ObscuraSession.clearSession()
                 promise.resolve(null)
             } catch (e: Exception) {
                 promise.reject("LOGOUT_ERROR", e.message, e)
@@ -268,11 +277,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun getConnectionState(promise: Promise) {
         val state = client?.connectionState?.value ?: ConnectionState.DISCONNECTED
-        promise.resolve(when (state) {
-            ConnectionState.DISCONNECTED -> "disconnected"
-            ConnectionState.CONNECTING -> "connecting"
-            ConnectionState.CONNECTED -> "connected"
-        })
+        promise.resolve(state.toJsString())
     }
 
     @ReactMethod
@@ -404,8 +409,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         scope.launch {
             try {
                 val c = requireClient()
-                ObscuraSession.defineModelsFromJson(c, schemaJson)
-                ObscuraSession.cacheSchema(schemaJson)
+                c.defineModelsFromJson(schemaJson)
                 Log.d(TAG, "Models defined + cached")
                 promise.resolve(null)
             } catch (e: Exception) {

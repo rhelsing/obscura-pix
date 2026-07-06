@@ -15,7 +15,6 @@ import com.obscura.kit.ObscuraConfig
 import com.obscura.kit.ObscuraLogger
 import com.obscura.kit.ReceivedMessage
 import com.obscura.kit.db.ObscuraDatabase
-import com.obscura.kit.orm.ModelConfig
 import com.obscura.kit.stores.FriendData
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,17 +22,17 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeoutOrNull
-import org.json.JSONObject
 
 /**
- * Process-scoped owner of the [ObscuraClient]. Single source of truth for:
+ * Process-scoped owner of the [ObscuraClient] — the "who is the live client and
+ * when is the app foregrounded" layer. NOT the auth-session store: token/refresh/
+ * schema persistence is owned by the kit (see [ObscuraClient.persistSession] /
+ * [ObscuraClient.restorePersistedSession]); this only supplies the platform
+ * [SessionStorage] impl and picks the per-user SQLite DB. Responsibilities:
  *
- *   - Client lifecycle (create / restore-from-prefs / destroy)
- *   - Session persistence (token, refreshToken, userId, deviceId, username,
- *     registrationId, cachedSchema) in the `obscura_session` SharedPreferences
- *   - Foreground/background tracking (ProcessLifecycleOwner)
+ *   - Client lifecycle (build per-user client / restore on cold start / destroy)
+ *   - Foreground/background tracking (ProcessLifecycleOwner); reconnect on resume
+ *     via [ObscuraClient.ensureConnected]
  *   - The SINGLE consumer of [ObscuraClient.incomingMessages] — classifies
  *     each envelope, fans out to the bound [EventSink] (i.e. the RN bridge),
  *     and posts a generic local notification when the app is backgrounded.
@@ -113,13 +112,13 @@ object ObscuraSession {
                     appInForeground = true
                     sink?.onAppStateChanged(AppState.ACTIVE)
                     val c = client ?: return
-                    if (c.authState.value == AuthState.AUTHENTICATED &&
-                        c.connectionState.value == ConnectionState.DISCONNECTED) {
-                        Log.d(TAG, "App foregrounded — reconnecting")
-                        scope.launch {
-                            try { c.connect() } catch (e: Exception) {
-                                Log.e(TAG, "Foreground reconnect failed: ${e.message}")
-                            }
+                    // Kit owns the reconnect decision (idempotent — no-op if already
+                    // connected). This also covers the case the gateway's own
+                    // auto-reconnect can't: a cold-start restore whose first connect
+                    // failed, or a resume where a dead socket isn't detected yet.
+                    scope.launch {
+                        try { c.ensureConnected() } catch (e: Exception) {
+                            Log.e(TAG, "Foreground reconnect failed: ${e.message}")
                         }
                     }
                 }
@@ -154,46 +153,39 @@ object ObscuraSession {
         if (sink === s) sink = null
     }
 
-    // ─── Session prefs ──────────────────────────────────────────────────────
-
-    fun saveSession() {
-        val c = client ?: return
-        prefs.edit().apply {
-            putString("token", c.token)
-            putString("refreshToken", c.refreshToken)
-            putString("userId", c.userId)
-            putString("deviceId", c.deviceId)
-            putString("username", c.username)
-            putInt("registrationId", c.registrationId)
-            apply()
-        }
-        Log.d(TAG, "Session saved: user=${c.username} device=${c.deviceId?.take(8)}")
-    }
-
-    fun clearSession() {
-        prefs.edit().clear().apply()
-        Log.d(TAG, "Session cleared")
-    }
-
-    fun getCachedSchema(): String? = prefs.getString("cachedSchema", null)
-    fun cacheSchema(schemaJson: String) {
-        prefs.edit().putString("cachedSchema", schemaJson).apply()
-    }
-
     // ─── Client lifecycle ───────────────────────────────────────────────────
+    //
+    // Auth-session persistence (token/refresh/schema) is kit-owned via the
+    // injected [sessionStorage]; this section only owns the client instance and
+    // its per-user SQLite DB. There is no app-side save/clear — persist happens
+    // in the kit (connect + token rotation), and logout() clears sessionStorage.
 
-    /** Build a fresh client for a username (per-user SQLite db). Replaces any existing one. */
-    fun createClient(username: String): ObscuraClient {
+    private val sessionStorage by lazy { SharedPreferencesSessionStorage(prefs) }
+
+    /**
+     * Build a per-user client (SQLite DB keyed by username) wired to the shared
+     * logger + [sessionStorage], make it the live client, and start bridge
+     * collectors. Replaces any existing client. Does NOT connect or restore —
+     * callers drive auth (register / login / restorePersistedSession).
+     */
+    private fun buildClient(username: String): ObscuraClient {
         destroyClient()
         val dbName = "obscura_${username}.db"
         val driver = AndroidSqliteDriver(ObscuraDatabase.Schema, appContext, dbName)
-        val c = ObscuraClient(ObscuraConfig(apiUrl = API_URL), externalDriver = driver)
+        val c = ObscuraClient(
+            ObscuraConfig(apiUrl = API_URL),
+            externalDriver = driver,
+            sessionStorage = sessionStorage,
+        )
         c.logger = logger
         client = c
         startCollectors(c)
-        Log.d(TAG, "Client created (db=$dbName)")
+        Log.d(TAG, "Client built (db=$dbName)")
         return c
     }
+
+    /** Build a fresh client for a username (register / login entry point). */
+    fun createClient(username: String): ObscuraClient = buildClient(username)
 
     /** Tear down the current client, cancel collectors. */
     fun destroyClient() {
@@ -204,65 +196,37 @@ object ObscuraSession {
     }
 
     /**
-     * Restore a client from persisted prefs. Returns the client (existing or
-     * freshly built), or null if no session is persisted. Idempotent — calling
-     * twice returns the same instance.
+     * Restore a client from persisted session on cold start. The app reads only
+     * the persisted username (to name the per-user DB); the kit then re-reads the
+     * blob to do the restore → refresh-token → define-cached-models → connect flow
+     * via [ObscuraClient.restorePersistedSession].
+     *
+     * Returns the client (existing or freshly built), or null if no session is
+     * persisted. Idempotent — calling twice returns the same instance.
      */
     @Synchronized
     fun tryRestore(): ObscuraClient? {
         client?.let { return it }
-        val token = prefs.getString("token", null) ?: return null
-        val userId = prefs.getString("userId", null) ?: return null
-        val username = prefs.getString("username", null) ?: return null
-        val refreshToken = prefs.getString("refreshToken", null)
-        val deviceId = prefs.getString("deviceId", null)
-        val registrationId = prefs.getInt("registrationId", 0)
+        val saved = sessionStorage.load() ?: return null
+        val username = saved["username"] as? String ?: return null
+        val token = saved["token"] as? String ?: return null
+        if (token.isBlank()) return null
 
-        Log.d(TAG, "Restoring session: user=$username device=${deviceId?.take(8)}")
+        Log.d(TAG, "Restoring session: user=$username")
+        val c = buildClient(username)
 
-        val dbName = "obscura_${username}.db"
-        val driver = AndroidSqliteDriver(ObscuraDatabase.Schema, appContext, dbName)
-        val c = ObscuraClient(ObscuraConfig(apiUrl = API_URL), externalDriver = driver)
-        c.logger = logger
-        c.restoreSession(token, refreshToken, userId, deviceId, username, registrationId)
-
-        getCachedSchema()?.let { schemaJson ->
-            runBlocking { defineModelsFromJson(c, schemaJson) }
-        }
-
-        client = c
-        startCollectors(c)
-
-        // Best-effort background reconnect.
+        // Kit restores tokens/deviceId, refreshes, defines cached models, connects,
+        // and re-persists rotated tokens. Clears storage if the refresh token is dead.
         scope.launch {
             try {
-                c.ensureFreshToken()
-                c.connect()
-                saveSession()
+                if (!c.restorePersistedSession()) {
+                    Log.w(TAG, "restore: no valid session or connect failed")
+                }
             } catch (e: Exception) {
-                Log.e(TAG, "restore connect failed: ${e.message}")
+                Log.e(TAG, "restore failed: ${e.message}")
             }
         }
         return c
-    }
-
-    suspend fun defineModelsFromJson(c: ObscuraClient, schemaJson: String) {
-        val schema = JSONObject(schemaJson)
-        val models = mutableMapOf<String, ModelConfig>()
-        for (name in schema.keys()) {
-            val model = schema.getJSONObject(name)
-            val fieldsObj = model.getJSONObject("fields")
-            val fields = mutableMapOf<String, String>()
-            for (key in fieldsObj.keys()) fields[key] = fieldsObj.getString(key)
-            models[name] = ModelConfig(
-                fields = fields,
-                sync = model.optString("sync", "gset"),
-                ttl = if (model.has("ttl") && !model.isNull("ttl")) model.getString("ttl") else null,
-                private = model.optBoolean("private", false),
-                direct = model.optBoolean("direct", false),
-            )
-        }
-        c.orm.define(models)
     }
 
     // ─── Collectors (single source of truth) ────────────────────────────────
@@ -272,7 +236,6 @@ object ObscuraSession {
             c.connectionState.collectLatest { state ->
                 Log.d(TAG, "Connection: $state")
                 sink?.onConnectionChanged(state)
-                if (state == ConnectionState.CONNECTED) saveSession()
             }
         }
         collectorJobs += scope.launch {

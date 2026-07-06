@@ -37,7 +37,7 @@ export interface AttachmentRef {
   nonce: string;
 }
 
-export type ConnectionState = 'disconnected' | 'connecting' | 'connected';
+export type ConnectionState = 'disconnected' | 'connecting' | 'reconnecting' | 'connected';
 export type AuthState = 'loggedOut' | 'authenticated' | 'pendingApproval';
 export type AppLifecycleState = 'active' | 'background';
 
