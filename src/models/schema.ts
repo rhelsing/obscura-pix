@@ -7,7 +7,8 @@ export const obscuraSchema = {
   directMessage: {
     fields: { conversationId: 'string', content: 'string', senderUsername: 'string' },
     sync: 'gset',
-    direct: true, // 1:1 — target the conversation participants; never broadcast.
+    // 1:1 — deliver to both conversation participants; never broadcast.
+    audience: { kind: 'conversation', field: 'conversationId' },
   },
   story: {
     fields: {
@@ -34,7 +35,7 @@ export const obscuraSchema = {
   settings: {
     fields: { theme: 'string', notificationsEnabled: 'boolean' },
     sync: 'lww',
-    private: true,
+    audience: { kind: 'self' }, // only ever synced to the user's own devices
   },
   pix: {
     fields: {
@@ -56,6 +57,8 @@ export const obscuraSchema = {
       viewedAt: 'number?',
     },
     sync: 'lww',
-    direct: true, // 1:1 — target the conversation participants; never broadcast.
+    // 1:1 — deliver to both conversation participants so the viewed-receipt
+    // (recipient → sender) resolves in either direction; never broadcast.
+    audience: { kind: 'conversation', field: 'conversationId' },
   },
 };

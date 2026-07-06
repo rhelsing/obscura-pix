@@ -53,6 +53,19 @@ export type LoginScenario =
   | 'invalidCredentials'
   | 'userNotFound';
 
+/**
+ * Stable error codes a rejected promise may carry in its `code`, mirroring
+ * `ObscuraError.kt` in the kit. Kit-level failures use one of these; anything
+ * else falls back to a per-method code (e.g. "CREATE_ERROR").
+ */
+export type ObscuraErrorCode =
+  | 'NOT_AUTHENTICATED'
+  | 'NOT_PROVISIONED'
+  | 'NOT_FRIENDS'
+  | 'NO_DEVICES'
+  | 'SEND_FAILED'
+  | 'DIRECT_ROUTING_UNRESOLVED';
+
 // ─── Core API ────────────────────────────────────────────
 
 export const Obscura = {
@@ -179,10 +192,26 @@ export const Obscura = {
 // ─── Events ──────────────────────────────────────────────
 //
 // The native side emits a single stream named `ObscuraEvent` whose payloads
-// share the discriminator `{ type }`. Both Android and iOS implementations
-// MUST emit only the variants enumerated below — adding an event here without
-// the matching native emit will silently no-op; emitting from native without
-// declaring here will compile but never get narrowed at call sites.
+// share the discriminator `{ type }`. [OBSCURA_EVENT_TYPES] is the canonical
+// list of event names; it MUST mirror the `BridgeEvent` enum in the native
+// bridges (ObscuraBridgeModule.kt / iOS). The `_AssertEventTypesMatch` check
+// below makes any drift between this list and the payload union a compile error.
+
+export const OBSCURA_EVENT_TYPES = [
+  'connectionChanged',
+  'authStateChanged',
+  'authFailed',
+  'appStateChanged',
+  'launchedFrom',
+  'friendsUpdated',
+  'messageReceived',
+  'entriesChanged',
+  'typingChanged',
+  'pushTokenReceived',
+  'debugLog',
+] as const;
+
+export type ObscuraEventType = (typeof OBSCURA_EVENT_TYPES)[number];
 
 export type ObscuraEvent =
   | { type: 'connectionChanged'; state: ConnectionState }
@@ -197,7 +226,16 @@ export type ObscuraEvent =
   | { type: 'pushTokenReceived'; token: string }
   | { type: 'debugLog'; message: string };
 
-export type ObscuraEventType = ObscuraEvent['type'];
+// Compile-time guarantee that the name list and the payload union agree in both
+// directions (every listed name has a payload, and every payload is listed).
+type _AssertEventTypesMatch =
+  [ObscuraEventType] extends [ObscuraEvent['type']]
+    ? [ObscuraEvent['type']] extends [ObscuraEventType]
+      ? true
+      : ['missing from OBSCURA_EVENT_TYPES', Exclude<ObscuraEvent['type'], ObscuraEventType>]
+    : ['missing from ObscuraEvent union', Exclude<ObscuraEventType, ObscuraEvent['type']>];
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _eventTypesMatch: _AssertEventTypesMatch = true;
 
 // Lazy-init emitter — only create when the native module exists.
 let _emitter: NativeEventEmitter | null = null;
