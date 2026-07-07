@@ -50,19 +50,16 @@ export function FlashIcon({ size = 24, color = '#fff', strokeWidth = 2, on = fal
   );
 }
 
-/** Camera flip — a camera body with a circular "rotate" arrow. */
+/** Camera flip — two arrows chasing each other in a circle (rotate). */
 export function FlipCameraIcon({ size = 26, color = '#fff', strokeWidth = 2 }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M23 4v6h-6" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M1 20v-6h6" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
       <Path
-        d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"
+        d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"
         stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round"
       />
-      <Path
-        d="M14.5 13a2.5 2.5 0 1 1-1.1-2.08"
-        stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round"
-      />
-      <Path d="M14.8 9.6 V12 H12.4" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }
