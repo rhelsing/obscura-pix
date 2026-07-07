@@ -36,11 +36,11 @@ final class ObscuraBridge: RCTEventEmitter {
         ObscuraBridge.shared = self
         // Kit diagnostics -> debugLog event.
         ObscuraSession.shared.logger.onLog = { [weak self] msg in
-            self?.emit("debugLog", ["message": msg])
+            self?.emit(.debugLog, ["message": msg])
         }
         // Process foreground/background -> appStateChanged event.
         ObscuraSession.shared.onAppStateChanged = { [weak self] active in
-            self?.emit("appStateChanged", ["state": active ? "active" : "background"])
+            self?.emit(.appStateChanged, ["state": active ? "active" : "background"])
         }
         // Re-subscribe when the live client is swapped (login/register/restore).
         ObscuraSession.shared.onClientReplaced = { [weak self] client in
@@ -61,13 +61,30 @@ final class ObscuraBridge: RCTEventEmitter {
 
     // MARK: - Emission
 
+    /// The single source of truth for the event *types* this bridge may emit on the
+    /// `ObscuraEvent` stream. Mirrors `BridgeEvent` in Android's ObscuraBridgeModule.kt
+    /// and `OBSCURA_EVENT_TYPES` in src/native/ObscuraModule.ts — the raw values MUST match.
+    private enum BridgeEvent: String {
+        case connectionChanged, authStateChanged, authFailed, appStateChanged
+        case launchedFrom, friendsUpdated, messageReceived, entriesChanged
+        case typingChanged, pushTokenReceived, debugLog
+    }
+
     /// Emit one `ObscuraEvent`. Folds `type` into the payload, matching Android's
     /// `emit(type) { … }` helper. No-ops until JS has a listener attached.
-    func emit(_ type: String, _ fields: [String: Any] = [:]) {
+    func emit(_ event: BridgeEvent, _ fields: [String: Any] = [:]) {
         guard hasListeners else { return }
         var body = fields
-        body["type"] = type
+        body["type"] = event.rawValue
         sendEvent(withName: "ObscuraEvent", body: body)
+    }
+
+    /// Reject a promise, preferring a kit `ObscuraError`'s stable `code` over the
+    /// per-method `fallbackCode` so JS can branch on *what* failed (e.g. "NOT_FRIENDS")
+    /// rather than parse a message. Mirrors Android's `Promise.rejectKit`.
+    func rejectKit(_ reject: @escaping RCTPromiseRejectBlock, _ fallbackCode: String, _ error: Error) {
+        let code = (error as? ObscuraClient.ObscuraError)?.code ?? fallbackCode
+        reject(code, error.localizedDescription, error)
     }
 
     // MARK: - Kit event stream -> JS
@@ -79,20 +96,20 @@ final class ObscuraBridge: RCTEventEmitter {
                 guard let self = self else { return }
                 switch event {
                 case .connectionChanged(let state):
-                    self.emit("connectionChanged", ["state": state.rawValue])
+                    self.emit(.connectionChanged, ["state": state.rawValue])
                 case .authChanged(let state):
-                    self.emit("authStateChanged", ["state": state.rawValue])
+                    self.emit(.authStateChanged, ["state": state.rawValue])
                 case .authFailed(let reason):
-                    self.emit("authFailed", ["reason": reason])
+                    self.emit(.authFailed, ["reason": reason])
                 case .friendsUpdated(let friends):
-                    self.emit("friendsUpdated", ["friends": friends.map { ObscuraBridge.friendDict($0) }])
+                    self.emit(.friendsUpdated, ["friends": friends.map { ObscuraBridge.friendDict($0) }])
                 case .messageReceived(let model, _):
                     // Minimal payload — JS re-queries the ORM. Don't synthesize an id.
-                    self.emit("messageReceived", ["model": model])
+                    self.emit(.messageReceived, ["model": model])
                 case .typingChanged(let conversationId, let typers):
-                    self.emit("typingChanged", ["conversationId": conversationId, "typers": typers])
+                    self.emit(.typingChanged, ["conversationId": conversationId, "typers": typers])
                 case .debugLog(let message):
-                    self.emit("debugLog", ["message": message])
+                    self.emit(.debugLog, ["message": message])
                 }
             }
         }
@@ -127,7 +144,7 @@ extension ObscuraBridge {
                 ObscuraSession.shared.saveSession()
                 resolve(nil)
             } catch {
-                reject("REGISTER_ERROR", error.localizedDescription, error)
+                rejectKit(reject, "REGISTER_ERROR", error)
             }
         }
     }
@@ -157,7 +174,7 @@ extension ObscuraBridge {
                 if scenario == .existingDevice { ObscuraSession.shared.saveSession() }
                 resolve(mapped)
             } catch {
-                reject("LOGIN_ERROR", error.localizedDescription, error)
+                rejectKit(reject, "LOGIN_ERROR", error)
             }
         }
     }
@@ -172,7 +189,7 @@ extension ObscuraBridge {
                 ObscuraSession.shared.saveSession()
                 resolve(nil)
             } catch {
-                reject("PROVISION_ERROR", error.localizedDescription, error)
+                rejectKit(reject, "PROVISION_ERROR", error)
             }
         }
     }
@@ -188,7 +205,7 @@ extension ObscuraBridge {
                 ObscuraSession.shared.saveSession()
                 resolve(nil)
             } catch {
-                reject("CONNECT_ERROR", error.localizedDescription, error)
+                rejectKit(reject, "CONNECT_ERROR", error)
             }
         }
     }
@@ -247,7 +264,7 @@ extension ObscuraBridge {
                   rejecter reject: @escaping RCTPromiseRejectBlock) {
         Task {
             do { try await client.befriend(userId, username: username); resolve(nil) }
-            catch { reject("BEFRIEND_ERROR", error.localizedDescription, error) }
+            catch { rejectKit(reject, "BEFRIEND_ERROR", error) }
         }
     }
 
@@ -257,7 +274,7 @@ extension ObscuraBridge {
                       rejecter reject: @escaping RCTPromiseRejectBlock) {
         Task {
             do { try await client.acceptFriend(userId, username: username); resolve(nil) }
-            catch { reject("ACCEPT_ERROR", error.localizedDescription, error) }
+            catch { rejectKit(reject, "ACCEPT_ERROR", error) }
         }
     }
 
@@ -275,7 +292,7 @@ extension ObscuraBridge {
                          rejecter reject: @escaping RCTPromiseRejectBlock) {
         Task {
             do { try await client.addFriendByCode(code); resolve(nil) }
-            catch { reject("ADD_FRIEND_ERROR", error.localizedDescription, error) }
+            catch { rejectKit(reject, "ADD_FRIEND_ERROR", error) }
         }
     }
 
@@ -311,7 +328,7 @@ extension ObscuraBridge {
                                 rejecter reject: @escaping RCTPromiseRejectBlock) {
         Task {
             do { try await client.validateAndApproveLink(code); resolve(nil) }
-            catch { reject("LINK_APPROVE_ERROR", error.localizedDescription, error) }
+            catch { rejectKit(reject, "LINK_APPROVE_ERROR", error) }
         }
     }
 }
@@ -350,7 +367,7 @@ extension ObscuraBridge {
                       resolver resolve: @escaping RCTPromiseResolveBlock,
                       rejecter reject: @escaping RCTPromiseRejectBlock) {
         do { try client.defineModelsFromJson(schemaJson); resolve(nil) }
-        catch { reject("DEFINE_MODELS_ERROR", error.localizedDescription, error) }
+        catch { rejectKit(reject, "DEFINE_MODELS_ERROR", error) }
     }
 
     @objc(createEntry:dataJson:resolver:rejecter:)
@@ -361,9 +378,9 @@ extension ObscuraBridge {
         Task {
             do {
                 let entry = try await m.create(parseJSONObject(dataJson))
-                emit("entriesChanged", ["model": model])
+                emit(.entriesChanged, ["model": model])
                 resolve(ObscuraBridge.entryDict(entry))
-            } catch { reject("CREATE_ERROR", error.localizedDescription, error) }
+            } catch { rejectKit(reject, "CREATE_ERROR", error) }
         }
     }
 
@@ -375,9 +392,9 @@ extension ObscuraBridge {
         Task {
             do {
                 let entry = try await m.upsert(id, parseJSONObject(dataJson))
-                emit("entriesChanged", ["model": model])
+                emit(.entriesChanged, ["model": model])
                 resolve(ObscuraBridge.entryDict(entry))
-            } catch { reject("UPSERT_ERROR", error.localizedDescription, error) }
+            } catch { rejectKit(reject, "UPSERT_ERROR", error) }
         }
     }
 
@@ -411,9 +428,9 @@ extension ObscuraBridge {
         Task {
             do {
                 _ = try await m.delete(id)
-                emit("entriesChanged", ["model": model])
+                emit(.entriesChanged, ["model": model])
                 resolve(nil)
-            } catch { reject("DELETE_ERROR", error.localizedDescription, error) }
+            } catch { rejectKit(reject, "DELETE_ERROR", error) }
         }
     }
 }
@@ -455,7 +472,7 @@ extension ObscuraBridge {
         typingTasks[conversationId]?.cancel()
         typingTasks[conversationId] = Task { [weak self] in
             for await typers in m.observeTyping(conversationId: conversationId).values {
-                self?.emit("typingChanged", ["conversationId": conversationId, "typers": typers])
+                self?.emit(.typingChanged, ["conversationId": conversationId, "typers": typers])
             }
         }
         resolve(nil)
@@ -496,7 +513,7 @@ extension ObscuraBridge {
                     "nonce": result.nonce.base64EncodedString(),
                 ])
             } catch {
-                reject("UPLOAD_ERROR", error.localizedDescription, error)
+                rejectKit(reject, "UPLOAD_ERROR", error)
             }
         }
     }
@@ -550,7 +567,7 @@ extension ObscuraBridge {
                 try fm.moveItem(at: tmp, to: dest)
                 resolve(dest.path)
             } catch {
-                reject("DOWNLOAD_ERROR", error.localizedDescription, error)
+                rejectKit(reject, "DOWNLOAD_ERROR", error)
             }
         }
     }
@@ -631,7 +648,7 @@ extension ObscuraBridge {
             try data.write(to: outURL, options: .atomic)
             resolve(["path": outURL.path, "width": width, "height": height])
         } catch {
-            reject("TEST_IMAGE_ERROR", error.localizedDescription, error)
+            rejectKit(reject, "TEST_IMAGE_ERROR", error)
         }
     }
 }
@@ -678,7 +695,7 @@ extension ObscuraBridge {
                 try session.setActive(true)
                 resolve(nil)
             } catch {
-                reject("PREWARM_ERROR", error.localizedDescription, error)
+                rejectKit(reject, "PREWARM_ERROR", error)
             }
         }
     }
@@ -699,7 +716,7 @@ extension ObscuraBridge {
                                rejecter reject: @escaping RCTPromiseRejectBlock) {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
             if let error = error {
-                reject("PUSH_PERMISSION_ERROR", error.localizedDescription, error); return
+                rejectKit(reject, "PUSH_PERMISSION_ERROR", error); return
             }
             // Only-on-grant: register for remote notifications so APNs/FCM can
             // later deliver a token (token plumbing lands with #11/Firebase).
@@ -716,7 +733,7 @@ extension ObscuraBridge {
                            rejecter reject: @escaping RCTPromiseRejectBlock) {
         Task {
             do { try await client.registerPushToken(token); resolve(nil) }
-            catch { reject("REGISTER_TOKEN_ERROR", error.localizedDescription, error) }
+            catch { rejectKit(reject, "REGISTER_TOKEN_ERROR", error) }
         }
     }
 }
@@ -749,6 +766,6 @@ extension ObscuraBridge {
     /// Called from AppDelegate when a warm-start deep link arrives (notification
     /// tapped while running). Cold starts use `getLaunchIntent` instead.
     static func deliverLaunchedFrom(_ screen: String) {
-        shared?.emit("launchedFrom", ["screen": screen])
+        shared?.emit(.launchedFrom, ["screen": screen])
     }
 }

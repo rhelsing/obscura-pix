@@ -8,6 +8,7 @@ import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.obscura.kit.AuthState
 import com.obscura.kit.ConnectionState
 import com.obscura.kit.ObscuraClient
+import com.obscura.kit.ObscuraError
 import com.obscura.kit.ReceivedMessage
 import com.obscura.kit.network.LoginScenario
 import com.obscura.kit.orm.OrmEntry
@@ -17,6 +18,40 @@ import kotlinx.coroutines.flow.collectLatest
 import org.json.JSONObject
 
 private const val TAG = "ObscuraBridge"
+
+/**
+ * The single source of truth for the event *types* the native side may emit on
+ * the `ObscuraEvent` stream. Every emit goes through [ObscuraBridgeModule.emit],
+ * which only accepts a value from this enum — so an undeclared/typo'd event
+ * cannot compile. The [type] strings MUST mirror `OBSCURA_EVENT_TYPES` in
+ * `src/native/ObscuraModule.ts` (a compile-time check there keeps that list and
+ * the event payload union in agreement).
+ */
+private enum class BridgeEvent(val type: String) {
+    CONNECTION_CHANGED("connectionChanged"),
+    AUTH_STATE_CHANGED("authStateChanged"),
+    AUTH_FAILED("authFailed"),
+    APP_STATE_CHANGED("appStateChanged"),
+    LAUNCHED_FROM("launchedFrom"),
+    FRIENDS_UPDATED("friendsUpdated"),
+    MESSAGE_RECEIVED("messageReceived"),
+    ENTRIES_CHANGED("entriesChanged"),
+    TYPING_CHANGED("typingChanged"),
+    PUSH_TOKEN_RECEIVED("pushTokenReceived"),
+    DEBUG_LOG("debugLog"),
+}
+
+/**
+ * Single mapping from the kit's [ConnectionState] to the JS wire string (the
+ * `ConnectionState` union in ObscuraModule.ts). Kept in one place so getState and
+ * the connectionChanged event can never drift.
+ */
+private fun ConnectionState.toJsString(): String = when (this) {
+    ConnectionState.DISCONNECTED -> "disconnected"
+    ConnectionState.CONNECTING -> "connecting"
+    ConnectionState.RECONNECTING -> "reconnecting"
+    ConnectionState.CONNECTED -> "connected"
+}
 
 /**
  * Thin React Native bridge. Owns NO Obscura state — all client lifecycle,
@@ -43,26 +78,31 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         get() = ObscuraSession.client
 
     private fun requireClient(): ObscuraClient =
-        client ?: throw IllegalStateException("ObscuraClient not initialized — call register or login first")
+        client ?: throw ObscuraError.NotAuthenticated("ObscuraClient not initialized — call register or login first")
+
+    /**
+     * Reject a promise, preferring a kit [ObscuraError]'s stable [ObscuraError.code]
+     * over the per-method [fallbackCode] so JS can branch on *what* failed
+     * (e.g. "NOT_FRIENDS", "OFFLINE") instead of parsing an English message.
+     */
+    private fun Promise.rejectKit(fallbackCode: String, t: Throwable) {
+        if (t is ObscuraError) reject(t.code, t.message, t) else reject(fallbackCode, t.message, t)
+    }
 
     // ─── EventSink: kit events → JS ─────────────────────────────────────────
 
     private val eventSink = object : ObscuraSession.EventSink {
-        override fun onConnectionChanged(state: ConnectionState) = emit("connectionChanged") {
-            putString("state", when (state) {
-                ConnectionState.DISCONNECTED -> "disconnected"
-                ConnectionState.CONNECTING -> "connecting"
-                ConnectionState.CONNECTED -> "connected"
-            })
+        override fun onConnectionChanged(state: ConnectionState) = emit(BridgeEvent.CONNECTION_CHANGED) {
+            putString("state", state.toJsString())
         }
-        override fun onAuthStateChanged(state: AuthState) = emit("authStateChanged") {
+        override fun onAuthStateChanged(state: AuthState) = emit(BridgeEvent.AUTH_STATE_CHANGED) {
             putString("state", when (state) {
                 AuthState.LOGGED_OUT -> "loggedOut"
                 AuthState.PENDING_APPROVAL -> "pendingApproval"
                 AuthState.AUTHENTICATED -> "authenticated"
             })
         }
-        override fun onFriendsUpdated(friends: List<FriendData>) = emit("friendsUpdated") {
+        override fun onFriendsUpdated(friends: List<FriendData>) = emit(BridgeEvent.FRIENDS_UPDATED) {
             val arr = Arguments.createArray()
             for (f in friends) arr.pushMap(friendToMap(f, f.status.value))
             putArray("friends", arr)
@@ -71,15 +111,15 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
             if (msg.type == "MODEL_SYNC") {
                 // Payload is intentionally minimal — consumers re-query the ORM for the
                 // authoritative entries. Don't synthesize a fake id here.
-                emit("messageReceived") { putString("model", modelName ?: "directMessage") }
+                emit(BridgeEvent.MESSAGE_RECEIVED) { putString("model", modelName ?: "directMessage") }
             } else if (msg.type == "FRIEND_REQUEST" || msg.type == "FRIEND_RESPONSE") {
                 Log.d(TAG, "Friend event: ${msg.type} accepted=${msg.accepted}")
             }
         }
-        override fun onDebugLog(message: String) = emit("debugLog") { putString("message", message) }
-        override fun onAuthFailed(reason: String) = emit("authFailed") { putString("reason", reason) }
-        override fun onPushToken(token: String) = emit("pushTokenReceived") { putString("token", token) }
-        override fun onAppStateChanged(state: ObscuraSession.AppState) = emit("appStateChanged") {
+        override fun onDebugLog(message: String) = emit(BridgeEvent.DEBUG_LOG) { putString("message", message) }
+        override fun onAuthFailed(reason: String) = emit(BridgeEvent.AUTH_FAILED) { putString("reason", reason) }
+        override fun onPushToken(token: String) = emit(BridgeEvent.PUSH_TOKEN_RECEIVED) { putString("token", token) }
+        override fun onAppStateChanged(state: ObscuraSession.AppState) = emit(BridgeEvent.APP_STATE_CHANGED) {
             putString("state", when (state) {
                 ObscuraSession.AppState.ACTIVE -> "active"
                 ObscuraSession.AppState.BACKGROUND -> "background"
@@ -101,7 +141,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
          * [getLaunchIntent] instead (the bridge isn't built yet at that point).
          */
         fun deliverLaunchedFrom(screen: String) {
-            instance?.emit("launchedFrom") { putString("screen", screen) }
+            instance?.emit(BridgeEvent.LAUNCHED_FROM) { putString("screen", screen) }
         }
 
         /**
@@ -145,9 +185,9 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
      * routed through this one helper means the Swift bridge has exactly one
      * pattern to match.
      */
-    private fun emit(type: String, build: WritableMap.() -> Unit = {}) {
+    private fun emit(event: BridgeEvent, build: WritableMap.() -> Unit = {}) {
         val params = Arguments.createMap().apply {
-            putString("type", type)
+            putString("type", event.type)
             build()
         }
         try {
@@ -155,12 +195,12 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
                 .emit("ObscuraEvent", params)
         } catch (e: Exception) {
-            Log.w(TAG, "emit($type) failed (JS not ready?): ${e.message}")
+            Log.w(TAG, "emit(${event.type}) failed (JS not ready?): ${e.message}")
         }
     }
 
     /** Fired after a successful local CRUD on a model. Lets screens re-query reactively. */
-    private fun emitEntriesChanged(model: String) = emit("entriesChanged") { putString("model", model) }
+    private fun emitEntriesChanged(model: String) = emit(BridgeEvent.ENTRIES_CHANGED) { putString("model", model) }
 
     // ─── Auth ───────────────────────────────────────────────────────────────
 
@@ -171,11 +211,11 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 Log.d(TAG, "register: $username")
                 val c = ObscuraSession.createClient(username)
                 c.register(username, password)
-                ObscuraSession.saveSession()
+                c.persistSession()
                 promise.resolve(null)
             } catch (e: Exception) {
                 Log.e(TAG, "register failed: ${e.message}")
-                promise.reject("REGISTER_ERROR", e.message, e)
+                promise.rejectKit("REGISTER_ERROR", e)
             }
         }
     }
@@ -195,11 +235,11 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                     LoginScenario.USER_NOT_FOUND -> "userNotFound"
                 }
                 Log.d(TAG, "loginSmart result: $scenario")
-                if (result.scenario == LoginScenario.EXISTING_DEVICE) ObscuraSession.saveSession()
+                if (result.scenario == LoginScenario.EXISTING_DEVICE) c.persistSession()
                 promise.resolve(scenario)
             } catch (e: Exception) {
                 Log.e(TAG, "loginSmart failed: ${e.message}")
-                promise.reject("LOGIN_ERROR", e.message, e)
+                promise.rejectKit("LOGIN_ERROR", e)
             }
         }
     }
@@ -211,11 +251,11 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 Log.d(TAG, "loginAndProvision: $username")
                 val c = ObscuraSession.createClient(username)
                 c.loginAndProvision(username, password)
-                ObscuraSession.saveSession()
+                c.persistSession()
                 promise.resolve(null)
             } catch (e: Exception) {
                 Log.e(TAG, "loginAndProvision failed: ${e.message}")
-                promise.reject("PROVISION_ERROR", e.message, e)
+                promise.rejectKit("PROVISION_ERROR", e)
             }
         }
     }
@@ -225,14 +265,13 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         scope.launch {
             try {
                 Log.d(TAG, "connect")
-                val c = requireClient()
-                c.ensureFreshToken()
-                c.connect()
-                ObscuraSession.saveSession()
+                // Kit's connect() refreshes the token and persists the rotated
+                // session itself — no app-side pre/post steps needed.
+                requireClient().connect()
                 promise.resolve(null)
             } catch (e: Exception) {
                 Log.e(TAG, "connect failed: ${e.message}")
-                promise.reject("CONNECT_ERROR", e.message, e)
+                promise.rejectKit("CONNECT_ERROR", e)
             }
         }
     }
@@ -244,7 +283,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 requireClient().disconnect()
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("DISCONNECT_ERROR", e.message, e)
+                promise.rejectKit("DISCONNECT_ERROR", e)
             }
         }
     }
@@ -253,12 +292,14 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     fun logout(promise: Promise) {
         scope.launch {
             try {
+                // Kit's logout() tears down the connection AND clears its persisted
+                // SessionStorage, so cold start won't try to restore. App only drops
+                // the client instance.
                 try { requireClient().logout() } catch (_: Exception) {}
                 ObscuraSession.destroyClient()
-                ObscuraSession.clearSession()
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("LOGOUT_ERROR", e.message, e)
+                promise.rejectKit("LOGOUT_ERROR", e)
             }
         }
     }
@@ -268,11 +309,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun getConnectionState(promise: Promise) {
         val state = client?.connectionState?.value ?: ConnectionState.DISCONNECTED
-        promise.resolve(when (state) {
-            ConnectionState.DISCONNECTED -> "disconnected"
-            ConnectionState.CONNECTING -> "connecting"
-            ConnectionState.CONNECTED -> "connected"
-        })
+        promise.resolve(state.toJsString())
     }
 
     @ReactMethod
@@ -318,7 +355,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 promise.resolve(null)
             } catch (e: Exception) {
                 Log.e(TAG, "befriend failed: ${e.message}")
-                promise.reject("BEFRIEND_ERROR", e.message, e)
+                promise.rejectKit("BEFRIEND_ERROR", e)
             }
         }
     }
@@ -332,7 +369,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 promise.resolve(null)
             } catch (e: Exception) {
                 Log.e(TAG, "acceptFriend failed: ${e.message}")
-                promise.reject("ACCEPT_ERROR", e.message, e)
+                promise.rejectKit("ACCEPT_ERROR", e)
             }
         }
     }
@@ -366,7 +403,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 promise.resolve(null)
             } catch (e: Exception) {
                 Log.e(TAG, "addFriendByCode failed: ${e.message}")
-                promise.reject("ADD_FRIEND_ERROR", e.message, e)
+                promise.rejectKit("ADD_FRIEND_ERROR", e)
             }
         }
     }
@@ -380,7 +417,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 val code = requireClient().generateLinkCode()
                 promise.resolve(code)
             } catch (e: Exception) {
-                promise.reject("LINK_ERROR", e.message, e)
+                promise.rejectKit("LINK_ERROR", e)
             }
         }
     }
@@ -392,7 +429,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 requireClient().validateAndApproveLink(code)
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("LINK_APPROVE_ERROR", e.message, e)
+                promise.rejectKit("LINK_APPROVE_ERROR", e)
             }
         }
     }
@@ -404,13 +441,12 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         scope.launch {
             try {
                 val c = requireClient()
-                ObscuraSession.defineModelsFromJson(c, schemaJson)
-                ObscuraSession.cacheSchema(schemaJson)
+                c.defineModelsFromJson(schemaJson)
                 Log.d(TAG, "Models defined + cached")
                 promise.resolve(null)
             } catch (e: Exception) {
                 Log.e(TAG, "defineModels failed: ${e.message}")
-                promise.reject("DEFINE_ERROR", e.message, e)
+                promise.rejectKit("DEFINE_ERROR", e)
             }
         }
     }
@@ -424,7 +460,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 emitEntriesChanged(model)
             } catch (e: Exception) {
                 Log.e(TAG, "createEntry($model) failed: ${e.message}")
-                promise.reject("CREATE_ERROR", e.message, e)
+                promise.rejectKit("CREATE_ERROR", e)
             }
         }
     }
@@ -437,7 +473,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 promise.resolve(entryToMap(entry))
                 emitEntriesChanged(model)
             } catch (e: Exception) {
-                promise.reject("UPSERT_ERROR", e.message, e)
+                promise.rejectKit("UPSERT_ERROR", e)
             }
         }
     }
@@ -451,7 +487,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 for (e in entries) arr.pushMap(entryToMap(e))
                 promise.resolve(arr)
             } catch (e: Exception) {
-                promise.reject("QUERY_ERROR", e.message, e)
+                promise.rejectKit("QUERY_ERROR", e)
             }
         }
     }
@@ -465,7 +501,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 for (e in entries) arr.pushMap(entryToMap(e))
                 promise.resolve(arr)
             } catch (e: Exception) {
-                promise.reject("ALL_ERROR", e.message, e)
+                promise.rejectKit("ALL_ERROR", e)
             }
         }
     }
@@ -478,7 +514,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 promise.resolve(null)
                 emitEntriesChanged(model)
             } catch (e: Exception) {
-                promise.reject("DELETE_ERROR", e.message, e)
+                promise.rejectKit("DELETE_ERROR", e)
             }
         }
     }
@@ -492,7 +528,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 requireClient().orm.modelOrNull("directMessage")?.typing(conversationId)
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("TYPING_ERROR", e.message, e)
+                promise.rejectKit("TYPING_ERROR", e)
             }
         }
     }
@@ -504,7 +540,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 requireClient().orm.modelOrNull("directMessage")?.stopTyping(conversationId)
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("STOP_TYPING_ERROR", e.message, e)
+                promise.rejectKit("STOP_TYPING_ERROR", e)
             }
         }
     }
@@ -517,7 +553,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
 
         typingJobs[conversationId] = scope.launch {
             model.observeTyping(conversationId).collectLatest { typers ->
-                emit("typingChanged") {
+                emit(BridgeEvent.TYPING_CHANGED) {
                     putString("conversationId", conversationId)
                     val arr = Arguments.createArray()
                     for (t in typers) arr.pushString(t)
@@ -552,7 +588,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                     putString("nonce", Base64.encodeToString(encrypted.nonce, Base64.NO_WRAP))
                 })
             } catch (e: Exception) {
-                promise.reject("UPLOAD_ERROR", e.message, e)
+                promise.rejectKit("UPLOAD_ERROR", e)
             }
         }
     }
@@ -599,7 +635,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 }
                 promise.resolve(dest.absolutePath)
             } catch (t: Throwable) {
-                promise.reject("DOWNLOAD_ERROR", t.message, t)
+                promise.rejectKit("DOWNLOAD_ERROR", t)
             }
         }
     }
@@ -694,7 +730,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 // (an Error, not an Exception); silently dropping that would leave
                 // the JS promise hanging forever.
                 Log.e(TAG, "resizeImage failed: ${t.message}")
-                promise.reject("RESIZE_ERROR", t.message, t)
+                promise.rejectKit("RESIZE_ERROR", t)
             }
         }
     }
@@ -730,7 +766,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                     putInt("height", height)
                 })
             } catch (t: Throwable) {
-                promise.reject("TEST_IMAGE_ERROR", t.message, t)
+                promise.rejectKit("TEST_IMAGE_ERROR", t)
             }
         }
     }
@@ -763,7 +799,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 }
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("SECURE_ERROR", e.message, e)
+                promise.rejectKit("SECURE_ERROR", e)
             }
         }
     }
@@ -857,7 +893,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                     }
                 }
         } catch (e: Exception) {
-            promise.reject("FCM_INIT_ERROR", e.message, e)
+            promise.rejectKit("FCM_INIT_ERROR", e)
         }
     }
 
@@ -870,7 +906,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 promise.resolve(null)
             } catch (e: Exception) {
                 Log.e(TAG, "registerPushToken failed: ${e.message}")
-                promise.reject("REGISTER_TOKEN_ERROR", e.message, e)
+                promise.rejectKit("REGISTER_TOKEN_ERROR", e)
             }
         }
     }
@@ -892,7 +928,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
             java.io.File(path).delete()
             promise.resolve(null)
         } catch (e: Throwable) {
-            promise.reject("DELETE_FAILED", e)
+            promise.rejectKit("DELETE_FAILED", e)
         }
     }
 
@@ -918,7 +954,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 cm.setPrimaryClip(android.content.ClipData.newPlainText("text", text))
                 promise.resolve(null)
             } catch (e: Throwable) {
-                promise.reject("CLIPBOARD_FAILED", e)
+                promise.rejectKit("CLIPBOARD_FAILED", e)
             }
         }
     }

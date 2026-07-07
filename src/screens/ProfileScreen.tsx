@@ -16,6 +16,7 @@ import type { ConnectionState } from '../native/ObscuraModule';
 const CONN_META: Record<ConnectionState, { color: string; label: string }> = {
   connected: { color: colors.connected, label: 'connected' },
   connecting: { color: colors.connecting, label: 'connecting…' },
+  reconnecting: { color: colors.connecting, label: 'reconnecting…' },
   disconnected: { color: colors.disconnected, label: 'disconnected' },
 };
 

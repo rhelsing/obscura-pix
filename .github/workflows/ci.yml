@@ -60,6 +60,10 @@ jobs:
         with:
           repository: rhelsing/ObscuraKit-Kotlin
           path: ObscuraKit-Kotlin
+          # The kit generates protobuf code from its ./proto submodule; without
+          # this the composite build fails codegen (Unresolved reference on
+          # generated proto types).
+          submodules: recursive
 
       - uses: actions/setup-node@v6
         with:
