@@ -94,13 +94,17 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
   }, [group, groupIdx, storyIdx, groups.length, markCurrentViewed, navigation]);
 
   const goBack = useCallback(() => {
+    // View-once pix (markViewed) must not be re-viewable: once a pix is shown
+    // and its receipt fired, tapping back to it would defeat view-once. Only
+    // stories allow rewinding within the session.
+    if (markViewed) return;
     if (storyIdx > 0) {
       setStoryIdx(i => i - 1);
     } else if (groupIdx > 0) {
       setGroupIdx(i => i - 1);
       setStoryIdx(0);
     }
-  }, [storyIdx, groupIdx]);
+  }, [storyIdx, groupIdx, markViewed]);
 
   // Resolve the attachment ref into a stable object so the load effect's
   // dep array is honest. Without this, the effect either drops deps and
