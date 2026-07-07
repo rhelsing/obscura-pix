@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  KeyboardAvoidingView, Platform,
+  KeyboardAvoidingView, Platform, Alert, StyleSheet,
 } from 'react-native';
 import { Obscura } from '../native/ObscuraModule';
 import { logError, getJsLog } from '../utils/log';
@@ -14,10 +14,10 @@ import type { ConnectionState } from '../native/ObscuraModule';
 // reads the shared `connState` store value fed by the `connectionChanged`
 // bridge event (both platforms emit it).
 const CONN_META: Record<ConnectionState, { color: string; label: string }> = {
-  connected: { color: colors.connected, label: 'connected' },
-  connecting: { color: colors.connecting, label: 'connecting…' },
-  reconnecting: { color: colors.connecting, label: 'reconnecting…' },
-  disconnected: { color: colors.disconnected, label: 'disconnected' },
+  connected: { color: colors.connected, label: 'Connected' },
+  connecting: { color: colors.connecting, label: 'Connecting…' },
+  reconnecting: { color: colors.connecting, label: 'Reconnecting…' },
+  disconnected: { color: colors.disconnected, label: 'Disconnected' },
 };
 
 export function ProfileScreen() {
@@ -28,8 +28,31 @@ export function ProfileScreen() {
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const [showLog, setShowLog] = useState(false);
 
-  // Keep the display-name field in sync if myUsername arrives after mount.
-  useEffect(() => { if (myUsername && !displayName) setDisplayName(myUsername); }, [myUsername, displayName]);
+  // The user's own saved profile entry (id is device-independent, unlike
+  // authorDeviceId which changes when a different device last wrote it).
+  const ownProfile = profiles.find(p => p.id === `profile_${myUserId}`);
+
+  // Hydrate the editable fields from the saved profile once it's available,
+  // falling back to the username for a brand-new profile. `hydrated` stops it
+  // re-running (so clearing a field doesn't refill it); `edited` guards the
+  // async gap so we never clobber input the user typed before entries loaded.
+  const hydrated = useRef(false);
+  const edited = useRef(false);
+  useEffect(() => {
+    if (hydrated.current || edited.current) return;
+    if (ownProfile) {
+      setDisplayName((ownProfile.data.displayName as string) || myUsername || '');
+      setBio((ownProfile.data.bio as string) || '');
+      hydrated.current = true;
+    } else if (myUsername) {
+      // No saved profile yet — seed the name from the handle, but keep
+      // listening in case a saved profile arrives after entries load.
+      setDisplayName(myUsername);
+    }
+  }, [ownProfile, myUsername]);
+
+  const onChangeDisplayName = (t: string) => { edited.current = true; setDisplayName(t); };
+  const onChangeBio = (t: string) => { edited.current = true; setBio(t); };
 
   // Poll the debug log only while it's visible.
   useEffect(() => {
@@ -53,6 +76,17 @@ export function ProfileScreen() {
     } catch (e: any) { toast.error(e.message); }
   };
 
+  const confirmLogout = () => {
+    Alert.alert(
+      'Log out?',
+      'You’ll need your username and password to sign back in.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Log out', style: 'destructive', onPress: () => { logout(); } },
+      ],
+    );
+  };
+
   // Filter on deviceId — `authorDeviceId` is the kit's per-device id, not
   // the per-user id. Comparing it to `myUserId` (different namespace!) used
   // to mean every entry passed the filter and your own profile showed up
@@ -64,57 +98,78 @@ export function ProfileScreen() {
   return (
     <KeyboardAvoidingView
       style={s.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView style={s.screen} keyboardShouldPersistTaps="handled">
-        <Text style={s.sectionTitle}>edit profile</Text>
-        <TextInput style={s.input} placeholder="display name" placeholderTextColor="#666"
-          value={displayName} onChangeText={setDisplayName} />
-        <TextInput style={s.input} placeholder="bio" placeholderTextColor="#666"
-          value={bio} onChangeText={setBio} />
-        <TouchableOpacity style={s.smallBtn} onPress={save}>
-          <Text style={s.smallBtnText}>save</Text>
+      <ScrollView style={pf.screen} keyboardShouldPersistTaps="handled">
+        <Text style={pf.sectionTitle}>edit profile</Text>
+        <TextInput style={s.input} placeholder="Display name" placeholderTextColor={colors.textDim}
+          value={displayName} onChangeText={onChangeDisplayName} />
+        <TextInput style={s.input} placeholder="Bio" placeholderTextColor={colors.textDim}
+          value={bio} onChangeText={onChangeBio} />
+        <TouchableOpacity style={pf.smallBtn} onPress={save}>
+          <Text style={pf.smallBtnText}>Save</Text>
         </TouchableOpacity>
 
         {friendProfiles.length > 0 && (<>
-          <Text style={s.sectionTitle}>friend profiles</Text>
+          <Text style={pf.sectionTitle}>friend profiles</Text>
           {friendProfiles.map(p => (
-            <View key={p.id} style={s.storyCard}>
-              <Text style={s.storyAuthor}>{p.data.displayName}</Text>
-              {p.data.bio ? <Text style={s.storyContent}>{p.data.bio}</Text> : null}
+            <View key={p.id} style={pf.storyCard}>
+              <Text style={pf.storyAuthor}>{p.data.displayName}</Text>
+              {p.data.bio ? <Text style={pf.storyContent}>{p.data.bio}</Text> : null}
             </View>
           ))}
         </>)}
 
-        <Text style={s.sectionTitle}>status</Text>
-        <View style={s.statusRow}>
-          <Text style={[s.statusDot, { color: conn.color }]}>●</Text>
-          <Text style={s.statusText}>{conn.label}</Text>
+        <Text style={pf.sectionTitle}>status</Text>
+        <View style={pf.statusRow}>
+          <Text style={[pf.statusDot, { color: conn.color }]}>●</Text>
+          <Text style={pf.statusText}>{conn.label}</Text>
         </View>
 
-        <Text style={s.sectionTitle}>account</Text>
-        <Text style={s.settingsLabel}>{myUsername}</Text>
-        <Text style={s.hint}>{myUserId.slice(0, 16)}...</Text>
+        <Text style={pf.sectionTitle}>account</Text>
+        <Text style={pf.settingsLabel}>{myUsername}</Text>
+        <Text style={pf.hint}>{myUserId.slice(0, 16)}...</Text>
 
-        <TouchableOpacity style={[s.codeBtn, { marginTop: 16 }]} onPress={() => setShowLog(!showLog)}>
-          <Text style={s.codeBtnText}>{showLog ? 'hide debug log' : 'show debug log'}</Text>
+        <TouchableOpacity style={pf.debugToggle} onPress={() => setShowLog(!showLog)}>
+          <Text style={pf.codeBtnText}>{showLog ? 'Hide debug log' : 'Show debug log'}</Text>
         </TouchableOpacity>
 
         {showLog && debugLog.length > 0 && (
-          <View style={{ marginTop: 8 }}>
+          <View style={pf.logBox}>
             {debugLog.slice().reverse().map((line, i) => (
-              <Text key={i} style={s.logLine}>{line}</Text>
+              <Text key={i} style={pf.logLine}>{line}</Text>
             ))}
           </View>
         )}
 
         <TouchableOpacity
-          style={[s.primaryBtn, { backgroundColor: '#333', marginTop: 24, marginBottom: 32 }]}
-          onPress={logout}
+          style={pf.dangerBtn}
+          onPress={confirmLogout}
         >
-          <Text style={s.primaryBtnText}>log out</Text>
+          <Text style={pf.dangerBtnText}>Log out</Text>
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
+
+const pf = StyleSheet.create({
+  screen: { flex: 1, padding: 16 },
+  sectionTitle: { color: colors.textDim, fontSize: 12, fontWeight: '700', marginTop: 20, marginBottom: 8, textTransform: 'uppercase' },
+  smallBtn: { backgroundColor: colors.accent, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10 },
+  smallBtnText: { color: colors.onAccent, fontWeight: '700', fontSize: 14 },
+  storyCard: { backgroundColor: colors.surface, borderRadius: 12, padding: 14, marginBottom: 8 },
+  storyAuthor: { color: colors.accent, fontSize: 13, fontWeight: '700', marginBottom: 4 },
+  storyContent: { color: colors.text, fontSize: 16 },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, marginBottom: 12 },
+  statusDot: { fontSize: 14 },
+  statusText: { color: colors.text, fontSize: 15, fontWeight: '600' },
+  settingsLabel: { color: colors.text, fontSize: 18, fontWeight: '600' },
+  hint: { color: colors.textMuted, fontSize: 12, marginTop: 4, marginBottom: 12 },
+  debugToggle: { backgroundColor: colors.surface, borderRadius: 12, padding: 14, alignItems: 'center', marginBottom: 12, marginTop: 16 },
+  codeBtnText: { color: colors.accent, fontWeight: '600' },
+  logBox: { marginTop: 8 },
+  logLine: { color: colors.textDim, fontSize: 10, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', marginBottom: 2 },
+  dangerBtn: { borderWidth: 1, borderColor: colors.error, borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 24, marginBottom: 32 },
+  dangerBtnText: { color: colors.error, fontWeight: '700', fontSize: 16 },
+});

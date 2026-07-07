@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { colors } from '../styles';
 
 /**
  * Lightweight slide-down toast — replaces blocking Alert dialogs. Fire from
@@ -13,9 +14,9 @@ export type ToastType = 'success' | 'info' | 'error';
 interface ToastItem { id: number; message: string; type: ToastType; }
 
 const COLORS: Record<ToastType, string> = {
-  success: '#22c55e', // green
-  info: '#38bdf8',    // light blue
-  error: '#ef4444',   // red
+  success: colors.success,
+  info: colors.info,
+  error: colors.error,
 };
 
 const VISIBLE_MS = 2600;

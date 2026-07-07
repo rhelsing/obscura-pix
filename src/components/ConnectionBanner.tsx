@@ -70,7 +70,7 @@ export function ConnectionBanner() {
         ]}
       >
         <View style={[styles.dot, { backgroundColor: colors.connecting }]} />
-        <Text style={styles.label}>reconnecting…</Text>
+        <Text style={styles.label}>Reconnecting…</Text>
       </Animated.View>
     </View>
   );

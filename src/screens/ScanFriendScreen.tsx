@@ -8,6 +8,7 @@ import { useNavigation, useIsFocused } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura } from '../native/ObscuraModule';
 import { toast } from '../components/Toast';
+import { CloseIcon } from '../components/icons';
 import { parseFriendQR } from '../friendQR';
 import type { RootStackParamList } from '../navigation/types';
 import { colors } from '../styles';
@@ -44,18 +45,18 @@ export function ScanFriendScreen() {
   if (!hasPermission) {
     return (
       <View style={ss.center}>
-        <Text style={ss.msg}>camera access needed to scan</Text>
+        <Text style={ss.msg}>Camera access needed to scan</Text>
         <TouchableOpacity style={ss.btn} onPress={requestPermission}>
-          <Text style={ss.btnText}>grant access</Text>
+          <Text style={ss.btnText}>Grant access</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => Linking.openSettings()}>
-          <Text style={ss.link}>open settings</Text>
+          <Text style={ss.link}>Open settings</Text>
         </TouchableOpacity>
       </View>
     );
   }
   if (!device) {
-    return <View style={ss.center}><Text style={ss.msg}>no camera available</Text></View>;
+    return <View style={ss.center}><Text style={ss.msg}>No camera available</Text></View>;
   }
 
   return (
@@ -69,10 +70,10 @@ export function ScanFriendScreen() {
       />
       <View style={ss.overlay} pointerEvents="box-none">
         <View style={ss.frame} />
-        <Text style={ss.hint}>point at a friend's QR code</Text>
+        <Text style={ss.hint}>Point at a friend's QR code</Text>
       </View>
       <TouchableOpacity style={ss.close} onPress={() => nav.goBack()}>
-        <Text style={ss.closeText}>{'X'}</Text>
+        <CloseIcon size={22} color="#fff" />
       </TouchableOpacity>
     </View>
   );
@@ -95,5 +96,4 @@ const ss = StyleSheet.create({
     position: 'absolute', top: 48, left: 16, width: 40, height: 40, borderRadius: 20,
     backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center',
   },
-  closeText: { color: '#fff', fontSize: 18, fontWeight: '700' },
 });

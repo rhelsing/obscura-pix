@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createMaterialTopTabNavigator, type MaterialTopTabBarProps } from '@react-navigation/material-top-tabs';
-import { View, Text, TouchableOpacity, StyleSheet, AppState } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, AppState } from 'react-native';
 import { useNavigation, useIsFocused, getFocusedRouteNameFromRoute, type RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -23,6 +23,8 @@ import { ProfileScreen } from '../screens/ProfileScreen';
 import { AddFriendScreen } from '../screens/AddFriendScreen';
 import { ScanFriendScreen } from '../screens/ScanFriendScreen';
 import { AddFriendIcon } from '../components/AddFriendIcon';
+import { CameraIcon, ChatIcon } from '../components/icons';
+import { Avatar } from '../components/Avatar';
 
 import type { RootStackParamList, MainTabParamList } from './types';
 
@@ -37,9 +39,7 @@ function ProfileAvatarButton() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   return (
     <TouchableOpacity onPress={() => nav.navigate('Profile')} style={headerStyles.btn}>
-      <View style={headerStyles.avatar}>
-        <Text style={headerStyles.avatarText}>{myUsername[0]?.toUpperCase() || '?'}</Text>
-      </View>
+      <Avatar name={myUsername} size={32} />
     </TouchableOpacity>
   );
 }
@@ -60,27 +60,24 @@ function AddFriendHeaderButton() {
 function BottomTabBar({ state, navigation }: MaterialTopTabBarProps) {
   const insets = useSafeAreaInsets();
   const onCamera = state.routes[state.index]?.name === 'Camera';
+  const barDynamic = {
+    paddingBottom: insets.bottom + 10,
+    backgroundColor: onCamera ? 'transparent' : colors.bg,
+    borderTopColor: onCamera ? 'transparent' : colors.border,
+  };
   return (
-    <View
-      style={[
-        tabStyles.bar,
-        {
-          paddingBottom: insets.bottom + 10,
-          backgroundColor: onCamera ? 'transparent' : colors.bg,
-          borderTopColor: onCamera ? 'transparent' : colors.border,
-        },
-      ]}
-    >
+    <View style={[tabStyles.bar, barDynamic]}>
       {state.routes.map((route, i) => {
         const focused = state.index === i;
-        const label = route.name === 'Camera' ? 'camera' : 'chat';
         const onPress = () => {
           const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
           if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
         };
+        const tint = focused ? colors.accent : colors.textDim;
+        const Icon = route.name === 'Camera' ? CameraIcon : ChatIcon;
         return (
-          <TouchableOpacity key={route.key} style={tabStyles.tab} onPress={onPress}>
-            <Text style={[tabStyles.label, focused && tabStyles.labelActive]}>{label}</Text>
+          <TouchableOpacity key={route.key} style={tabStyles.tab} onPress={onPress} accessibilityLabel={route.name}>
+            <Icon size={27} color={tint} strokeWidth={focused ? 2.4 : 2} />
           </TouchableOpacity>
         );
       })}
@@ -118,30 +115,32 @@ function MainTabs() {
   );
 }
 
-// Header options for MainTabs, driven by which tab is focused. Header is always
-// transparent (so the pager keeps a constant full-screen height — no layout
-// jump mid-swipe); only its background + right button change per tab.
+// Header options for MainTabs, driven by which tab is focused. Header floats
+// (transparent) so the pager keeps a constant full-screen height — no layout
+// jump mid-swipe. On the camera tab it gets a subtle dark scrim instead of the
+// solid Chats background, so the white wordmark/icons stay readable when the
+// camera points at something bright.
 function mainTabsHeaderOptions({ route }: { route: RouteProp<RootStackParamList, 'MainTabs'> }) {
   const tab = getFocusedRouteNameFromRoute(route) ?? 'Camera';
   const isCamera = tab === 'Camera';
   return {
     headerShown: true,
     headerTransparent: true,
-    headerStyle: { backgroundColor: isCamera ? 'transparent' : colors.bg },
+    headerStyle: { backgroundColor: isCamera ? 'rgba(0,0,0,0.32)' : colors.bg },
     headerShadowVisible: false,
     headerTitle: 'obscura',
     headerTitleAlign: 'center' as const,
     headerTintColor: colors.text,
     headerTitleStyle: { color: colors.text, fontWeight: '700' as const },
     headerLeft: () => <ProfileAvatarButton />,
-    headerRight: () => (isCamera ? null : <AddFriendHeaderButton />),
+    headerRight: () => <AddFriendHeaderButton />,
   };
 }
 
 // ─── Splash (during initial auth check) ──────────────────
 
 function SplashScreen() {
-  return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
+  return <View style={headerStyles.splash} />;
 }
 
 // ─── Root Navigator ──────────────────────────────────────
@@ -213,7 +212,7 @@ export function RootNavigator() {
               headerStyle: { backgroundColor: colors.bg },
               headerTintColor: colors.accent,
               headerTitleStyle: { color: colors.text, fontWeight: '700' },
-              title: 'profile',
+              title: 'Profile',
             }}
           />
           <RootStack.Screen
@@ -224,7 +223,7 @@ export function RootNavigator() {
               headerStyle: { backgroundColor: colors.bg },
               headerTintColor: colors.accent,
               headerTitleStyle: { color: colors.text, fontWeight: '700' },
-              title: 'add friend',
+              title: 'Add friend',
             }}
           />
           <RootStack.Screen
@@ -247,15 +246,9 @@ const tabStyles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   tab: { flex: 1, alignItems: 'center' },
-  label: { color: colors.textDim, fontSize: 13, fontWeight: '600' },
-  labelActive: { color: colors.accent },
 });
 
 const headerStyles = StyleSheet.create({
   btn: { paddingHorizontal: 16 },
-  avatar: {
-    width: 32, height: 32, borderRadius: 16, backgroundColor: colors.accent,
-    justifyContent: 'center', alignItems: 'center',
-  },
-  avatarText: { color: '#000', fontWeight: '700', fontSize: 14 },
+  splash: { flex: 1, backgroundColor: colors.bg },
 });

@@ -42,14 +42,14 @@ export function AddFriendScreen() {
       <View style={afs.qrCard}>
         {myCode
           ? <QRCode value={encodeFriendQR(myCode)} size={216} backgroundColor="transparent" color="#fff" />
-          : <Text style={afs.dim}>loading…</Text>}
+          : <Text style={afs.dim}>Loading…</Text>}
       </View>
-      <Text style={afs.caption}>friends can scan this to add you</Text>
+      <Text style={afs.caption}>Friends can scan this to add you</Text>
 
       {!!myCode && (
         <TouchableOpacity style={afs.codePill} onPress={copyMyCode}>
           <Text style={afs.codeText} numberOfLines={1}>{myCode}</Text>
-          <Text style={afs.copyHint}>copy</Text>
+          <Text style={afs.copyHint}>Copy</Text>
         </TouchableOpacity>
       )}
 
@@ -60,21 +60,21 @@ export function AddFriendScreen() {
       <View style={afs.enterRow}>
         <TextInput
           style={afs.input}
-          placeholder="paste friend code"
-          placeholderTextColor="#666"
+          placeholder="Paste friend code"
+          placeholderTextColor={colors.textDim}
           value={codeInput}
           onChangeText={setCodeInput}
           autoCapitalize="none"
           autoCorrect={false}
         />
         <TouchableOpacity style={afs.addBtn} onPress={addByCode}>
-          <Text style={afs.addBtnText}>add</Text>
+          <Text style={afs.addBtnText}>Add</Text>
         </TouchableOpacity>
       </View>
 
       {/* Scan */}
       <TouchableOpacity style={afs.scanBtn} onPress={scanQR}>
-        <Text style={afs.scanBtnText}>scan a friend's QR</Text>
+        <Text style={afs.scanBtnText}>Scan a friend's QR</Text>
       </TouchableOpacity>
     </View>
   );
@@ -83,7 +83,7 @@ export function AddFriendScreen() {
 const afs = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg, padding: 24, alignItems: 'center' },
   qrCard: {
-    width: 256, height: 256, borderRadius: 20, backgroundColor: '#111',
+    width: 256, height: 256, borderRadius: 20, backgroundColor: colors.surface,
     justifyContent: 'center', alignItems: 'center', marginTop: 12,
     borderWidth: 1, borderColor: colors.border,
   },
@@ -91,22 +91,22 @@ const afs = StyleSheet.create({
   caption: { color: colors.textDim, fontSize: 13, marginTop: 12 },
   codePill: {
     flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 16,
-    backgroundColor: '#111', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12,
+    backgroundColor: colors.surface, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12,
     borderWidth: 1, borderColor: colors.border, maxWidth: '100%',
   },
   codeText: { color: colors.text, fontSize: 15, fontWeight: '600', flexShrink: 1 },
   copyHint: { color: colors.accent, fontSize: 13, fontWeight: '700' },
   divider: { height: 1, backgroundColor: colors.border, alignSelf: 'stretch', marginVertical: 24 },
-  sectionLabel: { color: '#666', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', alignSelf: 'flex-start', marginBottom: 8 },
+  sectionLabel: { color: colors.textDim, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', alignSelf: 'flex-start', marginBottom: 8 },
   enterRow: { flexDirection: 'row', gap: 8, alignSelf: 'stretch' },
   input: {
-    flex: 1, backgroundColor: '#111', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
+    flex: 1, backgroundColor: colors.surface, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
     color: colors.text, fontSize: 15, borderWidth: 1, borderColor: colors.border,
   },
   addBtn: { backgroundColor: colors.accent, borderRadius: 12, paddingHorizontal: 20, justifyContent: 'center' },
   addBtnText: { color: '#000', fontWeight: '700', fontSize: 15 },
   scanBtn: {
-    alignSelf: 'stretch', marginTop: 20, backgroundColor: '#111', borderRadius: 12,
+    alignSelf: 'stretch', marginTop: 20, backgroundColor: colors.surface, borderRadius: 12,
     paddingVertical: 14, alignItems: 'center', borderWidth: 1, borderColor: colors.border,
   },
   scanBtnText: { color: colors.text, fontWeight: '700', fontSize: 15 },
