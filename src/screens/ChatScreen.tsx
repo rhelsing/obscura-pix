@@ -186,7 +186,7 @@ export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
     <SafeAreaView style={s.container}>
       <KeyboardAvoidingView
         style={s.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={headerHeight}
       >
         <FlatList
