@@ -25,6 +25,8 @@ export const s = StyleSheet.create({
   primaryBtn: { backgroundColor: colors.accent, borderRadius: 12, padding: 14, alignItems: 'center' },
   primaryBtnText: { color: '#000', fontWeight: '700', fontSize: 16 },
   secondaryBtn: { borderWidth: 1, borderColor: '#333', borderRadius: 12, padding: 14, alignItems: 'center' },
+  dangerBtn: { borderWidth: 1, borderColor: colors.error, borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 24, marginBottom: 32 },
+  dangerBtnText: { color: colors.error, fontWeight: '700', fontSize: 16 },
   secondaryBtnText: { color: colors.text, fontWeight: '600', fontSize: 16 },
   screen: { flex: 1, padding: 16 },
   topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, paddingTop: Platform.OS === 'android' ? 40 : 12 },

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  KeyboardAvoidingView, Platform,
+  KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { Obscura } from '../native/ObscuraModule';
 import { logError, getJsLog } from '../utils/log';
@@ -76,6 +76,17 @@ export function ProfileScreen() {
     } catch (e: any) { toast.error(e.message); }
   };
 
+  const confirmLogout = () => {
+    Alert.alert(
+      'Log out?',
+      'You’ll need your username and password to sign back in.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Log out', style: 'destructive', onPress: () => { logout(); } },
+      ],
+    );
+  };
+
   // Filter on deviceId — `authorDeviceId` is the kit's per-device id, not
   // the per-user id. Comparing it to `myUserId` (different namespace!) used
   // to mean every entry passed the filter and your own profile showed up
@@ -132,10 +143,10 @@ export function ProfileScreen() {
         )}
 
         <TouchableOpacity
-          style={[s.primaryBtn, { backgroundColor: '#333', marginTop: 24, marginBottom: 32 }]}
-          onPress={logout}
+          style={s.dangerBtn}
+          onPress={confirmLogout}
         >
-          <Text style={s.primaryBtnText}>Log out</Text>
+          <Text style={s.dangerBtnText}>Log out</Text>
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
