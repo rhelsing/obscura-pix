@@ -9,18 +9,18 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Obscura } from '../native/ObscuraModule';
 import { useCameraActive } from '../navigation/CameraActiveContext';
 import { logError } from '../utils/log';
+import { clamp, touchDist } from '../utils/gesture';
+import { FlashIcon, FlipCameraIcon } from '../components/icons';
 import type { RootStackParamList } from '../navigation/types';
 import { colors } from '../styles';
 
 // Quick tap vs press-and-hold threshold for the shutter (ms).
 const HOLD_TO_RECORD_MS = 220;
 
-// Space the bottom controls clear of the floating tab bar (approx its height).
-const TAB_BAR_CLEARANCE = 56;
-
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-const touchDist = (touches: { pageX: number; pageY: number }[]) =>
-  Math.hypot(touches[0].pageX - touches[1].pageX, touches[0].pageY - touches[1].pageY);
+// Space the bottom controls clear of the floating tab bar. Small — enough to
+// clear the tab bar but keep the shutter grounded near the bottom (a large gap
+// made it look like it floated in dead space).
+const TAB_BAR_CLEARANCE = 24;
 
 export function CameraScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -184,12 +184,12 @@ export function CameraScreen() {
   if (!hasPermission) {
     return (
       <View style={cs.permissionContainer}>
-        <Text style={cs.permissionText}>camera access needed</Text>
+        <Text style={cs.permissionText}>Camera access needed</Text>
         <TouchableOpacity style={cs.permissionBtn} onPress={requestPermission}>
-          <Text style={cs.permissionBtnText}>grant access</Text>
+          <Text style={cs.permissionBtnText}>Grant access</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => Linking.openSettings()}>
-          <Text style={cs.settingsLink}>open settings</Text>
+          <Text style={cs.settingsLink}>Open settings</Text>
         </TouchableOpacity>
       </View>
     );
@@ -199,10 +199,10 @@ export function CameraScreen() {
   if (!device) {
     return (
       <View style={cs.permissionContainer}>
-        <Text style={cs.permissionText}>no camera available</Text>
-        <Text style={cs.hint}>simulator mode — tap to use test photo</Text>
+        <Text style={cs.permissionText}>No camera available</Text>
+        <Text style={cs.hint}>Simulator mode — tap to use test photo</Text>
         <TouchableOpacity style={cs.permissionBtn} onPress={takeTestPhoto}>
-          <Text style={cs.permissionBtnText}>use test photo</Text>
+          <Text style={cs.permissionBtnText}>Use test photo</Text>
         </TouchableOpacity>
       </View>
     );
@@ -230,21 +230,16 @@ export function CameraScreen() {
           swipe-to-Chats transition. Below the controls overlay (box-none). */}
       <View style={StyleSheet.absoluteFill} {...pan.panHandlers} />
 
-      {/* Controls overlay. Top/bottom are padded clear of the transparent
-          header + tab bar that float over the full-bleed camera. */}
+      {/* Controls overlay. Bottom is padded clear of the transparent tab bar
+          that floats over the full-bleed camera. */}
       <View style={cs.overlay} pointerEvents="box-none">
-        {/* Top controls */}
-        <View style={[cs.topControls, { paddingTop: insets.top + 8 }]}>
-          <TouchableOpacity style={cs.iconBtn} onPress={toggleFlash}>
-            <Text style={cs.iconText}>{flash === 'on' ? 'FLASH ON' : 'FLASH'}</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Bottom controls */}
+        {/* Bottom controls. Shutter is centered (the anchor); flash + flip
+            flank it as icons. Kept out of the top strip because the transparent
+            nav header sits on top there and would swallow the taps. */}
         <View style={[cs.bottomControls, { paddingBottom: insets.bottom + TAB_BAR_CLEARANCE }]}>
           <View style={cs.controlsRow}>
-            <TouchableOpacity style={cs.sideBtn} onPress={flipCamera}>
-              <Text style={cs.sideBtnText}>FLIP</Text>
+            <TouchableOpacity style={cs.flashBtn} onPress={toggleFlash} accessibilityLabel="Toggle flash">
+              <FlashIcon size={26} color={flash === 'on' ? colors.accent : '#fff'} on={flash === 'on'} />
             </TouchableOpacity>
 
             <Animated.View style={{ transform: [{ scale: shutterScale }] }}>
@@ -252,12 +247,15 @@ export function CameraScreen() {
                 onPressIn={onShutterPressIn}
                 onPressOut={onShutterPressOut}
                 style={[cs.captureBtn, recording && cs.captureBtnActive]}
+                accessibilityLabel="Capture"
               >
                 <View style={[cs.captureBtnInner, recording && cs.captureBtnInnerActive]} />
               </Pressable>
             </Animated.View>
 
-            <View style={cs.sideBtn} />
+            <TouchableOpacity style={cs.flipBtn} onPress={flipCamera} accessibilityLabel="Flip camera">
+              <FlipCameraIcon size={30} color="#fff" />
+            </TouchableOpacity>
           </View>
         </View>
       </View>
@@ -267,21 +265,27 @@ export function CameraScreen() {
 
 const cs = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
-  overlay: { ...StyleSheet.absoluteFill, justifyContent: 'space-between' },
-  topControls: { flexDirection: 'row', justifyContent: 'flex-end', padding: 16, paddingTop: 8 },
+  overlay: { ...StyleSheet.absoluteFill, justifyContent: 'flex-end' },
   bottomControls: { paddingBottom: 16, paddingHorizontal: 24 },
-  controlsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  iconBtn: { padding: 12 },
-  iconText: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  sideBtn: { width: 48, height: 48, justifyContent: 'center', alignItems: 'center' },
-  sideBtnText: { color: '#fff', fontSize: 11, fontWeight: '600' },
+  // Shutter centered as the anchor; flash + flip flank it symmetrically.
+  controlsRow: { alignItems: 'center', justifyContent: 'center' },
+  flashBtn: {
+    position: 'absolute', left: 8, width: 52, height: 52,
+    borderRadius: 26, justifyContent: 'center', alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.28)',
+  },
+  flipBtn: {
+    position: 'absolute', right: 8, width: 52, height: 52,
+    borderRadius: 26, justifyContent: 'center', alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.28)',
+  },
   captureBtn: {
-    width: 76, height: 76, borderRadius: 38, borderWidth: 4,
+    width: 84, height: 84, borderRadius: 42, borderWidth: 5,
     borderColor: '#fff', justifyContent: 'center', alignItems: 'center',
   },
-  captureBtnActive: { borderColor: '#ff3b30' },
-  captureBtnInner: { width: 62, height: 62, borderRadius: 31, backgroundColor: '#fff' },
-  captureBtnInnerActive: { width: 34, height: 34, borderRadius: 8, backgroundColor: '#ff3b30' },
+  captureBtnActive: { borderColor: colors.error },
+  captureBtnInner: { width: 68, height: 68, borderRadius: 34, backgroundColor: '#fff' },
+  captureBtnInnerActive: { width: 34, height: 34, borderRadius: 8, backgroundColor: colors.error },
   permissionContainer: { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center', padding: 32 },
   permissionText: { color: '#fff', fontSize: 18, fontWeight: '600', marginBottom: 16 },
   permissionBtn: { backgroundColor: colors.accent, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12, marginBottom: 12 },

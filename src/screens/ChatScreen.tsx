@@ -9,7 +9,9 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura, onObscuraEvent, conversationId, type ModelEntry } from '../native/ObscuraModule';
 import { useSession, useModelEntries } from '../state/store';
 import { toast } from '../components/Toast';
-import type { RootStackScreenProps, RootStackParamList, StoryGroup } from '../navigation/types';
+import { SendIcon } from '../components/icons';
+import type { RootStackScreenProps, RootStackParamList } from '../navigation/types';
+import { openPixViewer } from '../navigation/openPixViewer';
 import { s, colors } from '../styles';
 
 // ─── Typing Bubble ──────────────────────────────────────
@@ -36,9 +38,9 @@ function TypingBubble() {
   }, [dot1, dot2, dot3]);
 
   return (
-    <View style={s.typingBubble}>
+    <View style={cs.typingBubble}>
       {[dot1, dot2, dot3].map((opacity, i) => (
-        <Animated.View key={i} style={[s.typingDot, { opacity }]} />
+        <Animated.View key={i} style={[cs.typingDot, { opacity }]} />
       ))}
     </View>
   );
@@ -75,14 +77,7 @@ export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
     [allPix, friend.username, myUsername],
   );
 
-  const onViewPix = (entry: ModelEntry) => {
-    const group: StoryGroup = {
-      username: entry.data.senderUsername || '?',
-      stories: [entry],
-      isMe: false,
-    };
-    nav.navigate('StoryViewer', { groups: [group], startIndex: 0, markViewed: true });
-  };
+  const onViewPix = (entry: ModelEntry) => openPixViewer(nav, [entry]);
 
   // Typing observer + bubble — separate from entry-cache subscriptions since
   // typing isn't backed by entries.
@@ -131,9 +126,9 @@ export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
     if (item._kind === 'message') {
       const isMine = item.data.senderUsername === myUsername;
       return (
-        <View style={[s.msgRow, isMine ? s.msgRowRight : s.msgRowLeft]}>
-          <View style={[s.msgBubble, isMine ? s.myBubble : s.theirBubble]}>
-            <Text style={isMine ? s.myBubbleText : s.theirBubbleText}>{item.data.content}</Text>
+        <View style={[cs.msgRow, isMine ? cs.msgRowRight : cs.msgRowLeft]}>
+          <View style={[cs.msgBubble, isMine ? cs.myBubble : cs.theirBubble]}>
+            <Text style={isMine ? cs.myBubbleText : cs.theirBubbleText}>{item.data.content}</Text>
           </View>
         </View>
       );
@@ -169,7 +164,7 @@ export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
       // Sent, not opened — centered gray text
       return (
         <View style={cs.pixStatus}>
-          <Text style={cs.pixStatusText}>you Sent Pix</Text>
+          <Text style={cs.pixStatusText}>You sent a pix</Text>
         </View>
       );
     }
@@ -186,28 +181,28 @@ export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
     <SafeAreaView style={s.container}>
       <KeyboardAvoidingView
         style={s.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={headerHeight}
       >
         <FlatList
           data={timeline}
           keyExtractor={(item, i) => item.id || `${i}`}
-          style={s.messageList}
+          style={cs.messageList}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           renderItem={renderItem}
           ListFooterComponent={typers.length > 0 ? (
-            <View style={[s.msgRow, s.msgRowLeft]}>
+            <View style={[cs.msgRow, cs.msgRowLeft]}>
               <TypingBubble />
             </View>
           ) : null}
         />
 
-        <View style={s.composer}>
-          <TextInput style={s.composerInput} placeholder="message" placeholderTextColor="#999"
+        <View style={cs.composer}>
+          <TextInput style={cs.composerInput} placeholder="Message" placeholderTextColor={colors.textDim}
             value={text} onChangeText={onChangeText} />
-          <TouchableOpacity style={s.sendBtn} onPress={send} disabled={!text.trim()}>
-            <Text style={s.sendBtnText}>{'>'}</Text>
+          <TouchableOpacity style={cs.sendBtn} onPress={send} disabled={!text.trim()}>
+            <SendIcon size={20} color={colors.onAccent} />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -216,6 +211,25 @@ export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
 }
 
 const cs = StyleSheet.create({
+  messageList: { flex: 1, paddingHorizontal: 12 },
+  msgRow: { marginVertical: 2 },
+  msgRowRight: { alignItems: 'flex-end' },
+  msgRowLeft: { alignItems: 'flex-start' },
+  msgBubble: { borderRadius: 18, paddingHorizontal: 14, paddingVertical: 8, maxWidth: '75%' },
+  myBubble: { backgroundColor: colors.accent },
+  theirBubble: { backgroundColor: colors.surface },
+  myBubbleText: { color: colors.onAccent, fontSize: 16 },
+  theirBubbleText: { color: colors.text, fontSize: 16 },
+  typingBubble: {
+    flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 18,
+    paddingHorizontal: 14, paddingVertical: 10, gap: 4, marginVertical: 2,
+  },
+  typingDot: {
+    width: 8, height: 8, borderRadius: 4, backgroundColor: colors.textDim,
+  },
+  composer: { flexDirection: 'row', padding: 12, gap: 8, borderTopWidth: 0.5, borderTopColor: colors.border },
+  composerInput: { flex: 1, backgroundColor: colors.surface, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, color: colors.text, fontSize: 16 },
+  sendBtn: { backgroundColor: colors.accent, borderRadius: 20, width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
   pixBarFilled: {
     backgroundColor: colors.accent, borderRadius: 12, padding: 14,
     marginVertical: 4, marginHorizontal: 12, alignItems: 'center',
@@ -227,5 +241,5 @@ const cs = StyleSheet.create({
   },
   pixBarViewedText: { color: colors.accent, fontWeight: '600', fontSize: 14 },
   pixStatus: { paddingVertical: 12, alignItems: 'center' },
-  pixStatusText: { color: '#666', fontSize: 13 },
+  pixStatusText: { color: colors.textDim, fontSize: 13 },
 });

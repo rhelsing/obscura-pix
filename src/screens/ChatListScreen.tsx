@@ -5,19 +5,15 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { Obscura, type Friend, type ModelEntry } from '../native/ObscuraModule';
 import { useSession, useModelEntries } from '../state/store';
 import { StoriesRow } from './StoriesScreen';
-import type { RootStackParamList, StoryGroup } from '../navigation/types';
+import { Avatar } from '../components/Avatar';
+import type { RootStackParamList } from '../navigation/types';
+import { openPixViewer } from '../navigation/openPixViewer';
+import { timeAgo } from '../utils/format';
 import { colors } from '../styles';
-
-function timeAgo(ts: number): string {
-  const secs = Math.floor((Date.now() - ts) / 1000);
-  if (secs < 60) return 'now';
-  if (secs < 3600) return `${Math.floor(secs / 60)}m`;
-  if (secs < 86400) return `${Math.floor(secs / 3600)}h`;
-  return `${Math.floor(secs / 86400)}d`;
-}
 
 type PixState = 'received_new' | 'received_viewed' | 'sent_pending' | 'sent_opened' | 'none';
 
@@ -33,18 +29,12 @@ interface FriendActivity {
 export function ChatListScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
   const { friends, pending, myUsername } = useSession();
   const messages = useModelEntries('directMessage');
   const pixEntries = useModelEntries('pix');
 
-  const onViewPix = (entry: ModelEntry) => {
-    const group: StoryGroup = {
-      username: entry.data.senderUsername || '?',
-      stories: [entry],
-      isMe: false,
-    };
-    nav.navigate('StoryViewer', { groups: [group], startIndex: 0, markViewed: true });
-  };
+  const onViewPix = (entries: ModelEntry[]) => openPixViewer(nav, entries);
 
   // Build activity list — each friend with their latest chat + pix state.
   // Memoized so the four filter passes per friend don't run on every render.
@@ -92,25 +82,23 @@ export function ChatListScreen() {
   return (
     // Full-screen page under the floating transparent header (pad content clear
     // of it). Horizontal swipe is owned by the tab pager, not this screen.
-    <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top + 44 }}>
+    <View style={[cl.page, { paddingTop: headerHeight + 8 }]}>
       {/* Stories row */}
       <StoriesRow />
 
       {/* Pending requests */}
       {pending.length > 0 && pending.map(f => (
         <View key={f.userId} style={cl.row}>
-          <View style={[cl.avatar, cl.avatarPending]}>
-            <Text style={cl.avatarText}>{f.username[0]?.toUpperCase()}</Text>
-          </View>
+          <Avatar name={f.username} size={44} background={colors.surfaceMuted} color={colors.text} />
           <View style={cl.info}>
             <Text style={cl.username}>{f.username}</Text>
             <Text style={cl.preview}>
-              {f.status === 'pending_received' ? 'wants to be friends' : 'request sent'}
+              {f.status === 'pending_received' ? 'Wants to be friends' : 'Request sent'}
             </Text>
           </View>
           {f.status === 'pending_received' && (
             <TouchableOpacity style={cl.acceptBtn} onPress={() => Obscura.acceptFriend(f.userId, f.username)}>
-              <Text style={cl.acceptBtnText}>accept</Text>
+              <Text style={cl.acceptBtnText}>Accept</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -126,14 +114,14 @@ export function ChatListScreen() {
           const hasPix = item.unopenedPix.length > 0;
           const preview = item.lastMessage?.data.content
             ? `${item.lastMessage.data.senderUsername === myUsername ? 'You: ' : ''}${item.lastMessage.data.content}`
-            : 'tap to chat';
+            : 'Tap to chat';
 
           return (
             <View style={cl.row}>
               {/* Left: pix icon — tap opens pix viewer */}
               <TouchableOpacity
                 style={cl.iconZone}
-                onPress={() => hasPix ? onViewPix(item.unopenedPix[0]) : nav.navigate('Chat', { friend: item.friend })}
+                onPress={() => hasPix ? onViewPix(item.unopenedPix) : nav.navigate('Chat', { friend: item.friend })}
               >
                 {item.pixState === 'received_new' ? (
                   <View style={cl.iconCircleFilled}>
@@ -146,9 +134,7 @@ export function ChatListScreen() {
                 ) : item.pixState === 'sent_opened' ? (
                   <View style={cl.iconArrowOutline} />
                 ) : (
-                  <View style={cl.iconDefault}>
-                    <Text style={cl.iconDefaultText}>{item.friend.username[0]?.toUpperCase()}</Text>
-                  </View>
+                  <Avatar name={item.friend.username} size={44} />
                 )}
               </TouchableOpacity>
 
@@ -167,7 +153,7 @@ export function ChatListScreen() {
         }}
         ListEmptyComponent={
           friends.length === 0
-            ? <Text style={cl.empty}>no friends yet — share your code</Text>
+            ? <Text style={cl.empty}>No friends yet — share your code</Text>
             : null
         }
         contentContainerStyle={{ paddingBottom: insets.bottom + 56 }}
@@ -177,31 +163,27 @@ export function ChatListScreen() {
 }
 
 const cl = StyleSheet.create({
+  page: { flex: 1, backgroundColor: colors.bg },
   addRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 8 },
-  addInput: { flex: 1, backgroundColor: '#1a1a1a', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, color: '#fff', fontSize: 14 },
+  addInput: { flex: 1, backgroundColor: colors.surface, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, color: '#fff', fontSize: 14 },
   addBtn: { backgroundColor: colors.accent, borderRadius: 10, paddingHorizontal: 16, justifyContent: 'center' },
   addBtnText: { color: '#000', fontWeight: '700', fontSize: 14 },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
   iconZone: { width: 64, alignItems: 'center', justifyContent: 'center', paddingLeft: 16 },
   chatZone: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 4 },
-  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.accent, justifyContent: 'center', alignItems: 'center' },
-  avatarPending: { backgroundColor: '#333' },
-  avatarText: { color: '#000', fontWeight: '700', fontSize: 20 },
   // Pix state icons
   iconCircleFilled: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.accent, justifyContent: 'center', alignItems: 'center' },
   iconCircleOutline: { width: 44, height: 44, borderRadius: 22, borderWidth: 3, borderColor: colors.accent },
   iconArrowFilled: { width: 0, height: 0, borderLeftWidth: 24, borderTopWidth: 16, borderBottomWidth: 16, borderLeftColor: colors.accent, borderTopColor: 'transparent', borderBottomColor: 'transparent' },
   iconArrowOutline: { width: 0, height: 0, borderLeftWidth: 24, borderTopWidth: 16, borderBottomWidth: 16, borderLeftColor: colors.accent, borderTopColor: 'transparent', borderBottomColor: 'transparent', opacity: 0.4 },
-  iconDefault: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.accent, justifyContent: 'center', alignItems: 'center' },
-  iconDefaultText: { color: '#000', fontWeight: '700', fontSize: 18 },
-  iconCount: { color: '#000', fontWeight: '700', fontSize: 16 },
+  iconCount: { color: colors.onAccent, fontWeight: '700', fontSize: 16 },
   info: { flex: 1 },
   username: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  preview: { color: '#999', fontSize: 13, marginTop: 2 },
-  time: { color: '#666', fontSize: 12 },
+  preview: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
+  time: { color: colors.textDim, fontSize: 12 },
   acceptBtn: { backgroundColor: colors.accent, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8 },
   acceptBtnText: { color: '#000', fontWeight: '700', fontSize: 13 },
-  empty: { color: '#444', textAlign: 'center', marginTop: 32, fontSize: 14 },
-  copyBtn: { flex: 1, backgroundColor: '#1a1a1a', borderRadius: 12, padding: 12, alignItems: 'center' },
+  empty: { color: colors.textMuted, textAlign: 'center', marginTop: 32, fontSize: 14 },
+  copyBtn: { flex: 1, backgroundColor: colors.surface, borderRadius: 12, padding: 12, alignItems: 'center' },
   copyBtnText: { color: colors.accent, fontWeight: '600', fontSize: 14 },
 });

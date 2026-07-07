@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, FlatList, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura, conversationId } from '../native/ObscuraModule';
 import { logError } from '../utils/log';
 import { toast } from '../components/Toast';
+import { CheckIcon } from '../components/icons';
+import { Avatar } from '../components/Avatar';
 import { useSession } from '../state/store';
 import type { RootStackScreenProps, RootStackParamList } from '../navigation/types';
 import { colors } from '../styles';
@@ -98,22 +101,22 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
   const count = selected.size + (includeStory ? 1 : 0);
 
   return (
-    <View style={rp.container}>
+    <SafeAreaView style={rp.container} edges={['top']}>
       <View style={rp.header}>
         <TouchableOpacity onPress={() => nav.goBack()} disabled={sending}>
-          <Text style={rp.cancelText}>cancel</Text>
+          <Text style={rp.cancelText}>Cancel</Text>
         </TouchableOpacity>
-        <Text style={rp.title}>send to</Text>
-        <View style={{ width: 50 }} />
+        <Text style={rp.title}>Send to</Text>
+        <View style={rp.headerSpacer} />
       </View>
 
       {/* Story option */}
       <TouchableOpacity style={rp.row} onPress={() => setIncludeStory(!includeStory)} disabled={sending}>
         <View style={[rp.check, includeStory && rp.checkActive]}>
-          {includeStory && <Text style={rp.checkMark}>{'V'}</Text>}
+          {includeStory && <CheckIcon size={15} color={colors.onAccent} />}
         </View>
-        <Text style={rp.rowText}>my story</Text>
-        <Text style={rp.rowHint}>visible to all friends</Text>
+        <Text style={rp.rowText}>My story</Text>
+        <Text style={rp.rowHint}>Visible to all friends</Text>
       </TouchableOpacity>
 
       <Text style={rp.sectionTitle}>friends</Text>
@@ -126,16 +129,14 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
           return (
             <TouchableOpacity style={rp.row} onPress={() => toggle(item.userId)} disabled={sending}>
               <View style={[rp.check, isSelected && rp.checkActive]}>
-                {isSelected && <Text style={rp.checkMark}>{'V'}</Text>}
+                {isSelected && <CheckIcon size={15} color={colors.onAccent} />}
               </View>
-              <View style={rp.avatar}>
-                <Text style={rp.avatarText}>{item.username[0]?.toUpperCase()}</Text>
-              </View>
+              <Avatar name={item.username} size={36} background={colors.surfaceMuted} color={colors.text} />
               <Text style={rp.rowText}>{item.username}</Text>
             </TouchableOpacity>
           );
         }}
-        ListEmptyComponent={<Text style={rp.empty}>no friends yet</Text>}
+        ListEmptyComponent={<Text style={rp.empty}>No friends yet</Text>}
       />
 
       <TouchableOpacity
@@ -144,29 +145,27 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
         disabled={count === 0 || sending}
       >
         <Text style={rp.sendBtnText}>
-          {sending ? 'sending…' : count === 0 ? 'select recipients' : `send to ${count}`}
+          {sending ? 'Sending…' : count === 0 ? 'Select recipients' : `Send to ${count}`}
         </Text>
       </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const rp = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, paddingTop: 48 },
+  container: { flex: 1, backgroundColor: colors.bg },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16 },
+  headerSpacer: { width: 50 },
   cancelText: { color: colors.accent, fontSize: 16 },
-  title: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  sectionTitle: { color: '#666', fontSize: 12, fontWeight: '700', marginLeft: 16, marginTop: 16, marginBottom: 8, textTransform: 'uppercase' },
+  title: { color: colors.text, fontSize: 18, fontWeight: '700' },
+  sectionTitle: { color: colors.textDim, fontSize: 12, fontWeight: '700', marginLeft: 16, marginTop: 16, marginBottom: 8, textTransform: 'uppercase' },
   row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 },
-  check: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: '#444', justifyContent: 'center', alignItems: 'center' },
+  check: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: colors.textMuted, justifyContent: 'center', alignItems: 'center' },
   checkActive: { backgroundColor: colors.accent, borderColor: colors.accent },
-  checkMark: { color: '#000', fontSize: 14, fontWeight: '700' },
-  avatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#333', justifyContent: 'center', alignItems: 'center' },
-  avatarText: { color: '#fff', fontWeight: '700', fontSize: 16 },
   rowText: { color: '#fff', fontSize: 16, flex: 1 },
-  rowHint: { color: '#666', fontSize: 13 },
-  empty: { color: '#444', textAlign: 'center', marginTop: 32, fontSize: 14 },
+  rowHint: { color: colors.textDim, fontSize: 13 },
+  empty: { color: colors.textMuted, textAlign: 'center', marginTop: 32, fontSize: 14 },
   sendBtn: { backgroundColor: colors.accent, borderRadius: 12, padding: 14, alignItems: 'center', margin: 16, marginBottom: 40 },
-  sendBtnDisabled: { backgroundColor: '#333' },
+  sendBtnDisabled: { backgroundColor: colors.surfaceMuted },
   sendBtnText: { color: '#000', fontWeight: '700', fontSize: 16 },
 });
