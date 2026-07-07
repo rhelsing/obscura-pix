@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Obscura } from '../native/ObscuraModule';
 import { useCameraActive } from '../navigation/CameraActiveContext';
 import { logError } from '../utils/log';
+import { clamp, touchDist } from '../utils/gesture';
 import { FlashIcon, FlipCameraIcon } from '../components/icons';
 import type { RootStackParamList } from '../navigation/types';
 import { colors } from '../styles';
@@ -20,10 +21,6 @@ const HOLD_TO_RECORD_MS = 220;
 // clear the tab bar but keep the shutter grounded near the bottom (a large gap
 // made it look like it floated in dead space).
 const TAB_BAR_CLEARANCE = 24;
-
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-const touchDist = (touches: { pageX: number; pageY: number }[]) =>
-  Math.hypot(touches[0].pageX - touches[1].pageX, touches[0].pageY - touches[1].pageY);
 
 export function CameraScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();

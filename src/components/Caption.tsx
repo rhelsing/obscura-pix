@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { logError } from '../utils/log';
+import { clamp } from '../utils/gesture';
 
 /**
  * Shared caption model + renderer. Single source of truth so the composer
@@ -71,7 +72,7 @@ export const DEFAULT_BOLD: CaptionMeta = {
   style: 'bold', x: 0.5, y: 0.5, rot: 0, scale: 1, color: '#ffffff', font: 0,
 };
 
-const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+const clamp01 = (v: number) => clamp(v, 0, 1);
 
 export function parseCaptionMeta(raw?: string | null): CaptionMeta | null {
   if (!raw) return null;
@@ -131,10 +132,11 @@ export function CaptionView(
   if (!text) return null;
 
   if (meta.style === 'bar') {
+    const barPos = { top: clamp01(meta.y) * height };
     return (
       <View
         pointerEvents="none"
-        style={[captionStyles.barWrap, { position: 'absolute', top: clamp01(meta.y) * height }]}
+        style={[captionStyles.barWrap, styles.barAbsolute, barPos]}
       >
         <Text style={captionStyles.barText}>{text}</Text>
       </View>
@@ -143,19 +145,20 @@ export function CaptionView(
 
   // bold — centered in the container, then translated to (x,y) and rotated
   // about its own center (RN transform-origin is center).
+  const boldTransform = {
+    transform: [
+      { translateX: ((meta.x ?? 0.5) - 0.5) * width },
+      { translateY: (clamp01(meta.y) - 0.5) * height },
+      { rotate: `${meta.rot ?? 0}rad` },
+      { scale: meta.scale ?? 1 },
+    ],
+  };
   return (
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.center]}>
       <Text
         style={[
           boldTextStyle(meta),
-          {
-            transform: [
-              { translateX: ((meta.x ?? 0.5) - 0.5) * width },
-              { translateY: (clamp01(meta.y) - 0.5) * height },
-              { rotate: `${meta.rot ?? 0}rad` },
-              { scale: meta.scale ?? 1 },
-            ],
-          },
+          boldTransform,
         ]}
       >
         {text}
@@ -166,4 +169,5 @@ export function CaptionView(
 
 const styles = StyleSheet.create({
   center: { alignItems: 'center', justifyContent: 'center' },
+  barAbsolute: { position: 'absolute' },
 });

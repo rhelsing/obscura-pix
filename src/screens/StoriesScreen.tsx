@@ -1,14 +1,18 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';import {
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet,
   Animated, Image, ActivityIndicator, useWindowDimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Video from 'react-native-video';
 import { CaptionView, parseCaptionMeta } from '../components/Caption';
 import { CloseIcon } from '../components/icons';
+import { Avatar } from '../components/Avatar';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura, type ModelEntry } from '../native/ObscuraModule';
 import { logError } from '../utils/log';
+import { timeAgo as fmtTimeAgo } from '../utils/format';
 import { useSession, useModelEntries } from '../state/store';
 import type { RootStackParamList, RootStackScreenProps, StoryGroup } from '../navigation/types';
 import { colors } from '../styles';
@@ -21,9 +25,7 @@ function StoryCircle({ group, onPress }: { group: StoryGroup; onPress: () => voi
   return (
     <TouchableOpacity style={sc.container} onPress={onPress}>
       <View style={[sc.ring, group.isMe && group.stories.length === 0 && sc.ringEmpty]}>
-        <View style={sc.avatar}>
-          <Text style={sc.avatarText}>{group.username[0]?.toUpperCase()}</Text>
-        </View>
+        <Avatar name={group.username} size={54} background={colors.surface} color={colors.text} />
       </View>
       {group.isMe && group.stories.length === 0 && (
         <View style={sc.addBadge}><Text style={sc.addBadgeText}>+</Text></View>
@@ -44,6 +46,7 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
   const [mediaUri, setMediaUri] = useState<string | null>(null);
   const [mediaLoading, setMediaLoading] = useState(false);
   const { width: W, height: H } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const progress = useRef(new Animated.Value(0)).current;
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -131,7 +134,7 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
         const path = await Obscura.downloadAttachment(attachment.mediaRef, attachment.contentKey, attachment.nonce);
         if (!cancelled) setMediaUri(`file://${path}`);
       } catch (e) {
-        console.warn('Media load failed:', e);
+        logError('storyMedia.load', e);
       } finally {
         if (!cancelled) setMediaLoading(false);
       }
@@ -175,11 +178,7 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
 
   if (!story) { navigation.goBack(); return null; }
 
-  const timeAgo = (() => {
-    const mins = Math.floor((Date.now() - story.timestamp) / 60000);
-    if (mins < 60) return `${mins}m`;
-    return `${Math.floor(mins / 60)}h`;
-  })();
+  const timeAgo = fmtTimeAgo(story.timestamp);
 
   return (
     <View style={sv.container}>
@@ -201,7 +200,7 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
           Past/future segments are plain Views with explicit widths because
           React Native won't reset a previously-applied animated `width`
           when you switch to a style object that omits the property. */}
-      <View style={sv.progressRow}>
+      <View style={[sv.progressRow, { paddingTop: insets.top + 8 }]}>
         {group.stories.map((_, i) => (
           <View key={i} style={sv.progressTrack}>
             {i < storyIdx ? (
@@ -218,9 +217,7 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
 
       {/* Header */}
       <View style={sv.header}>
-        <View style={sv.headerAvatar}>
-          <Text style={sv.headerAvatarText}>{group.username[0]?.toUpperCase()}</Text>
-        </View>
+        <Avatar name={group.username} size={32} background={colors.surfaceMuted} color={colors.text} />
         <Text style={sv.headerName}>{group.username}</Text>
         <Text style={sv.headerTime}>{timeAgo}</Text>
         <TouchableOpacity onPress={close} style={sv.closeBtn}>
@@ -333,8 +330,6 @@ const sc = StyleSheet.create({
   container: { alignItems: 'center', marginRight: 16, width: 72 },
   ring: { width: 64, height: 64, borderRadius: 32, borderWidth: 3, borderColor: colors.accent, justifyContent: 'center', alignItems: 'center' },
   ringEmpty: { borderColor: colors.surfaceMuted, borderStyle: 'dashed' },
-  avatar: { width: 54, height: 54, borderRadius: 27, backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' },
-  avatarText: { color: '#fff', fontWeight: '700', fontSize: 22 },
   addBadge: { position: 'absolute', right: 2, bottom: 14, width: 20, height: 20, borderRadius: 10, backgroundColor: colors.accent, justifyContent: 'center', alignItems: 'center' },
   addBadgeText: { color: '#000', fontWeight: '700', fontSize: 14, marginTop: -1 },
   username: { color: '#ccc', fontSize: 11, marginTop: 4, textAlign: 'center' },
@@ -342,13 +337,11 @@ const sc = StyleSheet.create({
 
 const sv = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
-  progressRow: { flexDirection: 'row', paddingHorizontal: 8, paddingTop: 48, gap: 4 },
+  progressRow: { flexDirection: 'row', paddingHorizontal: 8, gap: 4 },
   progressTrack: { flex: 1, height: 2, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 1, overflow: 'hidden' },
   progressFill: { height: '100%', backgroundColor: '#fff', borderRadius: 1 },
   progressFillFull: { width: '100%' },
   header: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 8 },
-  headerAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surfaceMuted, justifyContent: 'center', alignItems: 'center' },
-  headerAvatarText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   headerName: { color: '#fff', fontWeight: '600', fontSize: 15, flex: 1 },
   headerTime: { color: colors.textSecondary, fontSize: 13 },
   closeBtn: { padding: 8 },

@@ -10,7 +10,8 @@ import { Obscura, onObscuraEvent, conversationId, type ModelEntry } from '../nat
 import { useSession, useModelEntries } from '../state/store';
 import { toast } from '../components/Toast';
 import { SendIcon } from '../components/icons';
-import type { RootStackScreenProps, RootStackParamList, StoryGroup } from '../navigation/types';
+import type { RootStackScreenProps, RootStackParamList } from '../navigation/types';
+import { openPixViewer } from '../navigation/openPixViewer';
 import { s, colors } from '../styles';
 
 // ─── Typing Bubble ──────────────────────────────────────
@@ -76,14 +77,7 @@ export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
     [allPix, friend.username, myUsername],
   );
 
-  const onViewPix = (entry: ModelEntry) => {
-    const group: StoryGroup = {
-      username: entry.data.senderUsername || '?',
-      stories: [entry],
-      isMe: false,
-    };
-    nav.navigate('StoryViewer', { groups: [group], startIndex: 0, markViewed: true });
-  };
+  const onViewPix = (entry: ModelEntry) => openPixViewer(nav, [entry]);
 
   // Typing observer + bubble — separate from entry-cache subscriptions since
   // typing isn't backed by entries.

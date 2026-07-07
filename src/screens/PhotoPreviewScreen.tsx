@@ -6,10 +6,12 @@ import {
 } from 'react-native';
 import Video from 'react-native-video';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackScreenProps, RootStackParamList } from '../navigation/types';
 import { colors } from '../styles';
 import { CloseIcon } from '../components/icons';
+import { clamp, touchDist } from '../utils/gesture';
 import {
   CAPTION_FONTS, CAPTION_FONT_LABELS, CAPTION_COLORS, captionStyles, boldTextStyle,
   serializeCaptionMeta, type CaptionMeta, type CaptionStyle,
@@ -22,10 +24,6 @@ const TIMER_OPTIONS = [
   { label: 'no limit', value: 0 },
 ];
 
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-const touchDist = (t: { pageX: number; pageY: number }[]) =>
-  Math.hypot(t[0].pageX - t[1].pageX, t[0].pageY - t[1].pageY);
-
 // Drag a caption above this y (px from top) and release to delete it.
 const DELETE_Y = 130;
 
@@ -34,6 +32,7 @@ export function PhotoPreviewScreen({ route }: RootStackScreenProps<'PhotoPreview
   const isVideo = mediaType === 'video';
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { width: W, height: H } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
 
   const [caption, setCaption] = useState('');
   const [duration, setDuration] = useState(5);
@@ -296,7 +295,7 @@ export function PhotoPreviewScreen({ route }: RootStackScreenProps<'PhotoPreview
       )}
 
       {/* ── Top toolbar ── */}
-      <View style={ps.topBar} pointerEvents="box-none">
+      <View style={[ps.topBar, { paddingTop: insets.top + 8 }]} pointerEvents="box-none">
         <TouchableOpacity onPress={onRetake} style={ps.retakeBtn}>
           <CloseIcon size={20} color="#fff" />
         </TouchableOpacity>
@@ -379,7 +378,7 @@ const ps = StyleSheet.create({
   topBar: {
     position: 'absolute', top: 0, left: 0, right: 0,
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
-    padding: 16, paddingTop: 48, zIndex: 2,
+    padding: 16, zIndex: 2,
   },
   retakeBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
   toolCol: { alignItems: 'flex-end', gap: 10 },

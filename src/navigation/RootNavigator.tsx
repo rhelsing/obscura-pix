@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createMaterialTopTabNavigator, type MaterialTopTabBarProps } from '@react-navigation/material-top-tabs';
-import { View, Text, TouchableOpacity, StyleSheet, AppState } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, AppState } from 'react-native';
 import { useNavigation, useIsFocused, getFocusedRouteNameFromRoute, type RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -24,6 +24,7 @@ import { AddFriendScreen } from '../screens/AddFriendScreen';
 import { ScanFriendScreen } from '../screens/ScanFriendScreen';
 import { AddFriendIcon } from '../components/AddFriendIcon';
 import { CameraIcon, ChatIcon } from '../components/icons';
+import { Avatar } from '../components/Avatar';
 
 import type { RootStackParamList, MainTabParamList } from './types';
 
@@ -38,9 +39,7 @@ function ProfileAvatarButton() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   return (
     <TouchableOpacity onPress={() => nav.navigate('Profile')} style={headerStyles.btn}>
-      <View style={headerStyles.avatar}>
-        <Text style={headerStyles.avatarText}>{myUsername[0]?.toUpperCase() || '?'}</Text>
-      </View>
+      <Avatar name={myUsername} size={32} />
     </TouchableOpacity>
   );
 }
@@ -61,17 +60,13 @@ function AddFriendHeaderButton() {
 function BottomTabBar({ state, navigation }: MaterialTopTabBarProps) {
   const insets = useSafeAreaInsets();
   const onCamera = state.routes[state.index]?.name === 'Camera';
+  const barDynamic = {
+    paddingBottom: insets.bottom + 10,
+    backgroundColor: onCamera ? 'transparent' : colors.bg,
+    borderTopColor: onCamera ? 'transparent' : colors.border,
+  };
   return (
-    <View
-      style={[
-        tabStyles.bar,
-        {
-          paddingBottom: insets.bottom + 10,
-          backgroundColor: onCamera ? 'transparent' : colors.bg,
-          borderTopColor: onCamera ? 'transparent' : colors.border,
-        },
-      ]}
-    >
+    <View style={[tabStyles.bar, barDynamic]}>
       {state.routes.map((route, i) => {
         const focused = state.index === i;
         const onPress = () => {
@@ -145,7 +140,7 @@ function mainTabsHeaderOptions({ route }: { route: RouteProp<RootStackParamList,
 // ─── Splash (during initial auth check) ──────────────────
 
 function SplashScreen() {
-  return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
+  return <View style={headerStyles.splash} />;
 }
 
 // ─── Root Navigator ──────────────────────────────────────
@@ -255,9 +250,5 @@ const tabStyles = StyleSheet.create({
 
 const headerStyles = StyleSheet.create({
   btn: { paddingHorizontal: 16 },
-  avatar: {
-    width: 32, height: 32, borderRadius: 16, backgroundColor: colors.accent,
-    justifyContent: 'center', alignItems: 'center',
-  },
-  avatarText: { color: '#000', fontWeight: '700', fontSize: 14 },
+  splash: { flex: 1, backgroundColor: colors.bg },
 });
