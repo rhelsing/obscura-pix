@@ -28,7 +28,7 @@ function StoryCircle({ group, onPress }: { group: StoryGroup; onPress: () => voi
         <View style={sc.addBadge}><Text style={sc.addBadgeText}>+</Text></View>
       )}
       <Text style={sc.username} numberOfLines={1}>
-        {group.isMe ? 'my story' : group.username}
+        {group.isMe ? 'My story' : group.username}
       </Text>
     </TouchableOpacity>
   );

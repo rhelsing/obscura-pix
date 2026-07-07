@@ -14,10 +14,10 @@ import type { ConnectionState } from '../native/ObscuraModule';
 // reads the shared `connState` store value fed by the `connectionChanged`
 // bridge event (both platforms emit it).
 const CONN_META: Record<ConnectionState, { color: string; label: string }> = {
-  connected: { color: colors.connected, label: 'connected' },
-  connecting: { color: colors.connecting, label: 'connecting…' },
-  reconnecting: { color: colors.connecting, label: 'reconnecting…' },
-  disconnected: { color: colors.disconnected, label: 'disconnected' },
+  connected: { color: colors.connected, label: 'Connected' },
+  connecting: { color: colors.connecting, label: 'Connecting…' },
+  reconnecting: { color: colors.connecting, label: 'Reconnecting…' },
+  disconnected: { color: colors.disconnected, label: 'Disconnected' },
 };
 
 export function ProfileScreen() {
@@ -91,12 +91,12 @@ export function ProfileScreen() {
     >
       <ScrollView style={s.screen} keyboardShouldPersistTaps="handled">
         <Text style={s.sectionTitle}>edit profile</Text>
-        <TextInput style={s.input} placeholder="display name" placeholderTextColor="#666"
+        <TextInput style={s.input} placeholder="Display name" placeholderTextColor="#666"
           value={displayName} onChangeText={onChangeDisplayName} />
-        <TextInput style={s.input} placeholder="bio" placeholderTextColor="#666"
+        <TextInput style={s.input} placeholder="Bio" placeholderTextColor="#666"
           value={bio} onChangeText={onChangeBio} />
         <TouchableOpacity style={s.smallBtn} onPress={save}>
-          <Text style={s.smallBtnText}>save</Text>
+          <Text style={s.smallBtnText}>Save</Text>
         </TouchableOpacity>
 
         {friendProfiles.length > 0 && (<>
@@ -120,7 +120,7 @@ export function ProfileScreen() {
         <Text style={s.hint}>{myUserId.slice(0, 16)}...</Text>
 
         <TouchableOpacity style={[s.codeBtn, { marginTop: 16 }]} onPress={() => setShowLog(!showLog)}>
-          <Text style={s.codeBtnText}>{showLog ? 'hide debug log' : 'show debug log'}</Text>
+          <Text style={s.codeBtnText}>{showLog ? 'Hide debug log' : 'Show debug log'}</Text>
         </TouchableOpacity>
 
         {showLog && debugLog.length > 0 && (
@@ -135,7 +135,7 @@ export function ProfileScreen() {
           style={[s.primaryBtn, { backgroundColor: '#333', marginTop: 24, marginBottom: 32 }]}
           onPress={logout}
         >
-          <Text style={s.primaryBtnText}>log out</Text>
+          <Text style={s.primaryBtnText}>Log out</Text>
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>

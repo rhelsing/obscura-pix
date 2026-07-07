@@ -48,18 +48,18 @@ export function AuthScreen() {
       <KeyboardScreen>
       <View style={s.authBox}>
         <Image source={require('../assets/logo.png')} style={s.logoImg} resizeMode="contain" />
-        <Text style={s.subtitle}>encrypted everything</Text>
+        <Text style={s.subtitle}>Encrypted everything</Text>
         {status ? <Text style={s.status}>{status}</Text> : null}
-        <TextInput style={s.input} placeholder="username" placeholderTextColor="#666"
+        <TextInput style={s.input} placeholder="Username" placeholderTextColor="#666"
           value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} />
-        <TextInput style={s.input} placeholder="password (12+ chars)" placeholderTextColor="#666"
+        <TextInput style={s.input} placeholder="Password (12+ chars)" placeholderTextColor="#666"
           value={password} onChangeText={setPassword} secureTextEntry />
         <View style={s.authButtons}>
           <TouchableOpacity style={s.primaryBtn} onPress={register}>
-            <Text style={s.primaryBtnText}>sign up</Text>
+            <Text style={s.primaryBtnText}>Sign up</Text>
           </TouchableOpacity>
           <TouchableOpacity style={s.secondaryBtn} onPress={login}>
-            <Text style={s.secondaryBtnText}>log in</Text>
+            <Text style={s.secondaryBtnText}>Log in</Text>
           </TouchableOpacity>
         </View>
       </View>

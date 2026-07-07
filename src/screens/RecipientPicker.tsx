@@ -101,9 +101,9 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
     <View style={rp.container}>
       <View style={rp.header}>
         <TouchableOpacity onPress={() => nav.goBack()} disabled={sending}>
-          <Text style={rp.cancelText}>cancel</Text>
+          <Text style={rp.cancelText}>Cancel</Text>
         </TouchableOpacity>
-        <Text style={rp.title}>send to</Text>
+        <Text style={rp.title}>Send to</Text>
         <View style={{ width: 50 }} />
       </View>
 
@@ -112,8 +112,8 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
         <View style={[rp.check, includeStory && rp.checkActive]}>
           {includeStory && <Text style={rp.checkMark}>{'V'}</Text>}
         </View>
-        <Text style={rp.rowText}>my story</Text>
-        <Text style={rp.rowHint}>visible to all friends</Text>
+        <Text style={rp.rowText}>My story</Text>
+        <Text style={rp.rowHint}>Visible to all friends</Text>
       </TouchableOpacity>
 
       <Text style={rp.sectionTitle}>friends</Text>
@@ -135,7 +135,7 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
             </TouchableOpacity>
           );
         }}
-        ListEmptyComponent={<Text style={rp.empty}>no friends yet</Text>}
+        ListEmptyComponent={<Text style={rp.empty}>No friends yet</Text>}
       />
 
       <TouchableOpacity
@@ -144,7 +144,7 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
         disabled={count === 0 || sending}
       >
         <Text style={rp.sendBtnText}>
-          {sending ? 'sending…' : count === 0 ? 'select recipients' : `send to ${count}`}
+          {sending ? 'Sending…' : count === 0 ? 'Select recipients' : `Send to ${count}`}
         </Text>
       </TouchableOpacity>
     </View>

@@ -262,7 +262,7 @@ export function PhotoPreviewScreen({ route }: RootStackScreenProps<'PhotoPreview
             style={[boldTextStyle(boldMeta), ps.boldInput]}
             value={caption}
             onChangeText={setCaption}
-            placeholder="type…"
+            placeholder="Type…"
             placeholderTextColor="rgba(255,255,255,0.5)"
             autoFocus
             multiline
@@ -283,7 +283,7 @@ export function PhotoPreviewScreen({ route }: RootStackScreenProps<'PhotoPreview
               style={captionStyles.barText}
               value={caption}
               onChangeText={setCaption}
-              placeholder="add a caption…"
+              placeholder="Add a caption…"
               placeholderTextColor="#bbb"
               autoFocus
               multiline
@@ -329,7 +329,7 @@ export function PhotoPreviewScreen({ route }: RootStackScreenProps<'PhotoPreview
         <View style={ps.deleteZone} pointerEvents="none">
           <View style={[ps.deletePill, nearDelete && ps.deletePillActive]}>
             <Text style={ps.deleteIcon}>{'✕'}</Text>
-            <Text style={ps.deleteLabel}>{nearDelete ? 'release to delete' : 'drag here to delete'}</Text>
+            <Text style={ps.deleteLabel}>            {nearDelete ? 'Release to delete' : 'Drag here to delete'}</Text>
           </View>
         </View>
       )}

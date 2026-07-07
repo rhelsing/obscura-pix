@@ -169,7 +169,7 @@ export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
       // Sent, not opened — centered gray text
       return (
         <View style={cs.pixStatus}>
-          <Text style={cs.pixStatusText}>you Sent Pix</Text>
+          <Text style={cs.pixStatusText}>You sent a pix</Text>
         </View>
       );
     }
@@ -204,7 +204,7 @@ export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
         />
 
         <View style={s.composer}>
-          <TextInput style={s.composerInput} placeholder="message" placeholderTextColor="#999"
+          <TextInput style={s.composerInput} placeholder="Message" placeholderTextColor="#999"
             value={text} onChangeText={onChangeText} />
           <TouchableOpacity style={s.sendBtn} onPress={send} disabled={!text.trim()}>
             <Text style={s.sendBtnText}>{'>'}</Text>

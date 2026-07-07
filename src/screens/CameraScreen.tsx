@@ -184,12 +184,12 @@ export function CameraScreen() {
   if (!hasPermission) {
     return (
       <View style={cs.permissionContainer}>
-        <Text style={cs.permissionText}>camera access needed</Text>
+        <Text style={cs.permissionText}>Camera access needed</Text>
         <TouchableOpacity style={cs.permissionBtn} onPress={requestPermission}>
-          <Text style={cs.permissionBtnText}>grant access</Text>
+          <Text style={cs.permissionBtnText}>Grant access</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => Linking.openSettings()}>
-          <Text style={cs.settingsLink}>open settings</Text>
+          <Text style={cs.settingsLink}>Open settings</Text>
         </TouchableOpacity>
       </View>
     );
@@ -199,10 +199,10 @@ export function CameraScreen() {
   if (!device) {
     return (
       <View style={cs.permissionContainer}>
-        <Text style={cs.permissionText}>no camera available</Text>
-        <Text style={cs.hint}>simulator mode — tap to use test photo</Text>
+        <Text style={cs.permissionText}>No camera available</Text>
+        <Text style={cs.hint}>Simulator mode — tap to use test photo</Text>
         <TouchableOpacity style={cs.permissionBtn} onPress={takeTestPhoto}>
-          <Text style={cs.permissionBtnText}>use test photo</Text>
+          <Text style={cs.permissionBtnText}>Use test photo</Text>
         </TouchableOpacity>
       </View>
     );
@@ -236,7 +236,7 @@ export function CameraScreen() {
         {/* Top controls */}
         <View style={[cs.topControls, { paddingTop: insets.top + 8 }]}>
           <TouchableOpacity style={cs.iconBtn} onPress={toggleFlash}>
-            <Text style={cs.iconText}>{flash === 'on' ? 'FLASH ON' : 'FLASH'}</Text>
+            <Text style={cs.iconText}>{flash === 'on' ? 'Flash on' : 'Flash'}</Text>
           </TouchableOpacity>
         </View>
 
@@ -244,7 +244,7 @@ export function CameraScreen() {
         <View style={[cs.bottomControls, { paddingBottom: insets.bottom + TAB_BAR_CLEARANCE }]}>
           <View style={cs.controlsRow}>
             <TouchableOpacity style={cs.sideBtn} onPress={flipCamera}>
-              <Text style={cs.sideBtnText}>FLIP</Text>
+              <Text style={cs.sideBtnText}>Flip</Text>
             </TouchableOpacity>
 
             <Animated.View style={{ transform: [{ scale: shutterScale }] }}>

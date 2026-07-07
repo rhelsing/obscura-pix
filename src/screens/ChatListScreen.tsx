@@ -107,12 +107,12 @@ export function ChatListScreen() {
           <View style={cl.info}>
             <Text style={cl.username}>{f.username}</Text>
             <Text style={cl.preview}>
-              {f.status === 'pending_received' ? 'wants to be friends' : 'request sent'}
+              {f.status === 'pending_received' ? 'Wants to be friends' : 'Request sent'}
             </Text>
           </View>
           {f.status === 'pending_received' && (
             <TouchableOpacity style={cl.acceptBtn} onPress={() => Obscura.acceptFriend(f.userId, f.username)}>
-              <Text style={cl.acceptBtnText}>accept</Text>
+              <Text style={cl.acceptBtnText}>Accept</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -128,7 +128,7 @@ export function ChatListScreen() {
           const hasPix = item.unopenedPix.length > 0;
           const preview = item.lastMessage?.data.content
             ? `${item.lastMessage.data.senderUsername === myUsername ? 'You: ' : ''}${item.lastMessage.data.content}`
-            : 'tap to chat';
+            : 'Tap to chat';
 
           return (
             <View style={cl.row}>
@@ -169,7 +169,7 @@ export function ChatListScreen() {
         }}
         ListEmptyComponent={
           friends.length === 0
-            ? <Text style={cl.empty}>no friends yet — share your code</Text>
+            ? <Text style={cl.empty}>No friends yet — share your code</Text>
             : null
         }
         contentContainerStyle={{ paddingBottom: insets.bottom + 56 }}

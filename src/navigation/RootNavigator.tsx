@@ -73,7 +73,7 @@ function BottomTabBar({ state, navigation }: MaterialTopTabBarProps) {
     >
       {state.routes.map((route, i) => {
         const focused = state.index === i;
-        const label = route.name === 'Camera' ? 'camera' : 'chat';
+        const label = route.name === 'Camera' ? 'Camera' : 'Chat';
         const onPress = () => {
           const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
           if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
@@ -213,7 +213,7 @@ export function RootNavigator() {
               headerStyle: { backgroundColor: colors.bg },
               headerTintColor: colors.accent,
               headerTitleStyle: { color: colors.text, fontWeight: '700' },
-              title: 'profile',
+              title: 'Profile',
             }}
           />
           <RootStack.Screen
@@ -224,7 +224,7 @@ export function RootNavigator() {
               headerStyle: { backgroundColor: colors.bg },
               headerTintColor: colors.accent,
               headerTitleStyle: { color: colors.text, fontWeight: '700' },
-              title: 'add friend',
+              title: 'Add friend',
             }}
           />
           <RootStack.Screen

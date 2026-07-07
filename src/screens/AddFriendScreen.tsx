@@ -42,14 +42,14 @@ export function AddFriendScreen() {
       <View style={afs.qrCard}>
         {myCode
           ? <QRCode value={encodeFriendQR(myCode)} size={216} backgroundColor="transparent" color="#fff" />
-          : <Text style={afs.dim}>loading…</Text>}
+          : <Text style={afs.dim}>Loading…</Text>}
       </View>
-      <Text style={afs.caption}>friends can scan this to add you</Text>
+      <Text style={afs.caption}>Friends can scan this to add you</Text>
 
       {!!myCode && (
         <TouchableOpacity style={afs.codePill} onPress={copyMyCode}>
           <Text style={afs.codeText} numberOfLines={1}>{myCode}</Text>
-          <Text style={afs.copyHint}>copy</Text>
+          <Text style={afs.copyHint}>Copy</Text>
         </TouchableOpacity>
       )}
 
@@ -60,7 +60,7 @@ export function AddFriendScreen() {
       <View style={afs.enterRow}>
         <TextInput
           style={afs.input}
-          placeholder="paste friend code"
+          placeholder="Paste friend code"
           placeholderTextColor="#666"
           value={codeInput}
           onChangeText={setCodeInput}
@@ -68,13 +68,13 @@ export function AddFriendScreen() {
           autoCorrect={false}
         />
         <TouchableOpacity style={afs.addBtn} onPress={addByCode}>
-          <Text style={afs.addBtnText}>add</Text>
+          <Text style={afs.addBtnText}>Add</Text>
         </TouchableOpacity>
       </View>
 
       {/* Scan */}
       <TouchableOpacity style={afs.scanBtn} onPress={scanQR}>
-        <Text style={afs.scanBtnText}>scan a friend's QR</Text>
+        <Text style={afs.scanBtnText}>Scan a friend's QR</Text>
       </TouchableOpacity>
     </View>
   );
