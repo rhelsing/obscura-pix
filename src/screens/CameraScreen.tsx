@@ -9,14 +9,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Obscura } from '../native/ObscuraModule';
 import { useCameraActive } from '../navigation/CameraActiveContext';
 import { logError } from '../utils/log';
+import { FlashIcon, FlipCameraIcon } from '../components/icons';
 import type { RootStackParamList } from '../navigation/types';
 import { colors } from '../styles';
 
 // Quick tap vs press-and-hold threshold for the shutter (ms).
 const HOLD_TO_RECORD_MS = 220;
 
-// Space the bottom controls clear of the floating tab bar (approx its height).
-const TAB_BAR_CLEARANCE = 56;
+// Space the bottom controls clear of the floating tab bar. Small — enough to
+// clear the tab bar but keep the shutter grounded near the bottom (a large gap
+// made it look like it floated in dead space).
+const TAB_BAR_CLEARANCE = 24;
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const touchDist = (touches: { pageX: number; pageY: number }[]) =>
@@ -235,29 +238,29 @@ export function CameraScreen() {
       <View style={cs.overlay} pointerEvents="box-none">
         {/* Top controls */}
         <View style={[cs.topControls, { paddingTop: insets.top + 8 }]}>
-          <TouchableOpacity style={cs.iconBtn} onPress={toggleFlash}>
-            <Text style={cs.iconText}>{flash === 'on' ? 'Flash on' : 'Flash'}</Text>
+          <TouchableOpacity style={cs.iconBtn} onPress={toggleFlash} accessibilityLabel="Toggle flash">
+            <FlashIcon size={24} color={flash === 'on' ? colors.accent : '#fff'} on={flash === 'on'} />
           </TouchableOpacity>
         </View>
 
-        {/* Bottom controls */}
+        {/* Bottom controls. Shutter is centered (grounded); flip sits to its
+            right as an icon. Kept close to the tab bar so it doesn't float. */}
         <View style={[cs.bottomControls, { paddingBottom: insets.bottom + TAB_BAR_CLEARANCE }]}>
           <View style={cs.controlsRow}>
-            <TouchableOpacity style={cs.sideBtn} onPress={flipCamera}>
-              <Text style={cs.sideBtnText}>Flip</Text>
-            </TouchableOpacity>
-
             <Animated.View style={{ transform: [{ scale: shutterScale }] }}>
               <Pressable
                 onPressIn={onShutterPressIn}
                 onPressOut={onShutterPressOut}
                 style={[cs.captureBtn, recording && cs.captureBtnActive]}
+                accessibilityLabel="Capture"
               >
                 <View style={[cs.captureBtnInner, recording && cs.captureBtnInnerActive]} />
               </Pressable>
             </Animated.View>
 
-            <View style={cs.sideBtn} />
+            <TouchableOpacity style={cs.flipBtn} onPress={flipCamera} accessibilityLabel="Flip camera">
+              <FlipCameraIcon size={30} color="#fff" />
+            </TouchableOpacity>
           </View>
         </View>
       </View>
@@ -270,17 +273,20 @@ const cs = StyleSheet.create({
   overlay: { ...StyleSheet.absoluteFill, justifyContent: 'space-between' },
   topControls: { flexDirection: 'row', justifyContent: 'flex-end', padding: 16, paddingTop: 8 },
   bottomControls: { paddingBottom: 16, paddingHorizontal: 24 },
-  controlsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  iconBtn: { padding: 12 },
-  iconText: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  sideBtn: { width: 48, height: 48, justifyContent: 'center', alignItems: 'center' },
-  sideBtnText: { color: '#fff', fontSize: 11, fontWeight: '600' },
+  // Shutter centered so it reads as the anchor; flip floats to its right.
+  controlsRow: { alignItems: 'center', justifyContent: 'center' },
+  flipBtn: {
+    position: 'absolute', right: 8, width: 52, height: 52,
+    borderRadius: 26, justifyContent: 'center', alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.28)',
+  },
+  iconBtn: { padding: 10 },
   captureBtn: {
-    width: 76, height: 76, borderRadius: 38, borderWidth: 4,
+    width: 84, height: 84, borderRadius: 42, borderWidth: 5,
     borderColor: '#fff', justifyContent: 'center', alignItems: 'center',
   },
   captureBtnActive: { borderColor: '#ff3b30' },
-  captureBtnInner: { width: 62, height: 62, borderRadius: 31, backgroundColor: '#fff' },
+  captureBtnInner: { width: 68, height: 68, borderRadius: 34, backgroundColor: '#fff' },
   captureBtnInnerActive: { width: 34, height: 34, borderRadius: 8, backgroundColor: '#ff3b30' },
   permissionContainer: { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center', padding: 32 },
   permissionText: { color: '#fff', fontSize: 18, fontWeight: '600', marginBottom: 16 },

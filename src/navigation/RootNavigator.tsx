@@ -23,6 +23,7 @@ import { ProfileScreen } from '../screens/ProfileScreen';
 import { AddFriendScreen } from '../screens/AddFriendScreen';
 import { ScanFriendScreen } from '../screens/ScanFriendScreen';
 import { AddFriendIcon } from '../components/AddFriendIcon';
+import { CameraIcon, ChatIcon } from '../components/icons';
 
 import type { RootStackParamList, MainTabParamList } from './types';
 
@@ -73,14 +74,15 @@ function BottomTabBar({ state, navigation }: MaterialTopTabBarProps) {
     >
       {state.routes.map((route, i) => {
         const focused = state.index === i;
-        const label = route.name === 'Camera' ? 'Camera' : 'Chat';
         const onPress = () => {
           const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
           if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
         };
+        const tint = focused ? colors.accent : colors.textDim;
+        const Icon = route.name === 'Camera' ? CameraIcon : ChatIcon;
         return (
-          <TouchableOpacity key={route.key} style={tabStyles.tab} onPress={onPress}>
-            <Text style={[tabStyles.label, focused && tabStyles.labelActive]}>{label}</Text>
+          <TouchableOpacity key={route.key} style={tabStyles.tab} onPress={onPress} accessibilityLabel={route.name}>
+            <Icon size={27} color={tint} strokeWidth={focused ? 2.4 : 2} />
           </TouchableOpacity>
         );
       })}
@@ -247,8 +249,6 @@ const tabStyles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   tab: { flex: 1, alignItems: 'center' },
-  label: { color: colors.textDim, fontSize: 13, fontWeight: '600' },
-  labelActive: { color: colors.accent },
 });
 
 const headerStyles = StyleSheet.create({
