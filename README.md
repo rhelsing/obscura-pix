@@ -2,7 +2,11 @@
 
 End-to-end encrypted photo messaging app. Signal Protocol encryption, disappearing content. Built on ObscuraKit.
 
-React Native app, **Android-only today**. An iOS port using [ObscuraKit-Swift](https://github.com/rhelsing/ObscuraKit-swift) is planned — its bridge implements the contract documented in [`docs/BRIDGE.md`](docs/BRIDGE.md).
+React Native app, **Android-only in production today**. A working iOS foundation
+(RN scaffold + Swift bridge on [ObscuraKit-swift](https://github.com/rhelsing/ObscuraKit-swift))
+is committed under `ios/` and runs on the simulator, but is not yet reproducibly
+buildable or CI-gated — see [`docs/IOS_PARITY.md`](docs/IOS_PARITY.md). Its bridge
+implements the contract documented in [`docs/BRIDGE.md`](docs/BRIDGE.md).
 
 ## What it does
 
