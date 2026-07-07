@@ -55,11 +55,11 @@ export function AuthScreen() {
         <TextInput style={s.input} placeholder="Password (12+ chars)" placeholderTextColor="#666"
           value={password} onChangeText={setPassword} secureTextEntry />
         <View style={s.authButtons}>
-          <TouchableOpacity style={s.primaryBtn} onPress={register}>
-            <Text style={s.primaryBtnText}>Sign up</Text>
+          <TouchableOpacity style={s.primaryBtn} onPress={login}>
+            <Text style={s.primaryBtnText}>Log in</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={s.secondaryBtn} onPress={login}>
-            <Text style={s.secondaryBtnText}>Log in</Text>
+          <TouchableOpacity style={s.secondaryBtn} onPress={register}>
+            <Text style={s.secondaryBtnText}>Sign up</Text>
           </TouchableOpacity>
         </View>
       </View>
