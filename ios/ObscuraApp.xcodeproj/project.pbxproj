@@ -163,7 +163,7 @@
 			);
 			mainGroup = 83CBB9F61A601CBA00E9B192;
 			packageReferences = (
-				1C243CB3AF1E9160BE44811C /* XCLocalSwiftPackageReference "obscura-client-ios" */,
+				1C243CB3AF1E9160BE44811C /* XCLocalSwiftPackageReference "ObscuraKit-swift" */,
 			);
 			productRefGroup = 83CBBA001A601CBA00E9B192 /* Products */;
 			projectDirPath = "";
@@ -297,11 +297,11 @@
 				);
 				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/../../obscura-client-ios/vendored/libsignal/target/aarch64-apple-ios/release",
+					"$(PROJECT_DIR)/../../ObscuraKit-swift/vendored/libsignal/target/aarch64-apple-ios/release",
 				);
 				"LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/../../obscura-client-ios/vendored/libsignal/target/aarch64-apple-ios-sim/release",
+					"$(PROJECT_DIR)/../../ObscuraKit-swift/vendored/libsignal/target/aarch64-apple-ios-sim/release",
 				);
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = (
@@ -337,11 +337,11 @@
 				);
 				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/../../obscura-client-ios/vendored/libsignal/target/aarch64-apple-ios/release",
+					"$(PROJECT_DIR)/../../ObscuraKit-swift/vendored/libsignal/target/aarch64-apple-ios/release",
 				);
 				"LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/../../obscura-client-ios/vendored/libsignal/target/aarch64-apple-ios-sim/release",
+					"$(PROJECT_DIR)/../../ObscuraKit-swift/vendored/libsignal/target/aarch64-apple-ios-sim/release",
 				);
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = (
@@ -547,16 +547,16 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		1C243CB3AF1E9160BE44811C /* XCLocalSwiftPackageReference "obscura-client-ios" */ = {
+		1C243CB3AF1E9160BE44811C /* XCLocalSwiftPackageReference "ObscuraKit-swift" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = "../../obscura-client-ios";
+			relativePath = "../../ObscuraKit-swift";
 		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		341F78DAE53D40FF1D97FDFB /* ObscuraKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 1C243CB3AF1E9160BE44811C /* XCLocalSwiftPackageReference "obscura-client-ios" */;
+			package = 1C243CB3AF1E9160BE44811C /* XCLocalSwiftPackageReference "ObscuraKit-swift" */;
 			productName = ObscuraKit;
 		};
 /* End XCSwiftPackageProductDependency section */
