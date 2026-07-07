@@ -4,7 +4,6 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 } from 'react-native';
 import Video from 'react-native-video';
 import { CaptionView, parseCaptionMeta } from '../components/Caption';
-import { toast } from '../components/Toast';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura, type ModelEntry } from '../native/ObscuraModule';
@@ -296,7 +295,9 @@ export function StoriesRow() {
   const openViewer = (idx: number) => {
     const group = groups[idx];
     if (group.isMe && group.stories.length === 0) {
-      toast.info('Take a photo and select "my story" to post');
+      // No story yet — take the user to the camera to post one (select
+      // "my story" as the recipient after capturing) instead of nagging.
+      nav.navigate('MainTabs', { screen: 'Camera' });
       return;
     }
     if (group.stories.length === 0) return;

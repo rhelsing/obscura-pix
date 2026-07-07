@@ -5,6 +5,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { Obscura, type Friend, type ModelEntry } from '../native/ObscuraModule';
 import { useSession, useModelEntries } from '../state/store';
 import { StoriesRow } from './StoriesScreen';
@@ -33,6 +34,7 @@ interface FriendActivity {
 export function ChatListScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
   const { friends, pending, myUsername } = useSession();
   const messages = useModelEntries('directMessage');
   const pixEntries = useModelEntries('pix');
@@ -92,7 +94,7 @@ export function ChatListScreen() {
   return (
     // Full-screen page under the floating transparent header (pad content clear
     // of it). Horizontal swipe is owned by the tab pager, not this screen.
-    <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top + 44 }}>
+    <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: headerHeight + 8 }}>
       {/* Stories row */}
       <StoriesRow />
 
