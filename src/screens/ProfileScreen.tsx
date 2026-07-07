@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   KeyboardAvoidingView, Platform,
@@ -28,8 +28,15 @@ export function ProfileScreen() {
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const [showLog, setShowLog] = useState(false);
 
-  // Keep the display-name field in sync if myUsername arrives after mount.
-  useEffect(() => { if (myUsername && !displayName) setDisplayName(myUsername); }, [myUsername, displayName]);
+  // Seed the display-name field from myUsername once it arrives — but only
+  // once, so intentionally clearing the field doesn't instantly refill it.
+  const seededName = useRef(!!myUsername);
+  useEffect(() => {
+    if (myUsername && !seededName.current) {
+      setDisplayName(myUsername);
+      seededName.current = true;
+    }
+  }, [myUsername]);
 
   // Poll the debug log only while it's visible.
   useEffect(() => {
