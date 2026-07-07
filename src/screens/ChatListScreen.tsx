@@ -39,10 +39,15 @@ export function ChatListScreen() {
   const messages = useModelEntries('directMessage');
   const pixEntries = useModelEntries('pix');
 
-  const onViewPix = (entry: ModelEntry) => {
+  const onViewPix = (entries: ModelEntry[]) => {
+    if (entries.length === 0) return;
+    // Oldest first so the viewer opens on the first unopened pix and taps
+    // forward through to the newest (Snapchat order). markViewed fires a
+    // receipt per pix as the viewer advances.
+    const stories = [...entries].sort((a, b) => a.timestamp - b.timestamp);
     const group: StoryGroup = {
-      username: entry.data.senderUsername || '?',
-      stories: [entry],
+      username: stories[0].data.senderUsername || '?',
+      stories,
       isMe: false,
     };
     nav.navigate('StoryViewer', { groups: [group], startIndex: 0, markViewed: true });
@@ -135,7 +140,7 @@ export function ChatListScreen() {
               {/* Left: pix icon — tap opens pix viewer */}
               <TouchableOpacity
                 style={cl.iconZone}
-                onPress={() => hasPix ? onViewPix(item.unopenedPix[0]) : nav.navigate('Chat', { friend: item.friend })}
+                onPress={() => hasPix ? onViewPix(item.unopenedPix) : nav.navigate('Chat', { friend: item.friend })}
               >
                 {item.pixState === 'received_new' ? (
                   <View style={cl.iconCircleFilled}>
