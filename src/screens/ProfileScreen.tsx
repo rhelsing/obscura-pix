@@ -28,15 +28,31 @@ export function ProfileScreen() {
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const [showLog, setShowLog] = useState(false);
 
-  // Seed the display-name field from myUsername once it arrives — but only
-  // once, so intentionally clearing the field doesn't instantly refill it.
-  const seededName = useRef(!!myUsername);
+  // The user's own saved profile entry (id is device-independent, unlike
+  // authorDeviceId which changes when a different device last wrote it).
+  const ownProfile = profiles.find(p => p.id === `profile_${myUserId}`);
+
+  // Hydrate the editable fields from the saved profile once it's available,
+  // falling back to the username for a brand-new profile. `hydrated` stops it
+  // re-running (so clearing a field doesn't refill it); `edited` guards the
+  // async gap so we never clobber input the user typed before entries loaded.
+  const hydrated = useRef(false);
+  const edited = useRef(false);
   useEffect(() => {
-    if (myUsername && !seededName.current) {
+    if (hydrated.current || edited.current) return;
+    if (ownProfile) {
+      setDisplayName((ownProfile.data.displayName as string) || myUsername || '');
+      setBio((ownProfile.data.bio as string) || '');
+      hydrated.current = true;
+    } else if (myUsername) {
+      // No saved profile yet — seed the name from the handle, but keep
+      // listening in case a saved profile arrives after entries load.
       setDisplayName(myUsername);
-      seededName.current = true;
     }
-  }, [myUsername]);
+  }, [ownProfile, myUsername]);
+
+  const onChangeDisplayName = (t: string) => { edited.current = true; setDisplayName(t); };
+  const onChangeBio = (t: string) => { edited.current = true; setBio(t); };
 
   // Poll the debug log only while it's visible.
   useEffect(() => {
@@ -76,9 +92,9 @@ export function ProfileScreen() {
       <ScrollView style={s.screen} keyboardShouldPersistTaps="handled">
         <Text style={s.sectionTitle}>edit profile</Text>
         <TextInput style={s.input} placeholder="display name" placeholderTextColor="#666"
-          value={displayName} onChangeText={setDisplayName} />
+          value={displayName} onChangeText={onChangeDisplayName} />
         <TextInput style={s.input} placeholder="bio" placeholderTextColor="#666"
-          value={bio} onChangeText={setBio} />
+          value={bio} onChangeText={onChangeBio} />
         <TouchableOpacity style={s.smallBtn} onPress={save}>
           <Text style={s.smallBtnText}>save</Text>
         </TouchableOpacity>
