@@ -8,6 +8,7 @@ import { useNavigation, useIsFocused } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura } from '../native/ObscuraModule';
 import { toast } from '../components/Toast';
+import { CloseIcon } from '../components/icons';
 import { parseFriendQR } from '../friendQR';
 import type { RootStackParamList } from '../navigation/types';
 import { colors } from '../styles';
@@ -72,7 +73,7 @@ export function ScanFriendScreen() {
         <Text style={ss.hint}>Point at a friend's QR code</Text>
       </View>
       <TouchableOpacity style={ss.close} onPress={() => nav.goBack()}>
-        <Text style={ss.closeText}>{'X'}</Text>
+        <CloseIcon size={22} color="#fff" />
       </TouchableOpacity>
     </View>
   );
@@ -95,5 +96,4 @@ const ss = StyleSheet.create({
     position: 'absolute', top: 48, left: 16, width: 40, height: 40, borderRadius: 20,
     backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center',
   },
-  closeText: { color: '#fff', fontSize: 18, fontWeight: '700' },
 });

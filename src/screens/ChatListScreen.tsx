@@ -180,14 +180,14 @@ export function ChatListScreen() {
 
 const cl = StyleSheet.create({
   addRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 8 },
-  addInput: { flex: 1, backgroundColor: '#1a1a1a', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, color: '#fff', fontSize: 14 },
+  addInput: { flex: 1, backgroundColor: colors.surface, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, color: '#fff', fontSize: 14 },
   addBtn: { backgroundColor: colors.accent, borderRadius: 10, paddingHorizontal: 16, justifyContent: 'center' },
   addBtnText: { color: '#000', fontWeight: '700', fontSize: 14 },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
   iconZone: { width: 64, alignItems: 'center', justifyContent: 'center', paddingLeft: 16 },
   chatZone: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 4 },
   avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.accent, justifyContent: 'center', alignItems: 'center' },
-  avatarPending: { backgroundColor: '#333' },
+  avatarPending: { backgroundColor: colors.surfaceMuted },
   avatarText: { color: '#000', fontWeight: '700', fontSize: 20 },
   // Pix state icons
   iconCircleFilled: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.accent, justifyContent: 'center', alignItems: 'center' },
@@ -199,11 +199,11 @@ const cl = StyleSheet.create({
   iconCount: { color: '#000', fontWeight: '700', fontSize: 16 },
   info: { flex: 1 },
   username: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  preview: { color: '#999', fontSize: 13, marginTop: 2 },
-  time: { color: '#666', fontSize: 12 },
+  preview: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
+  time: { color: colors.textDim, fontSize: 12 },
   acceptBtn: { backgroundColor: colors.accent, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8 },
   acceptBtnText: { color: '#000', fontWeight: '700', fontSize: 13 },
-  empty: { color: '#444', textAlign: 'center', marginTop: 32, fontSize: 14 },
-  copyBtn: { flex: 1, backgroundColor: '#1a1a1a', borderRadius: 12, padding: 12, alignItems: 'center' },
+  empty: { color: colors.textMuted, textAlign: 'center', marginTop: 32, fontSize: 14 },
+  copyBtn: { flex: 1, backgroundColor: colors.surface, borderRadius: 12, padding: 12, alignItems: 'center' },
   copyBtnText: { color: colors.accent, fontWeight: '600', fontSize: 14 },
 });

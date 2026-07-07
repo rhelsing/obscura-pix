@@ -98,13 +98,13 @@ export function ProfileScreen() {
   return (
     <KeyboardAvoidingView
       style={s.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView style={s.screen} keyboardShouldPersistTaps="handled">
         <Text style={s.sectionTitle}>edit profile</Text>
-        <TextInput style={s.input} placeholder="Display name" placeholderTextColor="#666"
+        <TextInput style={s.input} placeholder="Display name" placeholderTextColor={colors.textDim}
           value={displayName} onChangeText={onChangeDisplayName} />
-        <TextInput style={s.input} placeholder="Bio" placeholderTextColor="#666"
+        <TextInput style={s.input} placeholder="Bio" placeholderTextColor={colors.textDim}
           value={bio} onChangeText={onChangeBio} />
         <TouchableOpacity style={s.smallBtn} onPress={save}>
           <Text style={s.smallBtnText}>Save</Text>

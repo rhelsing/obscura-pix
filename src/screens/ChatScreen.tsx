@@ -9,6 +9,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura, onObscuraEvent, conversationId, type ModelEntry } from '../native/ObscuraModule';
 import { useSession, useModelEntries } from '../state/store';
 import { toast } from '../components/Toast';
+import { SendIcon } from '../components/icons';
 import type { RootStackScreenProps, RootStackParamList, StoryGroup } from '../navigation/types';
 import { s, colors } from '../styles';
 
@@ -204,10 +205,10 @@ export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
         />
 
         <View style={s.composer}>
-          <TextInput style={s.composerInput} placeholder="Message" placeholderTextColor="#999"
+          <TextInput style={s.composerInput} placeholder="Message" placeholderTextColor={colors.textDim}
             value={text} onChangeText={onChangeText} />
           <TouchableOpacity style={s.sendBtn} onPress={send} disabled={!text.trim()}>
-            <Text style={s.sendBtnText}>{'>'}</Text>
+            <SendIcon size={20} color={colors.onAccent} />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -227,5 +228,5 @@ const cs = StyleSheet.create({
   },
   pixBarViewedText: { color: colors.accent, fontWeight: '600', fontSize: 14 },
   pixStatus: { paddingVertical: 12, alignItems: 'center' },
-  pixStatusText: { color: '#666', fontSize: 13 },
+  pixStatusText: { color: colors.textDim, fontSize: 13 },
 });

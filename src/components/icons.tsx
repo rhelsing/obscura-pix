@@ -63,3 +63,32 @@ export function FlipCameraIcon({ size = 26, color = '#fff', strokeWidth = 2 }: I
     </Svg>
   );
 }
+
+/** Send — paper-plane, filled with `color`. Used by the chat composer. */
+export function SendIcon({ size = 22, color = '#000' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M22 2 11 13" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M22 2 15 22l-4-9-9-4 20-7z" fill={color} stroke={color} strokeWidth={2} strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+/** Close — an X made of two crossing lines. Replaces the ASCII "X". */
+export function CloseIcon({ size = 22, color = '#fff', strokeWidth = 2 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Line x1="18" y1="6" x2="6" y2="18" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+      <Line x1="6" y1="6" x2="18" y2="18" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+/** Checkmark — a tick. Replaces the ASCII "V" used for selection checks. */
+export function CheckIcon({ size = 16, color = '#000', strokeWidth = 3 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M20 6 9 17l-5-5" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}

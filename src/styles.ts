@@ -3,15 +3,21 @@ import { StyleSheet, Platform } from 'react-native';
 export const colors = {
   bg: '#000',
   surface: '#1a1a1a',
+  surfaceMuted: '#333', // muted fills: pending avatars, disabled buttons, secondary borders
   accent: '#FFFC00',
+  onAccent: '#000',     // text/icons on an accent (yellow) background
   text: '#fff',
-  textDim: '#666',
-  textMuted: '#444',
+  textSecondary: '#999', // list previews, secondary labels
+  textDim: '#666',       // hints, timestamps, captions, placeholders
+  textMuted: '#444',     // empty states, faint ids
   border: '#222',
-  error: '#f55',
-  connected: '#4f4',
-  connecting: '#fd0',
-  disconnected: '#f44',
+  // Semantic status/feedback — one value each, shared by toasts, dots, and states.
+  error: '#ef4444',
+  success: '#22c55e',
+  info: '#38bdf8',
+  connected: '#22c55e',
+  connecting: '#fbbf24',
+  disconnected: '#ef4444',
 };
 
 export const s = StyleSheet.create({
@@ -24,7 +30,7 @@ export const s = StyleSheet.create({
   authButtons: { flexDirection: 'column', gap: 12, marginTop: 8 },
   primaryBtn: { backgroundColor: colors.accent, borderRadius: 12, padding: 14, alignItems: 'center' },
   primaryBtnText: { color: '#000', fontWeight: '700', fontSize: 16 },
-  secondaryBtn: { borderWidth: 1, borderColor: '#333', borderRadius: 12, padding: 14, alignItems: 'center' },
+  secondaryBtn: { borderWidth: 1, borderColor: colors.surfaceMuted, borderRadius: 12, padding: 14, alignItems: 'center' },
   dangerBtn: { borderWidth: 1, borderColor: colors.error, borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 24, marginBottom: 32 },
   dangerBtnText: { color: colors.error, fontWeight: '700', fontSize: 16 },
   secondaryBtnText: { color: colors.text, fontWeight: '600', fontSize: 16 },
@@ -74,7 +80,6 @@ export const s = StyleSheet.create({
   composer: { flexDirection: 'row', padding: 12, gap: 8, borderTopWidth: 0.5, borderTopColor: colors.border },
   composerInput: { flex: 1, backgroundColor: colors.surface, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, color: colors.text, fontSize: 16 },
   sendBtn: { backgroundColor: colors.accent, borderRadius: 20, width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  sendBtnText: { color: '#000', fontWeight: '700', fontSize: 18 },
   storyCard: { backgroundColor: colors.surface, borderRadius: 12, padding: 14, marginBottom: 8 },
   storyAuthor: { color: colors.accent, fontSize: 13, fontWeight: '700', marginBottom: 4 },
   storyContent: { color: colors.text, fontSize: 16 },

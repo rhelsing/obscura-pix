@@ -3,7 +3,7 @@ import { SafeAreaView, View, Text, TextInput, TouchableOpacity, Image } from 're
 import { Obscura } from '../native/ObscuraModule';
 import { useSession } from '../state/store';
 import { KeyboardScreen } from '../components/KeyboardScreen';
-import { s } from '../styles';
+import { s, colors } from '../styles';
 
 export function AuthScreen() {
   const { setAuthed } = useSession();
@@ -50,9 +50,9 @@ export function AuthScreen() {
         <Image source={require('../assets/logo.png')} style={s.logoImg} resizeMode="contain" />
         <Text style={s.subtitle}>Encrypted everything</Text>
         {status ? <Text style={s.status}>{status}</Text> : null}
-        <TextInput style={s.input} placeholder="Username" placeholderTextColor="#666"
+        <TextInput style={s.input} placeholder="Username" placeholderTextColor={colors.textDim}
           value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} />
-        <TextInput style={s.input} placeholder="Password (12+ chars)" placeholderTextColor="#666"
+        <TextInput style={s.input} placeholder="Password (12+ chars)" placeholderTextColor={colors.textDim}
           value={password} onChangeText={setPassword} secureTextEntry />
         <View style={s.authButtons}>
           <TouchableOpacity style={s.primaryBtn} onPress={login}>

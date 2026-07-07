@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 } from 'react-native';
 import Video from 'react-native-video';
 import { CaptionView, parseCaptionMeta } from '../components/Caption';
+import { CloseIcon } from '../components/icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura, type ModelEntry } from '../native/ObscuraModule';
@@ -219,7 +220,7 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
         <Text style={sv.headerName}>{group.username}</Text>
         <Text style={sv.headerTime}>{timeAgo}</Text>
         <TouchableOpacity onPress={close} style={sv.closeBtn}>
-          <Text style={sv.closeBtnText}>X</Text>
+          <CloseIcon size={22} color="#fff" />
         </TouchableOpacity>
       </View>
 
@@ -327,8 +328,8 @@ export function StoriesRow() {
 const sc = StyleSheet.create({
   container: { alignItems: 'center', marginRight: 16, width: 72 },
   ring: { width: 64, height: 64, borderRadius: 32, borderWidth: 3, borderColor: colors.accent, justifyContent: 'center', alignItems: 'center' },
-  ringEmpty: { borderColor: '#333', borderStyle: 'dashed' },
-  avatar: { width: 54, height: 54, borderRadius: 27, backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' },
+  ringEmpty: { borderColor: colors.surfaceMuted, borderStyle: 'dashed' },
+  avatar: { width: 54, height: 54, borderRadius: 27, backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' },
   avatarText: { color: '#fff', fontWeight: '700', fontSize: 22 },
   addBadge: { position: 'absolute', right: 2, bottom: 14, width: 20, height: 20, borderRadius: 10, backgroundColor: colors.accent, justifyContent: 'center', alignItems: 'center' },
   addBadgeText: { color: '#000', fontWeight: '700', fontSize: 14, marginTop: -1 },
@@ -342,12 +343,11 @@ const sv = StyleSheet.create({
   progressFill: { height: '100%', backgroundColor: '#fff', borderRadius: 1 },
   progressFillFull: { width: '100%' },
   header: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 8 },
-  headerAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#333', justifyContent: 'center', alignItems: 'center' },
+  headerAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surfaceMuted, justifyContent: 'center', alignItems: 'center' },
   headerAvatarText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   headerName: { color: '#fff', fontWeight: '600', fontSize: 15, flex: 1 },
-  headerTime: { color: '#999', fontSize: 13 },
+  headerTime: { color: colors.textSecondary, fontSize: 13 },
   closeBtn: { padding: 8 },
-  closeBtnText: { color: '#fff', fontSize: 18, fontWeight: '700' },
   content: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
   contentText: { color: '#fff', fontSize: 24, fontWeight: '600', textAlign: 'center' },
   captionOverlay: { color: '#fff', fontSize: 18, fontWeight: '600', textAlign: 'center', backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12, position: 'absolute', bottom: 80 },

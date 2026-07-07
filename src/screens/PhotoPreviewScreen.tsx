@@ -9,6 +9,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackScreenProps, RootStackParamList } from '../navigation/types';
 import { colors } from '../styles';
+import { CloseIcon } from '../components/icons';
 import {
   CAPTION_FONTS, CAPTION_FONT_LABELS, CAPTION_COLORS, captionStyles, boldTextStyle,
   serializeCaptionMeta, type CaptionMeta, type CaptionStyle,
@@ -297,7 +298,7 @@ export function PhotoPreviewScreen({ route }: RootStackScreenProps<'PhotoPreview
       {/* ── Top toolbar ── */}
       <View style={ps.topBar} pointerEvents="box-none">
         <TouchableOpacity onPress={onRetake} style={ps.retakeBtn}>
-          <Text style={ps.retakeBtnText}>{'X'}</Text>
+          <CloseIcon size={20} color="#fff" />
         </TouchableOpacity>
 
         <View style={ps.toolCol}>
@@ -381,7 +382,6 @@ const ps = StyleSheet.create({
     padding: 16, paddingTop: 48, zIndex: 2,
   },
   retakeBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
-  retakeBtnText: { color: '#fff', fontSize: 18, fontWeight: '700' },
   toolCol: { alignItems: 'flex-end', gap: 10 },
   toolBtn: {
     minWidth: 44, height: 40, paddingHorizontal: 10, borderRadius: 20,
@@ -399,7 +399,7 @@ const ps = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 10, borderRadius: 22,
     backgroundColor: 'rgba(0,0,0,0.55)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
   },
-  deletePillActive: { backgroundColor: '#ff3b30', borderColor: '#fff', transform: [{ scale: 1.1 }] },
+  deletePillActive: { backgroundColor: colors.error, borderColor: '#fff', transform: [{ scale: 1.1 }] },
   deleteIcon: { color: '#fff', fontSize: 16, fontWeight: '900' },
   deleteLabel: { color: '#fff', fontSize: 13, fontWeight: '700' },
   barPos: { position: 'absolute', left: 0, right: 0 },
