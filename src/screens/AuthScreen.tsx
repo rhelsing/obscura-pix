@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { SafeAreaView, View, Text, TextInput, TouchableOpacity, Image } from 'react-native';
+import { SafeAreaView, View, Text, TextInput, TouchableOpacity, Image, StyleSheet } from 'react-native';
 import { Obscura } from '../native/ObscuraModule';
 import { useSession } from '../state/store';
 import { KeyboardScreen } from '../components/KeyboardScreen';
@@ -46,20 +46,20 @@ export function AuthScreen() {
   return (
     <SafeAreaView style={s.container}>
       <KeyboardScreen>
-      <View style={s.authBox}>
-        <Image source={require('../assets/logo.png')} style={s.logoImg} resizeMode="contain" />
-        <Text style={s.subtitle}>Encrypted everything</Text>
-        {status ? <Text style={s.status}>{status}</Text> : null}
+      <View style={a.box}>
+        <Image source={require('../assets/logo.png')} style={a.logo} resizeMode="contain" />
+        <Text style={a.subtitle}>Encrypted everything</Text>
+        {status ? <Text style={a.status}>{status}</Text> : null}
         <TextInput style={s.input} placeholder="Username" placeholderTextColor={colors.textDim}
           value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} />
         <TextInput style={s.input} placeholder="Password (12+ chars)" placeholderTextColor={colors.textDim}
           value={password} onChangeText={setPassword} secureTextEntry />
-        <View style={s.authButtons}>
-          <TouchableOpacity style={s.primaryBtn} onPress={login}>
-            <Text style={s.primaryBtnText}>Log in</Text>
+        <View style={a.buttons}>
+          <TouchableOpacity style={a.primaryBtn} onPress={login}>
+            <Text style={a.primaryBtnText}>Log in</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={s.secondaryBtn} onPress={register}>
-            <Text style={s.secondaryBtnText}>Sign up</Text>
+          <TouchableOpacity style={a.secondaryBtn} onPress={register}>
+            <Text style={a.secondaryBtnText}>Sign up</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -67,3 +67,15 @@ export function AuthScreen() {
     </SafeAreaView>
   );
 }
+
+const a = StyleSheet.create({
+  box: { flex: 1, justifyContent: 'center', padding: 32 },
+  logo: { width: 260, height: 60, alignSelf: 'center', marginBottom: 8 },
+  subtitle: { fontSize: 14, color: colors.textDim, textAlign: 'center', marginBottom: 32 },
+  status: { color: colors.error, textAlign: 'center', marginBottom: 12, fontSize: 13 },
+  buttons: { flexDirection: 'column', gap: 12, marginTop: 8 },
+  primaryBtn: { backgroundColor: colors.accent, borderRadius: 12, padding: 14, alignItems: 'center' },
+  primaryBtnText: { color: colors.onAccent, fontWeight: '700', fontSize: 16 },
+  secondaryBtn: { borderWidth: 1, borderColor: colors.surfaceMuted, borderRadius: 12, padding: 14, alignItems: 'center' },
+  secondaryBtnText: { color: colors.text, fontWeight: '600', fontSize: 16 },
+});

@@ -1,4 +1,4 @@
-import { StyleSheet, Platform } from 'react-native';
+import { StyleSheet } from 'react-native';
 
 export const colors = {
   bg: '#000',
@@ -20,71 +20,12 @@ export const colors = {
   disconnected: '#ef4444',
 };
 
+/**
+ * Genuinely cross-screen primitives only. Screen-specific styles live in a
+ * local StyleSheet inside each screen. `container` is the full-bleed page and
+ * `input` the standard text field — both used by Auth, Profile, and/or Chat.
+ */
 export const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  authBox: { flex: 1, justifyContent: 'center', padding: 32 },
-  logoImg: { width: 260, height: 60, alignSelf: 'center', marginBottom: 8 },
-  subtitle: { fontSize: 14, color: colors.textDim, textAlign: 'center', marginBottom: 32 },
-  status: { color: colors.error, textAlign: 'center', marginBottom: 12, fontSize: 13 },
   input: { backgroundColor: colors.surface, borderRadius: 12, padding: 14, color: colors.text, fontSize: 16, marginBottom: 12 },
-  authButtons: { flexDirection: 'column', gap: 12, marginTop: 8 },
-  primaryBtn: { backgroundColor: colors.accent, borderRadius: 12, padding: 14, alignItems: 'center' },
-  primaryBtnText: { color: '#000', fontWeight: '700', fontSize: 16 },
-  secondaryBtn: { borderWidth: 1, borderColor: colors.surfaceMuted, borderRadius: 12, padding: 14, alignItems: 'center' },
-  dangerBtn: { borderWidth: 1, borderColor: colors.error, borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 24, marginBottom: 32 },
-  dangerBtnText: { color: colors.error, fontWeight: '700', fontSize: 16 },
-  secondaryBtnText: { color: colors.text, fontWeight: '600', fontSize: 16 },
-  screen: { flex: 1, padding: 16 },
-  topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, paddingTop: Platform.OS === 'android' ? 40 : 12 },
-  topTitle: { fontSize: 20, fontWeight: '700', color: colors.text },
-  connDot: { fontSize: 16 },
-  tabBar: { flexDirection: 'row', borderTopWidth: 0.5, borderTopColor: colors.border, paddingVertical: 12, paddingBottom: Platform.OS === 'android' ? 24 : 12 },
-  tab: { flex: 1, alignItems: 'center' },
-  tabText: { color: colors.textDim, fontSize: 13, fontWeight: '600' },
-  tabActive: { color: colors.accent },
-  sectionTitle: { color: colors.textDim, fontSize: 12, fontWeight: '700', marginTop: 20, marginBottom: 8, textTransform: 'uppercase' },
-  row: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  smallBtn: { backgroundColor: colors.accent, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10 },
-  smallBtnText: { color: '#000', fontWeight: '700', fontSize: 14 },
-  codeBtn: { backgroundColor: colors.surface, borderRadius: 12, padding: 14, alignItems: 'center', marginBottom: 12 },
-  codeBtnText: { color: colors.accent, fontWeight: '600' },
-  friendRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 12 },
-  friendName: { color: colors.text, fontSize: 16, flex: 1 },
-  avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.accent, justifyContent: 'center', alignItems: 'center' },
-  avatarText: { color: '#000', fontWeight: '700', fontSize: 18 },
-  empty: { color: colors.textMuted, textAlign: 'center', marginTop: 32, fontSize: 14 },
-  hint: { color: colors.textMuted, fontSize: 12, marginTop: 4, marginBottom: 12 },
-  settingsLabel: { color: colors.text, fontSize: 18, fontWeight: '600' },
-  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, marginBottom: 12 },
-  statusDot: { fontSize: 14 },
-  statusText: { color: colors.text, fontSize: 15, fontWeight: '600' },
-  chatHeader: { flexDirection: 'row', alignItems: 'center', padding: 12, paddingTop: Platform.OS === 'android' ? 40 : 12, gap: 12 },
-  backBtn: { color: colors.accent, fontSize: 32, fontWeight: '300' },
-  chatTitle: { color: colors.text, fontSize: 20, fontWeight: '700' },
-  messageList: { flex: 1, paddingHorizontal: 12 },
-  msgRow: { marginVertical: 2 },
-  msgRowRight: { alignItems: 'flex-end' },
-  msgRowLeft: { alignItems: 'flex-start' },
-  msgBubble: { borderRadius: 18, paddingHorizontal: 14, paddingVertical: 8, maxWidth: '75%' },
-  myBubble: { backgroundColor: colors.accent },
-  theirBubble: { backgroundColor: colors.surface },
-  myBubbleText: { color: '#000', fontSize: 16 },
-  theirBubbleText: { color: colors.text, fontSize: 16 },
-  typingBubble: {
-    flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 18,
-    paddingHorizontal: 14, paddingVertical: 10, gap: 4, marginVertical: 2,
-  },
-  typingDot: {
-    width: 8, height: 8, borderRadius: 4, backgroundColor: colors.textDim,
-  },
-  composer: { flexDirection: 'row', padding: 12, gap: 8, borderTopWidth: 0.5, borderTopColor: colors.border },
-  composerInput: { flex: 1, backgroundColor: colors.surface, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, color: colors.text, fontSize: 16 },
-  sendBtn: { backgroundColor: colors.accent, borderRadius: 20, width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  storyCard: { backgroundColor: colors.surface, borderRadius: 12, padding: 14, marginBottom: 8 },
-  storyAuthor: { color: colors.accent, fontSize: 13, fontWeight: '700', marginBottom: 4 },
-  storyContent: { color: colors.text, fontSize: 16 },
-  logLine: { color: '#555', fontSize: 10, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', marginBottom: 2 },
-  // Camera tab
-  cameraTab: { justifyContent: 'center', alignItems: 'center', width: 48, height: 48, borderRadius: 24, backgroundColor: colors.accent, marginTop: -12 },
-  cameraTabIcon: { color: '#000', fontSize: 24, fontWeight: '700' },
 });
