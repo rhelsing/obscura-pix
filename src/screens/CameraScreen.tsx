@@ -233,20 +233,18 @@ export function CameraScreen() {
           swipe-to-Chats transition. Below the controls overlay (box-none). */}
       <View style={StyleSheet.absoluteFill} {...pan.panHandlers} />
 
-      {/* Controls overlay. Top/bottom are padded clear of the transparent
-          header + tab bar that float over the full-bleed camera. */}
+      {/* Controls overlay. Bottom is padded clear of the transparent tab bar
+          that floats over the full-bleed camera. */}
       <View style={cs.overlay} pointerEvents="box-none">
-        {/* Top controls */}
-        <View style={[cs.topControls, { paddingTop: insets.top + 8 }]}>
-          <TouchableOpacity style={cs.iconBtn} onPress={toggleFlash} accessibilityLabel="Toggle flash">
-            <FlashIcon size={24} color={flash === 'on' ? colors.accent : '#fff'} on={flash === 'on'} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Bottom controls. Shutter is centered (grounded); flip sits to its
-            right as an icon. Kept close to the tab bar so it doesn't float. */}
+        {/* Bottom controls. Shutter is centered (the anchor); flash + flip
+            flank it as icons. Kept out of the top strip because the transparent
+            nav header sits on top there and would swallow the taps. */}
         <View style={[cs.bottomControls, { paddingBottom: insets.bottom + TAB_BAR_CLEARANCE }]}>
           <View style={cs.controlsRow}>
+            <TouchableOpacity style={cs.flashBtn} onPress={toggleFlash} accessibilityLabel="Toggle flash">
+              <FlashIcon size={26} color={flash === 'on' ? colors.accent : '#fff'} on={flash === 'on'} />
+            </TouchableOpacity>
+
             <Animated.View style={{ transform: [{ scale: shutterScale }] }}>
               <Pressable
                 onPressIn={onShutterPressIn}
@@ -270,17 +268,20 @@ export function CameraScreen() {
 
 const cs = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
-  overlay: { ...StyleSheet.absoluteFill, justifyContent: 'space-between' },
-  topControls: { flexDirection: 'row', justifyContent: 'flex-end', padding: 16, paddingTop: 8 },
+  overlay: { ...StyleSheet.absoluteFill, justifyContent: 'flex-end' },
   bottomControls: { paddingBottom: 16, paddingHorizontal: 24 },
-  // Shutter centered so it reads as the anchor; flip floats to its right.
+  // Shutter centered as the anchor; flash + flip flank it symmetrically.
   controlsRow: { alignItems: 'center', justifyContent: 'center' },
+  flashBtn: {
+    position: 'absolute', left: 8, width: 52, height: 52,
+    borderRadius: 26, justifyContent: 'center', alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.28)',
+  },
   flipBtn: {
     position: 'absolute', right: 8, width: 52, height: 52,
     borderRadius: 26, justifyContent: 'center', alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.28)',
   },
-  iconBtn: { padding: 10 },
   captureBtn: {
     width: 84, height: 84, borderRadius: 42, borderWidth: 5,
     borderColor: '#fff', justifyContent: 'center', alignItems: 'center',
