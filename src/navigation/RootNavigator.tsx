@@ -120,23 +120,25 @@ function MainTabs() {
   );
 }
 
-// Header options for MainTabs, driven by which tab is focused. Header is always
-// transparent (so the pager keeps a constant full-screen height — no layout
-// jump mid-swipe); only its background + right button change per tab.
+// Header options for MainTabs, driven by which tab is focused. Header floats
+// (transparent) so the pager keeps a constant full-screen height — no layout
+// jump mid-swipe. On the camera tab it gets a subtle dark scrim instead of the
+// solid Chats background, so the white wordmark/icons stay readable when the
+// camera points at something bright.
 function mainTabsHeaderOptions({ route }: { route: RouteProp<RootStackParamList, 'MainTabs'> }) {
   const tab = getFocusedRouteNameFromRoute(route) ?? 'Camera';
   const isCamera = tab === 'Camera';
   return {
     headerShown: true,
     headerTransparent: true,
-    headerStyle: { backgroundColor: isCamera ? 'transparent' : colors.bg },
+    headerStyle: { backgroundColor: isCamera ? 'rgba(0,0,0,0.32)' : colors.bg },
     headerShadowVisible: false,
     headerTitle: 'obscura',
     headerTitleAlign: 'center' as const,
     headerTintColor: colors.text,
     headerTitleStyle: { color: colors.text, fontWeight: '700' as const },
     headerLeft: () => <ProfileAvatarButton />,
-    headerRight: () => (isCamera ? null : <AddFriendHeaderButton />),
+    headerRight: () => <AddFriendHeaderButton />,
   };
 }
 
