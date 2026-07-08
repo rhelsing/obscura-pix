@@ -10,13 +10,15 @@ in `85824ac`; this foundation was scaffolded fresh in `5fb3fd3`.
 [`BRIDGE.md`](BRIDGE.md) is the cross-platform contract and single source of
 truth; Android's `ObscuraBridgeModule.kt` is the reference implementation.
 
-**The gap: the foundation is not yet reproducible.** The Xcode project points
-its SPM package and libsignal search paths at a machine-local
-`../../obscura-client-ios` — a directory that exists on no machine but the
-original author's. The real Swift kit is `ObscuraKit-swift`. Closing this gap —
-repoint to a sibling `ObscuraKit-swift` checkout (mirroring Android's
-`OBSCURA_KIT_PATH` composite build) plus a `macos-26` iOS CI job that builds the
-libsignal FFI — is the top remaining item. **All of this is macOS-only**
+**Reproducibility: done on the project side.** The Xcode project's SPM package
+and libsignal search paths now point at a sibling `ObscuraKit-swift` checkout
+(`../../ObscuraKit-swift`, mirroring Android's `OBSCURA_KIT_PATH` composite
+build), so the build resolves on any machine with the kit checked out beside
+pix. They previously pointed at a machine-local `../../obscura-client-ios` — a
+directory that existed on no machine but the original author's. Verified: with
+the FFI built (`ObscuraKit-swift/App/build_ffi_ios.sh`) the app compiles, links
+`signal_ffi`, and runs on a device. The remaining gap is a `macos-26` iOS CI
+job that builds the libsignal FFI (see below). **All of this is macOS-only**
 (Xcode / `xcodebuild` / CocoaPods / simulator / code-signing) and must be
 authored/verified on a Mac or through the macOS CI runner, not on Linux.
 
@@ -249,9 +251,10 @@ with `./swift/build_ffi.sh -r`, cache it).
    (the project already sets `EXCLUDED_ARCHS[sim]=x86_64` + deployment 16.0).
 5. Dependabot: add a CocoaPods (and/or Swift Package) ecosystem entry.
 
-> Prerequisite for this CI job: the pbxproj must first be repointed from
-> `obscura-client-ios` to `../../ObscuraKit-swift` (see the integration recipe
-> below). Until then the SPM local path resolves on no CI runner.
+> The pbxproj SPM package + libsignal search paths already point at
+> `../../ObscuraKit-swift` (done). CI just needs to check the kit out at that
+> sibling path (see the integration recipe below) so the SPM local path resolves
+> on the runner.
 
 ## Kit integration recipe
 
