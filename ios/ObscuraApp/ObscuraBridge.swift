@@ -72,7 +72,7 @@ final class ObscuraBridge: RCTEventEmitter {
 
     /// Emit one `ObscuraEvent`. Folds `type` into the payload, matching Android's
     /// `emit(type) { … }` helper. No-ops until JS has a listener attached.
-    func emit(_ event: BridgeEvent, _ fields: [String: Any] = [:]) {
+    private func emit(_ event: BridgeEvent, _ fields: [String: Any] = [:]) {
         guard hasListeners else { return }
         var body = fields
         body["type"] = event.rawValue
@@ -695,7 +695,7 @@ extension ObscuraBridge {
                 try session.setActive(true)
                 resolve(nil)
             } catch {
-                rejectKit(reject, "PREWARM_ERROR", error)
+                self.rejectKit(reject, "PREWARM_ERROR", error)
             }
         }
     }
@@ -716,7 +716,7 @@ extension ObscuraBridge {
                                rejecter reject: @escaping RCTPromiseRejectBlock) {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
             if let error = error {
-                rejectKit(reject, "PUSH_PERMISSION_ERROR", error); return
+                self.rejectKit(reject, "PUSH_PERMISSION_ERROR", error); return
             }
             // Only-on-grant: register for remote notifications so APNs/FCM can
             // later deliver a token (token plumbing lands with #11/Firebase).

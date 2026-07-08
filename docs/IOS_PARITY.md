@@ -1,16 +1,29 @@
 # iOS parity tracker
 
-Obscura Pix is **Android-only today**. The iOS port is Phase 6 of
-[`ROADMAP.md`](../ROADMAP.md) and has not started — the old `ios/` was deleted
-(commit `85824ac`) because it was a broken stub that diverged from the contract.
+Obscura Pix has a **working iOS foundation** committed under `ios/`: a fresh RN
+0.86 scaffold, `ObscuraBridge.swift` implementing [`BRIDGE.md`](BRIDGE.md), and
+the [`ObscuraKit-swift`](https://github.com/rhelsing/ObscuraKit-swift) Swift kit
+wired as a local SPM package. It builds, launches, and runs the auth flow on the
+simulator (see **Port status** below). An earlier broken stub `ios/` was deleted
+in `85824ac`; this foundation was scaffolded fresh in `5fb3fd3`.
 
-When iOS resumes: scaffold fresh from a clean `react-native init` at the
-current RN version, then implement `ObscuraBridge.swift` against
-[`BRIDGE.md`](BRIDGE.md) — the cross-platform contract and single source of
-truth. Android's `ObscuraBridgeModule.kt` is the reference implementation.
+[`BRIDGE.md`](BRIDGE.md) is the cross-platform contract and single source of
+truth; Android's `ObscuraBridgeModule.kt` is the reference implementation.
 
-This file tracks what an eventual Swift bridge must do to stay in parity. Keep
-it current as Android-side or contract changes land.
+**Reproducibility: done on the project side.** The Xcode project's SPM package
+and libsignal search paths now point at a sibling `ObscuraKit-swift` checkout
+(`../../ObscuraKit-swift`, mirroring Android's `OBSCURA_KIT_PATH` composite
+build), so the build resolves on any machine with the kit checked out beside
+pix. They previously pointed at a machine-local `../../obscura-client-ios` — a
+directory that existed on no machine but the original author's. Verified: with
+the FFI built (`ObscuraKit-swift/App/build_ffi_ios.sh`) the app compiles, links
+`signal_ffi`, and runs on a device. The remaining gap is a `macos-26` iOS CI
+job that builds the libsignal FFI (see below). **All of this is macOS-only**
+(Xcode / `xcodebuild` / CocoaPods / simulator / code-signing) and must be
+authored/verified on a Mac or through the macOS CI runner, not on Linux.
+
+This file tracks what the Swift bridge must do to stay in parity. Keep it
+current as Android-side or contract changes land.
 
 ## Deltas from recent work to replicate in the Swift bridge
 
@@ -54,7 +67,13 @@ The ones with iOS-specific requirements:
 - All ORM mutations (`createEntry`/`upsertEntry`/`deleteEntry`) must emit
   `entriesChanged`.
 
-## ObscuraKit-Swift (`../obscura-client-ios`) is behind the Kotlin kit
+## ObscuraKit-swift (the Swift kit) is behind the Kotlin kit
+
+> Note: this section's history refers to the Swift kit by an old local checkout
+> name, `obscura-client-ios`. The actual repo is
+> [`ObscuraKit-swift`](https://github.com/rhelsing/ObscuraKit-swift); read any
+> `obscura-client-ios` path below as a checkout of that repo. Items #16/#17/#18
+> below have since merged into `ObscuraKit-swift` main.
 
 API audit (task #1) — the Swift kit (`Package.swift` product `ObscuraKit`) covers
 auth, state reads, friends/codes, device linking, ORM (`defineModelsFromJson`,
@@ -210,14 +229,21 @@ an FCM registration token like Android's.
 
 ## iOS CI (#15) — checklist
 
-Mirror the existing `android` job in `.github/workflows/ci.yml`, on a `macos`
-runner:
-1. Checkout pix, plus sibling checkouts the SPM local paths need:
-   `rhelsing/obscura-client-ios` at `../obscura-client-ios` AND its own sibling
-   dep `grdb-cipher-fork` at `../grdb-cipher-fork` (Package.swift references both).
-2. Build the libsignal FFI: `./App/build_ffi_ios.sh` in obscura-client-ios
-   (Rust + `rustup target add aarch64-apple-ios aarch64-apple-ios-sim`), OR
-   commit the prebuilt `.a` artifacts.
+Mirror the existing `android` job in `.github/workflows/ci.yml`, on a `macos-26`
+runner. The single best template is **`ObscuraKit-swift`'s own
+`.github/workflows/ci.yml`**, which already solves the libsignal problem
+reproducibly (clone `signalapp/libsignal` at a pinned version, Rust-build the FFI
+with `./swift/build_ffi.sh -r`, cache it).
+
+1. Checkout pix, plus a sibling checkout of the Swift kit —
+   `rhelsing/ObscuraKit-swift` at `../ObscuraKit-swift` (submodules recursive,
+   for its `proto/` submodule). This is the iOS analog of the android job's
+   `ObscuraKit-Kotlin` sibling checkout + `OBSCURA_KIT_PATH`. GRDB no longer
+   needs a `grdb-cipher-fork` sibling — the kit now pins the public
+   `duckduckgo/GRDB.swift @ 2.4.2-1` transitively.
+2. Build the libsignal FFI in the kit checkout: `./App/build_ffi_ios.sh`
+   (Rust + `rustup target add aarch64-apple-ios aarch64-apple-ios-sim`), and
+   cache it keyed on the pinned libsignal version. (Copy the kit CI's cache step.)
 3. `npm ci`; `cd ios && pod install`. If the runner's Ruby lacks `kconv`
    (CocoaPods dependency), `gem install nkf` first (it ships `kconv.rb`).
 4. `xcodebuild -workspace ios/ObscuraApp.xcworkspace -scheme ObscuraApp
@@ -225,46 +251,51 @@ runner:
    (the project already sets `EXCLUDED_ARCHS[sim]=x86_64` + deployment 16.0).
 5. Dependabot: add a CocoaPods (and/or Swift Package) ecosystem entry.
 
-## Kit integration recipe (from the reference project)
+> The pbxproj SPM package + libsignal search paths already point at
+> `../../ObscuraKit-swift` (done). CI just needs to check the kit out at that
+> sibling path (see the integration recipe below) so the SPM local path resolves
+> on the runner.
 
-The kit ships a proven integration at
-`../obscura-client-ios/App/obscura-base/obscura-base.xcodeproj`. To wire
-ObscuraKit into pix's `ios/ObscuraApp.xcodeproj`, mirror it:
+## Kit integration recipe
+
+To wire `ObscuraKit-swift` into pix's `ios/ObscuraApp.xcodeproj` reproducibly
+(sibling checkout, mirroring Android's composite build):
 
 1. **Local SPM package** — `XCLocalSwiftPackageReference` with `relativePath`
-   pointing at the kit root. From `pix/ios/` that's `../../obscura-client-ios`.
-   Add an `XCSwiftPackageProductDependency` for product `ObscuraKit`, attach it
-   to the app target's `packageProductDependencies` + Frameworks build phase.
-   SPM resolves the kit's transitive local deps automatically
-   (`../grdb-cipher-fork` = `~/Projects/grdb-cipher-fork`, and the vendored
-   `LibSignalClient`).
+   pointing at the kit root. With the kit checked out as a sibling of `pix`,
+   from `pix/ios/` that's `../../ObscuraKit-swift`. Add an
+   `XCSwiftPackageProductDependency` for product `ObscuraKit`, attach it to the
+   app target's `packageProductDependencies` + Frameworks build phase. SPM
+   resolves the kit's transitive deps automatically (the public
+   `duckduckgo/GRDB.swift` pin and the vendored `LibSignalClient`).
 2. **libsignal linking** — set `LIBRARY_SEARCH_PATHS` on the app target:
-   - simulator → `$(PROJECT_DIR)/../../obscura-client-ios/vendored/libsignal/target/aarch64-apple-ios-sim/release`
-   - device    → `$(PROJECT_DIR)/../../obscura-client-ios/vendored/libsignal/target/aarch64-apple-ios/release`
+   - simulator → `$(PROJECT_DIR)/../../ObscuraKit-swift/vendored/libsignal/target/aarch64-apple-ios-sim/release`
+   - device    → `$(PROJECT_DIR)/../../ObscuraKit-swift/vendored/libsignal/target/aarch64-apple-ios/release`
    (the `LibSignalClient` SPM product links `-lsignal_ffi`; it just needs the path.)
 3. **Build the FFI** — `libsignal_ffi.a` comes from
-   `../obscura-client-ios/App/build_ffi_ios.sh` (Rust/cargo, targets
-   `aarch64-apple-ios` + `aarch64-apple-ios-sim`). On this machine Rust 1.92 +
-   the iOS targets are installed and the **simulator** `.a` is already built
-   (`vendored/libsignal/target/aarch64-apple-ios-sim/release/libsignal_ffi.a`).
-   The device `.a` must be built before an on-device/TestFlight build.
+   `../../ObscuraKit-swift/App/build_ffi_ios.sh` (Rust/cargo, targets
+   `aarch64-apple-ios` + `aarch64-apple-ios-sim`; needs `vendored/libsignal`
+   cloned first — the kit's CI does this). Build the device `.a` before an
+   on-device/TestFlight build.
+
+> SPM caveat vs Android: there is no `XCLocalSwiftPackageReference` env-var
+> override analogous to `OBSCURA_KIT_PATH` — the `relativePath` is static in the
+> pbxproj. A sibling checkout at the documented path (or a symlink) is the
+> convention; CI checks the kit out to match.
 
 ## Infra parity gaps
 
 - **CI** (`.github/workflows/ci.yml`) runs typecheck + lint + an `android`
-  build job only. The android job clones and `publishToMavenLocal`s
-  ObscuraKit-Kotlin first (`b3abefb`). When iOS lands, add an iOS build job
-  that builds/links ObscuraKit-Swift the same way.
+  build job only — there is **no iOS job yet**. The android job checks out
+  `ObscuraKit-Kotlin` as a sibling and builds it via the Gradle composite build
+  (`OBSCURA_KIT_PATH`). The iOS job should mirror that: sibling `ObscuraKit-swift`
+  checkout + libsignal FFI build (see the iOS CI checklist above).
 - **Dependabot** covers npm + gradle ×2 + github-actions only. Add the
-  CocoaPods/SPM ecosystem once iOS exists.
+  CocoaPods/SPM ecosystem once the iOS build is reproducible/CI-gated.
 
 ## Cleanup
 
-- `ios/ObscuraApp/GoogleService-Info.plist` is the real Firebase iOS config
-  for project `obscura-af88b` (iOS analog of `android/app/google-services.json`,
-  needed for FCM/APNs). It's still **git-tracked**, which contradicts the repo's
-  own convention — the Android equivalent is gitignored and fetched per env.
-  Recommended: `git rm --cached` it and add `ios/**/GoogleService-Info.plist`
-  to `.gitignore` so both platforms follow the same fetch-per-env policy
-  (re-downloadable from the Firebase console). The rest of `ios/` on disk is
-  gitignored Xcode/Pods build junk.
+- ✅ **DONE:** `ios/ObscuraApp/GoogleService-Info.plist` is no longer git-tracked
+  (matches the Android `google-services.json` fetch-per-env convention). The
+  Firebase iOS config for project `obscura-af88b` is re-downloadable from the
+  Firebase console. The rest of `ios/` on disk is gitignored Xcode/Pods build junk.

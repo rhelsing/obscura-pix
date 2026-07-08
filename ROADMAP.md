@@ -52,17 +52,25 @@ What's built, what's next.
 
 ## Phase 6: iOS
 
-The cross-platform bridge contract (methods, events, payload shapes,
-atomicity / EXIF / OOM requirements) lives in `docs/BRIDGE.md`. The
-Android `ObscuraBridgeModule.kt` is the reference implementation. A Swift
-bridge implementing the same contract is the path to a TestFlight build.
+A working iOS foundation is committed under `ios/`: a RN 0.86 scaffold,
+`ObscuraBridge.swift` implementing `docs/BRIDGE.md`, and the `ObscuraKit-swift`
+Swift kit wired as a local SPM package. It builds, launches, and runs the auth
+flow on the simulator. The cross-platform bridge contract (methods, events,
+payload shapes, atomicity / EXIF / OOM requirements) lives in `docs/BRIDGE.md`;
+Android's `ObscuraBridgeModule.kt` is the reference implementation. See
+`docs/IOS_PARITY.md` for detailed status and the reproducible-build gap.
 
-- [ ] Scaffold `ios/` from a fresh RN init at the same RN version as Android
-- [ ] Implement `ObscuraBridge.swift` against `docs/BRIDGE.md`
-- [ ] Wire `ObscuraKit-Swift` as a Swift Package dependency
-- [ ] App icons + launch screen assets
-- [ ] APNs entitlement + push token wiring
-- [ ] TestFlight build
+- [x] Scaffold `ios/` (RN 0.86, bundle `com.obscuraapp.ios`, deployment 16.0)
+- [x] Implement `ObscuraBridge.swift` against `docs/BRIDGE.md`
+- [x] Wire `ObscuraKit-swift` as a local Swift Package
+- [x] App icons + launch screen assets
+- [x] Simulator-verified auth flow end-to-end
+- [ ] **Make the build reproducible** — repoint the SPM + libsignal paths from
+      the machine-local `obscura-client-ios` to a sibling `ObscuraKit-swift`
+      checkout (mirroring Android's `OBSCURA_KIT_PATH` composite build) and add a
+      `macos-26` iOS CI job that builds the libsignal FFI (see `docs/IOS_PARITY.md`)
+- [ ] Push (#11): APNs entitlement + FCM-via-APNs token wiring
+- [ ] On-device test + TestFlight build
 
 ## Not Planned
 
