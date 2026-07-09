@@ -15,7 +15,7 @@
     "@react-navigation/native-stack": "^7.17.6",
     "react": "19.2.7",
     "react-native": "0.86.0",
-    "react-native-pager-view": "^8.0.2",
+    "react-native-pager-view": "^8.0.3",
     "react-native-qrcode-svg": "^6.3.21",
     "react-native-safe-area-context": "^5.8.0",
     "react-native-screens": "^4.25.2",
