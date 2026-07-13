@@ -188,7 +188,7 @@ dependencies {
 
     // Firebase Cloud Messaging — silent push wake-up bell. NEVER carries content.
     // Privacy invariant: notification text is hardcoded generic ("New pix" / "New message").
-    implementation(platform("com.google.firebase:firebase-bom:34.15.0"))
+    implementation(platform("com.google.firebase:firebase-bom:34.16.0"))
     implementation("com.google.firebase:firebase-messaging")
 
     // Desugaring (required by libsignal-android)
