@@ -28,13 +28,13 @@ jobs:
     name: Domain tests (jest)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           # The merge vectors are read from obscura-proto at proto/conformance/merge.json.
           submodules: recursive
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: '22'
           cache: npm
       - run: npm ci
       # Pure-logic suite (src/domain): no React Native, no simulator, ~1s. This is the safety net
