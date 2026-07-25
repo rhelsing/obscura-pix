@@ -1,0 +1,18 @@
+{
+  "//": "Test-only TS config. The app's tsconfig sets `types: []` (RN apps pin their globals) and TS 6 wants an explicit rootDir; overriding here keeps the app config untouched while giving ts-jest jest + node globals.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": [
+      "jest",
+      "node"
+    ],
+    "rootDir": ".",
+    "noEmit": true
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "**/node_modules"
+  ]
+}
