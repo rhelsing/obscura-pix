@@ -16,7 +16,17 @@ which cannot run a React Native runtime). Everything that isn't forced native by
 facts belongs in this repo.
 
 The normative brief is [`obscura-proto/SPEC.md` §0 — The kit boundary](../obscura-proto/SPEC.md).
-Read it before changing anything that crosses the bridge.
+Read it before changing anything that crosses the bridge. The sequencing —
+correctness first, deletion third — is [`obscura-proto/PLAN.md`](../obscura-proto/PLAN.md).
+
+> **Status (2026-07-24): nothing has moved into this repo yet.** The kits' correctness work
+> (PLAN Phases 1–2) has landed in the proto, the server and Kotlin; Swift is outstanding. The
+> deletion (PLAN **Phase 3**) has not started, so the ORM, CRDT engine, query DSL and routing
+> engine are all still in both kits and this app still talks to them through the bridge. When
+> Phase 3 runs, append-with-dedupe / last-writer-wins / TTL move *here* — and this repo still has
+> **no test suite** (CI runs `tsc`, `eslint` and an Android release build), which is the gap to
+> close before the domain arrives, not after. Note PLAN's phase numbers are the kit-reset
+> sequence and have nothing to do with the product phases in [`ROADMAP.md`](ROADMAP.md).
 
 > **Why the boundary is written down.** An audit found a schema-driven ORM, CRDT engine, query
 > DSL and audience-routing system implemented **twice** — in Kotlin and in Swift — to serve the
