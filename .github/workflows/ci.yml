@@ -72,6 +72,16 @@ jobs:
       # main being green — and, crucially, catches cross-repo toolchain drift
       # (e.g. a kit Kotlin bump past pix's React-Native-pinned Kotlin) as a
       # red build instead of a latent runtime surprise.
+      # ⚠️ Floating on the kit's default branch is deliberate (see above) — and it MUST be
+      # pinned to a ref for the duration of obscura-proto PLAN.md Phase 3. That phase deletes
+      # the kit's ORM in a step BEFORE pix switches to the replacement API (KIT_API.md §10),
+      # so a float turns "the kit landed its deletion" into "pix CI is red" for every commit
+      # in between, on a repo that cannot fix it yet. Add `ref: <sha>` here when Phase 3 step 2
+      # starts; remove it after step 4 lands and pix is on the new API.
+      #
+      # Note also there is NO iOS job in this workflow. §10's ordering argument — "Kotlin ships
+      # first would break iOS for the whole duration" — is therefore invisible to CI: nothing
+      # here would go red if the Swift kit and pix's shared TypeScript surface diverged.
       - name: Checkout ObscuraKit-Kotlin
         uses: actions/checkout@v7
         with:
