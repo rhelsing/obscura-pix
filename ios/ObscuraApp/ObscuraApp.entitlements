@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- App Group shared by this app and the future Notification Service Extension.
+	     See ios/ObscuraApp/SharedContainer.swift and obscura-proto/KIT_API.md P2.
+	     This identifier must also be registered against the team in the Apple Developer
+	     portal — an unregistered group produces a nil container at runtime, not a build
+	     error, so SharedContainer.isAvailable is what actually proves it works.
+
+	     Deliberately NOT adding a keychain-access-groups entry: on iOS an App Group id is
+	     already usable as a keychain access group, and adding that entitlement would make
+	     its first entry the default group for items that do not name one. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.obscuraapp.ios</string>
+	</array>
+</dict>
+</plist>

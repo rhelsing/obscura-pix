@@ -11,6 +11,7 @@
 		0DA5BA8067FF704BB82078F8 /* ObscuraBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A37E54F4484E1DFC5514BFBB /* ObscuraBridge.m */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		2A25B6BA6346E5B2E025975A /* KeychainSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = B389CC240177117C3ED0446C /* KeychainSession.swift */; };
+		C1A7F30D5E4B8A9612340001 /* SharedContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A7F30D5E4B8A9612340002 /* SharedContainer.swift */; };
 		66334826ACC6590D28987E84 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
@@ -33,6 +34,8 @@
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = ObscuraApp/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		A37E54F4484E1DFC5514BFBB /* ObscuraBridge.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = ObscuraApp/ObscuraBridge.m; sourceTree = "<group>"; };
 		B389CC240177117C3ED0446C /* KeychainSession.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ObscuraApp/KeychainSession.swift; sourceTree = "<group>"; };
+		C1A7F30D5E4B8A9612340002 /* SharedContainer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ObscuraApp/SharedContainer.swift; sourceTree = "<group>"; };
+		C1A7F30D5E4B8A9612340003 /* ObscuraApp.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = ObscuraApp/ObscuraApp.entitlements; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -58,6 +61,8 @@
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
 				B389CC240177117C3ED0446C /* KeychainSession.swift */,
+				C1A7F30D5E4B8A9612340002 /* SharedContainer.swift */,
+				C1A7F30D5E4B8A9612340003 /* ObscuraApp.entitlements */,
 				04DA4A9CC1A1B5B2D06BCF3F /* ObscuraSession.swift */,
 				0A5FB779AE63B4324AD7E05E /* ObscuraBridge.swift */,
 				A37E54F4484E1DFC5514BFBB /* ObscuraBridge.m */,
@@ -269,6 +274,7 @@
 			files = (
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
 				2A25B6BA6346E5B2E025975A /* KeychainSession.swift in Sources */,
+				C1A7F30D5E4B8A9612340001 /* SharedContainer.swift in Sources */,
 				A34FF72BABD2AA3D3C7298B7 /* ObscuraSession.swift in Sources */,
 				9996910D1B340E197C5E445A /* ObscuraBridge.swift in Sources */,
 				0DA5BA8067FF704BB82078F8 /* ObscuraBridge.m in Sources */,
@@ -309,6 +315,7 @@
 					"-ObjC",
 					"-lc++",
 				);
+				CODE_SIGN_ENTITLEMENTS = ObscuraApp/ObscuraApp.entitlements;
 				PRODUCT_BUNDLE_IDENTIFIER = com.obscuraapp.ios;
 				PRODUCT_NAME = ObscuraApp;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -349,6 +356,7 @@
 					"-ObjC",
 					"-lc++",
 				);
+				CODE_SIGN_ENTITLEMENTS = ObscuraApp/ObscuraApp.entitlements;
 				PRODUCT_BUNDLE_IDENTIFIER = com.obscuraapp.ios;
 				PRODUCT_NAME = ObscuraApp;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
