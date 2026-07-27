@@ -66,13 +66,19 @@ final class ObscuraSession {
     var onAppStateChanged: ((Bool) -> Void)?
 
     private init() {
+        // Pre-init (self not fully constructed): NSLog rather than self.logger. Logged every launch
+        // on purpose — an unprovisioned App Group degrades silently, and the symptom otherwise shows
+        // up much later as an NSE that reads nothing.
+        SharedContainer.logStatus { NSLog("%@", $0) }
+
         if let saved = KeychainSession.load(), let username = saved.username {
             var restored: ObscuraClient?
             do {
                 restored = try ObscuraClient(
                     apiURL: ObscuraSession.apiURL,
                     dataDirectory: ObscuraSession.userDir(username),
-                    userId: username
+                    userId: username,
+                    keychainAccessGroup: SharedContainer.keychainAccessGroup
                 )
             } catch {
                 // Pre-init (self not fully constructed): NSLog rather than self.logger.
@@ -92,9 +98,21 @@ final class ObscuraSession {
     // MARK: - Per-user data directory (SQLCipher DB keyed by USERNAME — Android
     // parity, so there's no throwaway login just to learn userId first).
 
+    /// The root the SQLCipher database lives under.
+    ///
+    /// Prefers the App Group container so a Notification Service Extension can open the same file
+    /// (`obscura-proto/KIT_API.md` P2). Falls back to the app-private container — the pre-P2
+    /// location — when the group is not provisioned, so an unentitled build still runs. That
+    /// fallback is logged loudly by `SharedContainer.logStatus`; it must NOT stay silent once an
+    /// NSE exists, because at that point the wrong path means an extension that reads nothing.
+    ///
+    /// Note the two roots are different directories: switching to the group orphans any database
+    /// already written to the old one, and the device re-provisions. That is intended and is why
+    /// this lands now rather than after there is data worth keeping.
     private static var baseDir: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("ObscuraData")
+        let root = SharedContainer.containerURL
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return root.appendingPathComponent("ObscuraData")
     }
     static func userDir(_ username: String) -> String {
         baseDir.appendingPathComponent(username).path
@@ -118,7 +136,8 @@ final class ObscuraSession {
     func makeUserClient(username: String, freshDirectory: Bool = false) throws -> ObscuraClient {
         let dir = ObscuraSession.userDir(username)
         if freshDirectory { try? FileManager.default.removeItem(atPath: dir) }
-        let c = try ObscuraClient(apiURL: ObscuraSession.apiURL, dataDirectory: dir, userId: username)
+        let c = try ObscuraClient(apiURL: ObscuraSession.apiURL, dataDirectory: dir, userId: username,
+                                  keychainAccessGroup: SharedContainer.keychainAccessGroup)
         configure(c)
         return c
     }
