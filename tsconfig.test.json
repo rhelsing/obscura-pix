@@ -10,7 +10,8 @@
     "noEmit": true
   },
   "include": [
-    "src/**/*.ts"
+    "src/**/*.ts",
+    "jest.setup.ts"
   ],
   "exclude": [
     "**/node_modules"
