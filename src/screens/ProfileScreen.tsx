@@ -6,7 +6,7 @@ import {
 import { Obscura } from '../native/ObscuraModule';
 import { logError, getJsLog } from '../utils/log';
 import { toast } from '../components/Toast';
-import { useSession, useModelEntries } from '../state/store';
+import { useSession, useModelEntries, saveEntry } from '../state/store';
 import { s, colors } from '../styles';
 import type { ConnectionState } from '../native/ObscuraModule';
 
@@ -71,7 +71,7 @@ export function ProfileScreen() {
 
   const save = async () => {
     try {
-      await Obscura.upsertEntry('profile', `profile_${myUserId}`, { displayName, bio });
+      await saveEntry('profile', { displayName, bio }, `profile_${myUserId}`);
       toast.success('Profile updated');
     } catch (e: any) { toast.error(e.message); }
   };
