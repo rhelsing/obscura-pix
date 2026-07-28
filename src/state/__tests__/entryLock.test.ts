@@ -1,0 +1,115 @@
+import { drainInbox } from '../drainInbox';
+import { writeEntry } from '../writeEntry';
+import { Obscura } from '../../native/ObscuraModule';
+import { getFakeBridge } from '../../native/__fixtures__/reactNativeMock';
+import { withEntryLock } from '../entryLock';
+
+/**
+ * Overlapping writers (`entryLock.ts`).
+ *
+ * The drain READS the entry store, decides, then writes. A local write landing inside that window is
+ * computed against a snapshot that never saw it — so the drain's merge silently reverts it. Nothing
+ * throws; the user just loses a change they made.
+ *
+ * These interleave the two paths deliberately, because the whole 99-test suite passed while the race
+ * was live: every existing test runs one path at a time.
+ */
+
+const bridge = getFakeBridge();
+
+const SELF = '11111111-1111-4111-8111-111111111111';
+const DEVICE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const BOB = '22222222-2222-4222-8222-222222222222';
+const FRIENDS = [{ userId: BOB, username: 'bob', status: 'accepted' }];
+const CONV = [SELF, BOB].sort().join('_');
+
+describe('a local write racing an incoming drain', () => {
+  /**
+   * **The load-bearing test.** The concrete case: a pix arrives, the user views it (writing a
+   * `viewedAt` receipt that is also SENT to the peer), and a drain overlaps. Without the lock the
+   * receipt is reverted locally — so the sender sees "viewed" and the recipient sees "unviewed",
+   * permanently, with no error on either side.
+   *
+   * Started without `await` so both are in flight together, which is exactly how `store.ts` fires
+   * them: a drain per incoming message, and the receipt on screen exit.
+   */
+  it('does not revert a viewed-receipt written while a drain is in flight', async () => {
+    await Obscura.entryPut('pix', 'p1', JSON.stringify({ conversationId: CONV, viewedAt: 0 }), 1_000, BOB);
+    bridge.__deliverInbox({
+      modelKey: 'pix', entryId: 'p1', sentAt: 3_000, senderDeviceId: 'device_peer',
+      payload: JSON.stringify({ conversationId: CONV, viewedAt: 0 }),
+    });
+
+    const draining = drainInbox();
+    const writing = writeEntry({
+      model: 'pix', id: 'p1',
+      data: { conversationId: CONV, viewedAt: 42 },
+      selfUserId: SELF, myDeviceId: DEVICE, friends: FRIENDS,
+    });
+    await Promise.all([draining, writing]);
+
+    const stored = await Obscura.entryAll('pix');
+    expect(stored).toHaveLength(1);
+    expect(JSON.parse(stored[0].data).viewedAt).toBe(42);
+  });
+
+  /** The same, with the write starting first — the interleaving must be safe in both directions. */
+  it('does not lose the write when it starts before the drain', async () => {
+    await Obscura.entryPut('pix', 'p1', JSON.stringify({ viewedAt: 0 }), 1_000, BOB);
+    bridge.__deliverInbox({
+      modelKey: 'pix', entryId: 'p1', sentAt: 3_000, senderDeviceId: 'device_peer',
+      payload: JSON.stringify({ viewedAt: 0 }),
+    });
+
+    const writing = writeEntry({
+      model: 'pix', id: 'p1', data: { conversationId: CONV, viewedAt: 42 },
+      selfUserId: SELF, myDeviceId: DEVICE, friends: FRIENDS,
+    });
+    const draining = drainInbox();
+    await Promise.all([writing, draining]);
+
+    expect(JSON.parse((await Obscura.entryAll('pix'))[0].data).viewedAt).toBe(42);
+  });
+
+  /**
+   * A local write must beat a peer row that is ahead of our clock. SPEC §2.4 permits a stored
+   * `sentAt` up to `now + 60s`, so this is reachable with an ordinary skewed clock — and without the
+   * step-past the write wins locally and loses on every other device.
+   */
+  it('wins against a stored entry whose timestamp is in the future', async () => {
+    const future = Date.now() + 45_000;
+    await Obscura.entryPut('pix', 'p1', JSON.stringify({ viewedAt: 0 }), future, BOB);
+
+    await writeEntry({
+      model: 'pix', id: 'p1', data: { conversationId: CONV, viewedAt: 42 },
+      selfUserId: SELF, myDeviceId: DEVICE, friends: FRIENDS,
+    });
+
+    const stored = (await Obscura.entryAll('pix'))[0];
+    expect(JSON.parse(stored.data).viewedAt).toBe(42);
+    expect(stored.sentAt).toBeGreaterThan(future);
+    // And the peer is told the same timestamp we stored, or they would reject what we just applied.
+    expect(bridge.__sent[0].sentAt).toBe(stored.sentAt);
+  });
+});
+
+describe('the lock itself', () => {
+  it('runs work in the order it was enqueued', async () => {
+    const order: number[] = [];
+    await Promise.all([
+      withEntryLock(async () => { await Promise.resolve(); order.push(1); }),
+      withEntryLock(async () => { order.push(2); }),
+      withEntryLock(async () => { order.push(3); }),
+    ]);
+
+    expect(order).toEqual([1, 2, 3]);
+  });
+
+  /** One failed write must not wedge every write after it. */
+  it('keeps running after a rejection', async () => {
+    const failed = withEntryLock(() => Promise.reject(new Error('nope')));
+    await expect(failed).rejects.toThrow('nope');
+
+    await expect(withEntryLock(() => Promise.resolve('ok'))).resolves.toBe('ok');
+  });
+});

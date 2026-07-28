@@ -112,12 +112,34 @@ describe('resolution the app actually uses', () => {
    */
   it('resolves the same conversation from either participant', () => {
     const convId = ['uMe', 'uB'].sort().join('_');
+    // Each side sees the other as a friend — friendship is mutual, and the resolver now intersects
+    // participants with the ACCEPTED graph, so the fixture has to model both directions honestly.
+    const bobsFriends = [{ userId: 'uMe', username: 'me', status: 'accepted' }];
 
     const fromMe = resolveAudience(CONVERSATION, { conversationId: convId }, 'uMe', FRIENDS);
-    const fromThem = resolveAudience(CONVERSATION, { conversationId: convId }, 'uB', FRIENDS);
+    const fromThem = resolveAudience(CONVERSATION, { conversationId: convId }, 'uB', bobsFriends);
 
     expect(fromMe).toEqual(['uB']);
     expect(fromThem).toEqual(['uMe']);
+  });
+
+  /**
+   * **The guard `routing.json` never had, because no shipped model uses a `recipient` audience.**
+   * Every live 1:1 model declares `conversation`, so the fail-safe the vendored vectors pin was on a
+   * branch the app never takes — while the branch it does take read recipients straight out of a
+   * peer-supplied payload field.
+   */
+  it('LEAK GUARD: a conversation participant who is not an accepted friend is dropped', () => {
+    const convId = ['uMe', 'uStranger'].sort().join('_');
+
+    expect(resolveAudience(CONVERSATION, { conversationId: convId }, 'uMe', FRIENDS)).toEqual([]);
+  });
+
+  it('LEAK GUARD: a pending friend is not a conversation participant', () => {
+    const pending = [...FRIENDS, { userId: 'uD', username: 'dave', status: 'pending_received' }];
+    const convId = ['uMe', 'uD'].sort().join('_');
+
+    expect(resolveAudience(CONVERSATION, { conversationId: convId }, 'uMe', pending)).toEqual([]);
   });
 
   it('resolves a named friend to exactly that friend', () => {

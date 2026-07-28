@@ -95,13 +95,21 @@ describe('the effect ORDER', () => {
   });
 
   /**
-   * A send failure must not cost the user their content. The kit queues and retries sends of its
-   * own accord, so throwing here would make the caller undo a write that is perfectly good.
+   * A send failure must not cost the user their content — **and must not be silent either**.
+   *
+   * The kit throws from `send` only when a send reached NOBODY (a partial failure is best-effort by
+   * design), so this is the case where the user is looking at an entry in their own timeline that
+   * got nowhere. It keeps the local row, because their content is theirs whether or not the network
+   * cooperated, and it re-throws so a screen can say so.
+   *
+   * This test asserted `.resolves` until 2026-07-28, pinning the swallow as correct — justified by
+   * "the kit queues and retries", which is not true in the sense required: the retry queue is
+   * in-memory, flushed only on the next send, and lost on process death.
    */
-  it('keeps the local entry when the send fails', async () => {
+  it('keeps the local entry when the send fails, but still reports the failure', async () => {
     bridge.__failNext('sendEntry', 'SEND_FAILED', 'offline');
 
-    await expect(writeEntry(args('story', { content: 'x' }))).resolves.toEqual(expect.any(String));
+    await expect(writeEntry(args('story', { content: 'x' }))).rejects.toThrow('offline');
 
     expect(await Obscura.entryAll('story')).toHaveLength(1);
   });
@@ -135,19 +143,38 @@ describe('audience failures', () => {
    * `audience: { kind: 'conversation', field: 'conversationId' }`, and `recipientUsername` is a
    * display label the resolver never reads.
    *
-   * Worth an explicit test because the field name invites the opposite assumption: an earlier
-   * version of this test was written as "recipient names a non-friend → self only" and passed for
-   * the wrong reason. The recipient fail-safe is real and is covered where it actually applies, in
-   * `audience.guards.test.ts`.
+   * **A conversation participant who is not an accepted friend gets nothing.** The conversation id
+   * is a payload field, so without that intersection this call would mail the entry — `mediaRef`,
+   * `contentKey`, `nonce` — to whatever userId a peer wrote into it. `StoriesScreen` writes a
+   * viewed-receipt back with `{ ...story.data }`, so the peer-supplied id reaches here directly.
+   *
+   * This test asserted `[STRANGER]` until 2026-07-28 and was pinning the leak as correct.
    */
-  it('resolves pix by conversation, ignoring the recipientUsername label', async () => {
+  it('resolves pix by conversation, and drops a participant who is not a friend', async () => {
     await writeEntry(args('pix', {
       conversationId: [SELF, STRANGER].sort().join('_'),
       recipientUsername: 'someone-else-entirely',
     }));
 
+    // Stored — it is the user's own entry — but sent to nobody but their own devices.
     expect(await Obscura.entryAll('pix')).toHaveLength(1);
-    expect(bridge.__sent[0].recipientUserIds).toEqual([STRANGER]);
+    expect(bridge.__sent[0].recipientUserIds).toEqual([]);
+  });
+
+  it('sends to a conversation participant who IS a friend', async () => {
+    await writeEntry(args('pix', { conversationId: [SELF, BOB].sort().join('_') }));
+
+    expect(bridge.__sent[0].recipientUserIds).toEqual([BOB]);
+  });
+
+  /** A model name that is not in `schema.ts` must not fall through to "everyone". */
+  it('refuses a model the schema does not declare, rather than broadcasting it', async () => {
+    // One character off `directMessage`.
+    await expect(writeEntry(args('directMessages', { conversationId: `${SELF}_${BOB}`, content: 'private' })))
+      .rejects.toThrow(DirectRoutingUnresolved);
+
+    expect(bridge.__sent).toEqual([]);
+    expect(bridge.__calls).not.toContain('entryPut');
   });
 });
 

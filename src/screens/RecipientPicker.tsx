@@ -49,20 +49,31 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
 
       const attachment = await Obscura.uploadAttachment(uploadPath);
 
-      // Create Pix entry for each recipient.
+      // Create a Pix entry for each recipient, PER-RECIPIENT rather than all-or-nothing.
+      //
+      // `saveEntry` throws when a send reached nobody, and one unreachable friend must not stop the
+      // others from getting theirs — the same rule the kit's fan-out follows internally. Each
+      // entry is stored locally before its send, so a failure here means "not delivered to this
+      // friend", never "lost".
+      const undelivered: string[] = [];
       for (const friend of recipients) {
-        await saveEntry('pix', {
-          conversationId: conversationId(myUserId, friend.userId),
-          recipientUsername: friend.username,
-          senderUsername: myUsername,
-          mediaRef: attachment.id,
-          contentKey: attachment.contentKey,
-          nonce: attachment.nonce,
-          mediaType,
-          caption,
-          ...(captionMeta ? { captionMeta } : {}),
-          displayDuration,
-        });
+        try {
+          await saveEntry('pix', {
+            conversationId: conversationId(myUserId, friend.userId),
+            recipientUsername: friend.username,
+            senderUsername: myUsername,
+            mediaRef: attachment.id,
+            contentKey: attachment.contentKey,
+            nonce: attachment.nonce,
+            mediaType,
+            caption,
+            ...(captionMeta ? { captionMeta } : {}),
+            displayDuration,
+          });
+        } catch (e) {
+          undelivered.push(friend.username);
+          logError('send.pix:' + friend.username, e);
+        }
       }
 
       // Post to story if selected — same shape as pix.
@@ -89,9 +100,15 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
       // Pop the whole capture flow (PhotoPreview + RecipientPicker) off the
       // stack so it can't be swiped/back-navigated into after sending.
       nav.popToTop();
-      toast.success(
-        `Sent to ${recipients.length} friend${recipients.length !== 1 ? 's' : ''}${includeStory ? ' + story' : ''}`,
-      );
+      if (undelivered.length > 0) {
+        // The entries exist locally; they just did not reach these friends. Saying so is the point —
+        // silently showing "Sent" for a message that got nowhere is the failure this replaced.
+        toast.error(`Not delivered to ${undelivered.join(', ')}`);
+      } else {
+        toast.success(
+          `Sent to ${recipients.length} friend${recipients.length !== 1 ? 's' : ''}${includeStory ? ' + story' : ''}`,
+        );
+      }
     } catch (e: any) {
       toast.error(e.message ?? String(e));
       setSending(false);

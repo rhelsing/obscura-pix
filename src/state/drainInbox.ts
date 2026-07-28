@@ -2,6 +2,7 @@ import { Obscura, type InboxRow } from '../native/ObscuraModule';
 import { planDrain, type DrainRow } from '../domain/drain';
 import type { Entry, MergeRule } from '../domain/merge';
 import { obscuraSchema } from '../models/schema';
+import { withEntryLock } from './entryLock';
 import { logError } from '../utils/log';
 
 /**
@@ -79,11 +80,16 @@ export interface DrainResult {
 /**
  * Drain up to `limit` rows. Returns what happened, so the caller can refresh the right slices.
  *
- * Safe to call concurrently with itself only in the sense that it cannot corrupt the store —
- * `entryPut` is idempotent for a given merge outcome. It is still worth not doing: two drains peek
- * the same rows and do the same work twice.
+ * Serialised against every other entry writer by `withEntryLock`. That is load-bearing, not
+ * defensive: this function READS the current state, decides, then writes — and a write landing
+ * inside that window is computed against a snapshot that never saw it, so the merge silently
+ * reverts it. See `entryLock.ts` for the concrete failure.
  */
 export async function drainInbox(limit = 50): Promise<DrainResult> {
+  return withEntryLock(() => drainInboxUnlocked(limit));
+}
+
+async function drainInboxUnlocked(limit: number): Promise<DrainResult> {
   const rows = await Obscura.inboxPeek(limit);
   if (rows.length === 0) return { written: 0, consumed: 0, discarded: 0, touched: [] };
 
