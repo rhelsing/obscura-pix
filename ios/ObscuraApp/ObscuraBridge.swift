@@ -350,6 +350,162 @@ extension ObscuraBridge {
 
     /// `ModelEntry` -> the `{ id, data, timestamp, authorDeviceId }` shape JS expects.
     /// (signature is intentionally omitted — matches Android + BRIDGE.md.)
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // The thin kit surface (obscura-proto/KIT_API.md §3, §5, §8.1).
+    //
+    // Three groups: drain the inbox, store what you make of it, send what you write. They exist
+    // ALONGSIDE the ORM methods above for the duration of §10 steps 2-3; the ORM ones go in step 4.
+    //
+    // Nothing here parses the payload: `data` moves as an opaque JSON STRING in both directions, so
+    // the bridge hands back byte-identical bytes rather than re-encoding a decoded map.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+
+    @objc(inboxPeek:resolver:rejecter:)
+    func inboxPeek(_ limit: NSNumber,
+                   resolver resolve: @escaping RCTPromiseResolveBlock,
+                   rejecter reject: @escaping RCTPromiseRejectBlock) {
+        Task {
+            do {
+                let rows = try await client.inbox.peek(limit: limit.intValue)
+                resolve(rows.map { ObscuraBridge.inboxRowDict($0) })
+            } catch {
+                rejectKit(reject, "INBOX_PEEK_ERROR", error)
+            }
+        }
+    }
+
+    @objc(inboxConsume:resolver:rejecter:)
+    func inboxConsume(_ ids: [NSNumber],
+                      resolver resolve: @escaping RCTPromiseResolveBlock,
+                      rejecter reject: @escaping RCTPromiseRejectBlock) {
+        Task {
+            do {
+                try await client.inbox.consume(ids.map { $0.int64Value })
+                resolve(nil)
+            } catch {
+                rejectKit(reject, "INBOX_CONSUME_ERROR", error)
+            }
+        }
+    }
+
+    /// Data loss the app chose deliberately (§3.3 rule 5) — the server's copy is already gone, so
+    /// nothing else holds these bytes. `reason` is required, not optional, because the kit logs it as
+    /// a security-relevant event and "" would make that log useless.
+    @objc(inboxDiscard:reason:resolver:rejecter:)
+    func inboxDiscard(_ ids: [NSNumber], reason: String,
+                      resolver resolve: @escaping RCTPromiseResolveBlock,
+                      rejecter reject: @escaping RCTPromiseRejectBlock) {
+        Task {
+            do {
+                try await client.inbox.discard(ids.map { $0.int64Value }, reason: reason)
+                resolve(nil)
+            } catch {
+                rejectKit(reject, "INBOX_DISCARD_ERROR", error)
+            }
+        }
+    }
+
+    @objc(inboxDepth:rejecter:)
+    func inboxDepth(_ resolve: @escaping RCTPromiseResolveBlock,
+                    rejecter reject: @escaping RCTPromiseRejectBlock) {
+        Task {
+            do {
+                resolve(try await client.inbox.depth())
+            } catch {
+                rejectKit(reject, "INBOX_DEPTH_ERROR", error)
+            }
+        }
+    }
+
+    @objc(entryPut:id:dataJson:sentAt:authorDeviceId:resolver:rejecter:)
+    func entryPut(_ model: String, id: String, dataJson: String, sentAt: NSNumber, authorDeviceId: String,
+                  resolver resolve: @escaping RCTPromiseResolveBlock,
+                  rejecter reject: @escaping RCTPromiseRejectBlock) {
+        Task {
+            do {
+                try await client.entries.put(model: model, entry: StoredEntry(
+                    id: id, data: dataJson,
+                    sentAt: sentAt.uint64Value, authorDeviceId: authorDeviceId
+                ))
+                resolve(nil)
+            } catch {
+                rejectKit(reject, "ENTRY_PUT_ERROR", error)
+            }
+        }
+    }
+
+    @objc(entryAll:resolver:rejecter:)
+    func entryAll(_ model: String,
+                  resolver resolve: @escaping RCTPromiseResolveBlock,
+                  rejecter reject: @escaping RCTPromiseRejectBlock) {
+        Task {
+            do {
+                let entries = try await client.entries.all(model: model)
+                resolve(entries.map {
+                    ["id": $0.id, "data": $0.data,
+                     "sentAt": Double($0.sentAt), "authorDeviceId": $0.authorDeviceId]
+                })
+            } catch {
+                rejectKit(reject, "ENTRY_ALL_ERROR", error)
+            }
+        }
+    }
+
+    @objc(entryDelete:id:resolver:rejecter:)
+    func entryDelete(_ model: String, id: String,
+                     resolver resolve: @escaping RCTPromiseResolveBlock,
+                     rejecter reject: @escaping RCTPromiseRejectBlock) {
+        Task {
+            do {
+                try await client.entries.delete(model: model, id: id)
+                resolve(nil)
+            } catch {
+                rejectKit(reject, "ENTRY_DELETE_ERROR", error)
+            }
+        }
+    }
+
+    /// The caller names the recipients (SPEC §0.4). The kit resolves no audience of its own.
+    @objc(sendEntry:modelKey:entryId:op:sentAt:payloadJson:resolver:rejecter:)
+    func sendEntry(_ recipientUserIds: [String], modelKey: String, entryId: String, op: String,
+                   sentAt: NSNumber, payloadJson: String,
+                   resolver resolve: @escaping RCTPromiseResolveBlock,
+                   rejecter reject: @escaping RCTPromiseRejectBlock) {
+        Task {
+            do {
+                try await client.send(
+                    to: recipientUserIds, modelKey: modelKey, entryId: entryId, op: op,
+                    sentAt: sentAt.uint64Value, payload: Data(payloadJson.utf8)
+                )
+                resolve(nil)
+            } catch {
+                rejectKit(reject, "SEND_ERROR", error)
+            }
+        }
+    }
+
+    /// `payload` crosses as a UTF-8 string, and that is only meaningful for kinds the app
+    /// understands. For a MODEL_SYNC it is the app's own JSON, byte-identical to what the sender
+    /// wrote. For an unknown arm (§4.1) it is arbitrary protobuf bytes and this is lossy — acceptable
+    /// precisely because §4.1 requires the app to `discard` a row whose `kind` it does not recognise
+    /// WITHOUT reading the payload.
+    static func inboxRowDict(_ r: InboxRecord) -> [String: Any] {
+        [
+            "id": Double(r.id),
+            "envelopeId": r.envelopeId,
+            "kind": r.kind,
+            "receivedAt": Double(r.receivedAt),
+            "senderUserId": r.senderUserId,
+            "senderDeviceId": r.senderDeviceId as Any,
+            "senderDisplayName": r.senderDisplayName as Any,
+            "modelKey": r.modelKey as Any,
+            "entryId": r.entryId as Any,
+            "op": r.op as Any,
+            "sentAt": r.sentAt.map { Double($0) } as Any,
+            "payload": String(decoding: r.payload, as: UTF8.self),
+        ]
+    }
+
     static func entryDict(_ e: ModelEntry) -> [String: Any] {
         ["id": e.id, "data": e.data, "timestamp": Double(e.timestamp), "authorDeviceId": e.authorDeviceId]
     }

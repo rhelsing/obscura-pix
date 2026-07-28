@@ -91,9 +91,10 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: rhelsing/ObscuraKit-Kotlin
-          # ObscuraKit-Kotlin main @ 2026-07-28 — the inbox (PR #49) plus the op-spelling fix
-          # (PR #50). See the block above before changing or removing this.
-          ref: 597a06a8fb2eb46da15e63e5355c6153bcadfa42
+          # ObscuraKit-Kotlin main @ 2026-07-28 — the inbox (#49), the op-spelling fix (#50),
+          # the review fixes + EntryStore (#51) and send() (#52). Bumped because this pix commit
+          # calls `entries` and `send`, which the previous pin predates. See the block above.
+          ref: 503ce22781b6d02e3b48e32f7a5cce2547f83372
           path: ObscuraKit-Kotlin
           # The kit generates protobuf code from its ./proto submodule; without
           # this the composite build fails codegen (Unresolved reference on
