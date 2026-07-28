@@ -175,6 +175,37 @@ export async function loadEntries(model: string): Promise<void> {
 }
 
 /**
+ * Drain the inbox and refresh whatever it changed.
+ *
+ * **Every trigger goes through here**, because a drain that only happens on one of them is how
+ * messages get stranded — see the triggers wired in `ObscuraBootstrap`.
+ */
+export async function drainAndRefresh(alsoRefresh?: string): Promise<void> {
+  try {
+    const result = await drainInboxFully();
+    const loaded = useStore.getState().entries;
+    const models = new Set(alsoRefresh ? [...result.touched, alsoRefresh] : result.touched);
+    for (const model of models) {
+      // Only slices a screen has actually displayed — a model nobody has opened does not need to
+      // be in memory.
+      if (loaded[model] !== undefined) {
+        await loadEntries(model).catch((e) => logError('entries.refresh:' + model, e));
+      }
+    }
+
+    // §3.3 rule 7 / §3.5: a number nobody reads is not observability. If the inbox is not empty
+    // after a full drain, the app has stopped keeping up — and the chain that ends in the SERVER
+    // silently evicting the user's oldest messages starts exactly here.
+    const depth = await Obscura.inboxDepth();
+    if (depth > 0) {
+      logError('inbox.notDrained', new Error(`${depth} row(s) still in the inbox after a full drain`));
+    }
+  } catch (e) {
+    logError('inbox.drain', e);
+  }
+}
+
+/**
  * Store an entry and send it to its audience, then refresh the model so the screen shows it.
  *
  * The single write path for the app, replacing `Obscura.createEntry` / `Obscura.upsertEntry`. It
@@ -194,6 +225,16 @@ export async function saveEntry(
   id?: string,
 ): Promise<string> {
   const s = useStore.getState();
+
+  // The session loads asynchronously after `authed` flips, and a write in that window is quietly
+  // wrong rather than failing: an empty `authorDeviceId` sorts LOWEST, so it loses every REPLACE
+  // tie-break on every device (SPEC §2.2), and an empty `selfUserId` disables the self-filter in
+  // `resolveAudience`. Both are invisible — the entry stores and sends, it just never wins and may
+  // name the author as a recipient. Refuse instead.
+  if (s.myUserId === '' || s.myDeviceId === '') {
+    throw new Error('saveEntry called before the session identity loaded — refusing to write');
+  }
+
   const entryId = await writeEntry({
     model,
     id,
@@ -249,9 +290,24 @@ export function ObscuraBootstrap(): null {
         }
         case 'connectionChanged':
           s._setConnState(event.state || 'disconnected');
+          // Reconnecting is when the server redelivers anything it did not see acked, so it is one
+          // of the moments the inbox is most likely to have grown.
+          if (event.state === 'connected') {
+            drainAndRefresh().catch((e) => logError('entries.drain:connected', e));
+          }
           return;
         case 'authStateChanged':
           if (event.state === 'loggedOut') s.reset();
+          return;
+
+        case 'appStateChanged':
+          // Coming back to the foreground. On iOS especially, the app may have been suspended while
+          // a Notification Service Extension decrypted, persisted and ACKED messages with no JS
+          // runtime alive to hear about it — so returning to foreground is the first chance the app
+          // has to see them at all.
+          if (event.state === 'active') {
+            drainAndRefresh().catch((e) => logError('entries.drain:foreground', e));
+          }
           return;
         case 'authFailed':
           s.reset();
@@ -269,23 +325,8 @@ export function ObscuraBootstrap(): null {
         case 'entriesChanged': {
           // DRAIN FIRST, then refresh. The event is only a wake-up — under the thin kit the data is
           // in the inbox, not in the event, and nothing reaches the entry store until the app moves
-          // it there. Refreshing without draining would show the user a store that has not changed.
-          //
-          // `drainInboxFully` reports which models it touched, so the refresh is scoped to those
-          // plus the model the event named, rather than refetching everything.
-          drainInboxFully()
-            .then((result) => {
-              const loaded = useStore.getState().entries;
-              const models = new Set([...result.touched, event.model]);
-              for (const model of models) {
-                // Only slices a screen has actually displayed — a model nobody has opened does not
-                // need to be in memory.
-                if (loaded[model] !== undefined) {
-                  loadEntries(model).catch((e) => logError('entries.refresh:' + model, e));
-                }
-              }
-            })
-            .catch((e) => logError('entries.drain:' + event.model, e));
+          // it there. Refreshing without draining would show a store that has not changed.
+          drainAndRefresh(event.model).catch((e) => logError('entries.drain:' + event.model, e));
           return;
         }
       }
@@ -313,6 +354,18 @@ export function ObscuraBootstrap(): null {
     Obscura.getConnectionState().then((cs) => {
       useStore.getState()._setConnState(cs || 'disconnected');
     }).catch((e) => logError('bootstrap.conn', e));
+
+    // COLD START. This is the trigger that matters most, and the one whose absence stranded
+    // messages: the push path (Android FCM, and an iOS NSE in Phase 4) decrypts, persists and ACKS
+    // with no JS runtime running, so no `messageReceived` is ever emitted for those rows. Without a
+    // drain here they sit in the inbox — invisible to the UI, with the server's copies already
+    // deleted — until some LATER live message happens to fire an event. If the friend never
+    // messages again, permanently.
+    //
+    // The emit is best-effort by design (SPEC §0.9 rule 4 permits dropping the NOTIFICATION, since
+    // the row is the delivery path) — which is exactly why the row must have a trigger that does not
+    // depend on the notification.
+    drainAndRefresh().catch((e) => logError('entries.drain:coldStart', e));
   }, [authed]);
 
   // Push permission — request once per session after first connect.
