@@ -8,7 +8,7 @@ import { logError } from '../utils/log';
 import { toast } from '../components/Toast';
 import { CheckIcon } from '../components/icons';
 import { Avatar } from '../components/Avatar';
-import { useSession } from '../state/store';
+import { useSession, saveEntry } from '../state/store';
 import type { RootStackScreenProps, RootStackParamList } from '../navigation/types';
 import { colors } from '../styles';
 
@@ -51,7 +51,7 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
 
       // Create Pix entry for each recipient.
       for (const friend of recipients) {
-        await Obscura.createEntry('pix', {
+        await saveEntry('pix', {
           conversationId: conversationId(myUserId, friend.userId),
           recipientUsername: friend.username,
           senderUsername: myUsername,
@@ -67,7 +67,7 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
 
       // Post to story if selected — same shape as pix.
       if (includeStory) {
-        await Obscura.createEntry('story', {
+        await saveEntry('story', {
           content: caption || '',
           authorUsername: myUsername,
           mediaRef: attachment.id,

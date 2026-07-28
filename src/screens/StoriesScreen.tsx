@@ -13,7 +13,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura, type ModelEntry } from '../native/ObscuraModule';
 import { logError } from '../utils/log';
 import { timeAgo as fmtTimeAgo } from '../utils/format';
-import { useSession, useModelEntries } from '../state/store';
+import { useSession, useModelEntries, saveEntry } from '../state/store';
 import type { RootStackParamList, RootStackScreenProps, StoryGroup } from '../navigation/types';
 import { colors } from '../styles';
 
@@ -64,10 +64,11 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
     if (!markViewed || !story) return;
     if (viewedIdsRef.current.has(story.id)) return;
     viewedIdsRef.current.add(story.id);
-    Obscura.upsertEntry('pix', story.id, {
-      ...story.data,
-      viewedAt: Date.now(),
-    }).catch((e) => logError('viewonce.upsert:' + story.id, e));
+    // The viewed-receipt: the RECIPIENT writes it, so this is the case where an equal-timestamp
+    // merge collision is real rather than theoretical (SPEC §2.2). It goes back to the same
+    // conversation audience the pix came from, which is why `conversationId` must stay in the data.
+    saveEntry('pix', { ...story.data, viewedAt: Date.now() }, story.id)
+      .catch((e) => logError('viewonce.upsert:' + story.id, e));
   }, [markViewed, story]);
 
   // Catch ALL exit paths uniformly (header back, hardware back, iOS

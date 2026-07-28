@@ -7,7 +7,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useHeaderHeight } from '@react-navigation/elements';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura, onObscuraEvent, conversationId, type ModelEntry } from '../native/ObscuraModule';
-import { useSession, useModelEntries } from '../state/store';
+import { useSession, useModelEntries, saveEntry } from '../state/store';
 import { toast } from '../components/Toast';
 import { SendIcon } from '../components/icons';
 import type { RootStackScreenProps, RootStackParamList } from '../navigation/types';
@@ -108,7 +108,7 @@ export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
     setText('');
     try {
       await Obscura.stopTyping(convId);
-      await Obscura.createEntry('directMessage', {
+      await saveEntry('directMessage', {
         conversationId: convId, content: msg, senderUsername: myUsername,
       });
     } catch (e: any) {

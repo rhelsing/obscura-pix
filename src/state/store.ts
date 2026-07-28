@@ -6,6 +6,8 @@ import {
   type Friend, type ConnectionState, type ModelEntry,
 } from '../native/ObscuraModule';
 import { obscuraSchema } from '../models/schema';
+import { drainInboxFully } from './drainInbox';
+import { writeEntry } from './writeEntry';
 import { logError } from '../utils/log';
 
 /**
@@ -130,19 +132,80 @@ export function useSession() {
  * on `messageReceived` / `entriesChanged` events (handled centrally in the
  * bootstrap subscription).
  *
- * Tombstones are filtered by the kit (LWWMap.all() drops isDeleted) — entries
- * returned here are always live. Don't add `!p.data._deleted` checks at call
- * sites; they'd be dead code.
+ * **Tombstones are the APP's concern now.** The kit's `EntryStore` has no opinion about `_deleted` —
+ * it stores opaque JSON — so the filter that used to live in `LWWMap.all()` lives here. A call site
+ * checking `_deleted` itself is no longer dead code, it is duplicate code.
  */
 export function useModelEntries(model: string): ModelEntry[] {
   const entries = useStore((s) => s.entries[model]);
   useEffect(() => {
     if (entries !== undefined) return;
-    Obscura.allEntries(model).then((es) => {
-      useStore.getState()._setEntries(model, es ?? []);
-    }).catch((e) => logError('entries.load:' + model, e));
+    loadEntries(model);
   }, [model, entries]);
   return entries ?? [];
+}
+
+/**
+ * Read a model's entries from the kit's entry store and parse them.
+ *
+ * `data` crosses the bridge as an opaque JSON string — the kit never parses it, which is what keeps
+ * nested objects and arrays intact — so the app parses it here, once, on the way in.
+ */
+export async function loadEntries(model: string): Promise<void> {
+  try {
+    const stored = await Obscura.entryAll(model);
+    const parsed: ModelEntry[] = [];
+    for (const e of stored) {
+      let data: Record<string, unknown>;
+      try {
+        data = JSON.parse(e.data) as Record<string, unknown>;
+      } catch {
+        // A row we cannot read is skipped rather than crashing the screen. It is a bug worth fixing,
+        // not a reason to show the user nothing.
+        logError('entries.parse:' + model, new Error(`entry ${e.id} is not JSON`));
+        continue;
+      }
+      if (data._deleted === true) continue;
+      parsed.push({ id: e.id, data, timestamp: e.sentAt, authorDeviceId: e.authorDeviceId });
+    }
+    useStore.getState()._setEntries(model, parsed);
+  } catch (e) {
+    logError('entries.load:' + model, e);
+  }
+}
+
+/**
+ * Store an entry and send it to its audience, then refresh the model so the screen shows it.
+ *
+ * The single write path for the app, replacing `Obscura.createEntry` / `Obscura.upsertEntry`. It
+ * exists at store level rather than as a bare `writeEntry` call because the audience needs the
+ * session — who I am, which device, who my friends are — and threading three fields through every
+ * screen would invite one of them being passed wrong.
+ *
+ * The refresh is explicit because it has to be: `entryPut` is a plain write and emits no event, so
+ * unlike the old `createEntry` nothing tells the UI by itself.
+ *
+ * Throws `DirectRoutingUnresolved` when the audience cannot be resolved — nothing is stored or sent.
+ * Callers should surface that: it means the entry reached nobody.
+ */
+export async function saveEntry(
+  model: string,
+  data: Record<string, unknown>,
+  id?: string,
+): Promise<string> {
+  const s = useStore.getState();
+  const entryId = await writeEntry({
+    model,
+    id,
+    data,
+    selfUserId: s.myUserId,
+    myDeviceId: s.myDeviceId,
+    // `s.friends` is already the accepted set; `resolveAudience` re-checks status anyway, because a
+    // resolver that trusts its caller to have filtered is one refactor away from a leak.
+    friends: s.friends,
+  });
+  await loadEntries(model);
+  return entryId;
 }
 
 // ─── Bootstrap ───────────────────────────────────────────
@@ -204,12 +267,25 @@ export function ObscuraBootstrap(): null {
         }
         case 'messageReceived':
         case 'entriesChanged': {
-          // Refresh only slices we've actually loaded — avoids fetching
-          // models no screen has displayed yet.
-          if (s.entries[event.model] === undefined) return;
-          Obscura.allEntries(event.model).then((es) => {
-            useStore.getState()._setEntries(event.model, es ?? []);
-          }).catch((e) => logError('entries.refresh:' + event.model, e));
+          // DRAIN FIRST, then refresh. The event is only a wake-up — under the thin kit the data is
+          // in the inbox, not in the event, and nothing reaches the entry store until the app moves
+          // it there. Refreshing without draining would show the user a store that has not changed.
+          //
+          // `drainInboxFully` reports which models it touched, so the refresh is scoped to those
+          // plus the model the event named, rather than refetching everything.
+          drainInboxFully()
+            .then((result) => {
+              const loaded = useStore.getState().entries;
+              const models = new Set([...result.touched, event.model]);
+              for (const model of models) {
+                // Only slices a screen has actually displayed — a model nobody has opened does not
+                // need to be in memory.
+                if (loaded[model] !== undefined) {
+                  loadEntries(model).catch((e) => logError('entries.refresh:' + model, e));
+                }
+              }
+            })
+            .catch((e) => logError('entries.drain:' + event.model, e));
           return;
         }
       }
