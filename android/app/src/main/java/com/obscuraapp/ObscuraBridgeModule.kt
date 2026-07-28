@@ -1146,7 +1146,11 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
             putString("modelKey", r.modelKey)
             putString("entryId", r.entryId)
             putString("op", r.op)
-            if (r.sentAt != null) putDouble("sentAt", r.sentAt.toDouble()) else putNull("sentAt")
+            // Bound to a local first: `sentAt` is a nullable property from ANOTHER module, so
+            // Kotlin refuses to smart-cast it — the kit could, in principle, change it between the
+            // null check and the read.
+            val sentAt = r.sentAt
+            if (sentAt != null) putDouble("sentAt", sentAt.toDouble()) else putNull("sentAt")
             putString("payload", String(r.payload))
         }
 
