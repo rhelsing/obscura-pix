@@ -32,19 +32,28 @@
  * kept in step with two real ones. If a test needs the fake to grow a behaviour, check first that
  * the behaviour is part of the *bridge contract* and not part of the kit.
  *
- * ## Scope note: no inbox methods yet, on purpose
+ * ## The thin kit surface
  *
- * `peek` / `consume` / `discard` / `inboxDepth` are absent because **the kits have not designed them
- * yet** — `KIT_API.md` §10 has Kotlin designing first and Swift porting the proven shape. Adding
- * them here would be designing the API inside its own test double, which is exactly backwards. When
- * the Kotlin shape lands, they slot in beside `allEntries` and the `__deliver*` controls below are
- * the model for how to drive them.
+ * `inboxPeek` / `inboxConsume` / `inboxDiscard` / `inboxDepth`, `entryPut` / `entryAll` /
+ * `entryDelete`, and `sendEntry` mirror the shape both kits shipped (`KIT_API.md` §3, §5, §8.1) —
+ * added only AFTER the kits designed it, never before, so the double never becomes the place an API
+ * is invented.
+ *
+ * The properties that matter are modelled faithfully because the app's correctness depends on them:
+ * `inboxPeek` is side-effect free, ids are monotonic and never reused, `entryPut` is a BLIND upsert
+ * (the app decides who wins), and `sendEntry` produces no local row — the sender writes its own copy.
  */
 
-import type { Friend, ModelEntry } from '../ObscuraModule';
+import type { Friend, InboxRow, ModelEntry, StoredEntry } from '../ObscuraModule';
 
-/** A stored entry plus the merge metadata the kit keeps in columns beside the payload. */
-interface StoredEntry extends ModelEntry {
+/**
+ * An ORM-era row: a `ModelEntry` plus the tombstone flag the old engine kept.
+ *
+ * Named `OrmRow`, not `StoredEntry`, because `StoredEntry` is the thin kit's public type for the
+ * NEW entry store and the two are different shapes — that one carries `data` as an opaque JSON
+ * string, this one as a parsed map. They coexist only until §10 step 4.
+ */
+interface OrmRow extends ModelEntry {
   deleted?: boolean;
 }
 
@@ -70,7 +79,7 @@ function ruleFor(sync: unknown): MergeRule {
  * lines is the price of the two staying independently checkable, and `merge.vectors.test.ts` pins
  * the real contract for both against `obscura-proto/conformance/merge.json`.
  */
-function winner(rule: MergeRule, existing: StoredEntry, incoming: StoredEntry): StoredEntry {
+function winner(rule: MergeRule, existing: OrmRow, incoming: OrmRow): OrmRow {
   if (rule === 'APPEND') return existing;
   if (incoming.timestamp > existing.timestamp) return incoming;
   if (incoming.timestamp < existing.timestamp) return existing;
@@ -93,7 +102,7 @@ export class FakeObscuraBridge {
 
   // ─── Stores ────────────────────────────────────────────
   private schema: Record<string, any> = {};
-  private entries = new Map<string, Map<string, StoredEntry>>();
+  private entries = new Map<string, Map<string, OrmRow>>();
   private friends: Friend[] = [];
   private listeners = new Set<(event: any) => void>();
   private debugLog: string[] = [];
@@ -128,13 +137,102 @@ export class FakeObscuraBridge {
     this.__calls.push(method);
   }
 
-  private table(model: string): Map<string, StoredEntry> {
+  private table(model: string): Map<string, OrmRow> {
     let t = this.entries.get(model);
     if (!t) {
       t = new Map();
       this.entries.set(model, t);
     }
     return t;
+  }
+
+  // ─── The thin kit surface ──────────────────────────────────────────────
+
+  private inbox: InboxRow[] = [];
+  /** Never reused, exactly like the kits' `AUTOINCREMENT`: a drained inbox must not reissue ids. */
+  private nextInboxId = 1;
+  private storedEntries = new Map<string, Map<string, StoredEntry>>();
+
+  /** What `sendEntry` put on the wire, in order. The app's outgoing audience decisions, observable. */
+  readonly __sent: Array<{
+    recipientUserIds: string[]; modelKey: string; entryId: string;
+    op: string; sentAt: number; payloadJson: string;
+  }> = [];
+
+  /** Rows the app discarded, with the reason. Data loss must be visible in a test, not silent. */
+  readonly __discarded: Array<{ ids: number[]; reason: string }> = [];
+
+  private entryTable(model: string): Map<string, StoredEntry> {
+    let t = this.storedEntries.get(model);
+    if (!t) {
+      t = new Map();
+      this.storedEntries.set(model, t);
+    }
+    return t;
+  }
+
+  async inboxPeek(limit: number): Promise<InboxRow[]> {
+    this.record('inboxPeek');
+    this.checkFailure('inboxPeek');
+    // Side-effect free (§3.3 rule 3): peeking twice without consuming returns the same rows. Copies
+    // are returned so a test mutating a row cannot corrupt the store and mask a bug.
+    return this.inbox.slice(0, limit).map((r) => ({ ...r }));
+  }
+
+  async inboxConsume(ids: number[]): Promise<void> {
+    this.record('inboxConsume');
+    this.checkFailure('inboxConsume');
+    const drop = new Set(ids);
+    this.inbox = this.inbox.filter((r) => !drop.has(r.id));
+  }
+
+  async inboxDiscard(ids: number[], reason: string): Promise<void> {
+    this.record('inboxDiscard');
+    this.checkFailure('inboxDiscard');
+    if (ids.length === 0) return; // an empty discard is not a data-loss event
+    this.__discarded.push({ ids, reason });
+    await this.inboxConsume(ids);
+  }
+
+  async inboxDepth(): Promise<number> {
+    this.record('inboxDepth');
+    this.checkFailure('inboxDepth');
+    return this.inbox.length;
+  }
+
+  async entryPut(model: string, id: string, dataJson: string, sentAt: number, authorDeviceId: string): Promise<void> {
+    this.record('entryPut');
+    this.checkFailure('entryPut');
+    if (typeof dataJson !== 'string') {
+      throw new Error('entryPut expects a JSON string across the bridge, got ' + typeof dataJson);
+    }
+    // BLIND, exactly like the kits: an older write overwrites a newer one, because by the time a
+    // write gets here the app has already decided who wins. A double that merged would hide an app
+    // that forgot to.
+    this.entryTable(model).set(id, { id, data: dataJson, sentAt, authorDeviceId });
+  }
+
+  async entryAll(model: string): Promise<StoredEntry[]> {
+    this.record('entryAll');
+    this.checkFailure('entryAll');
+    return [...this.entryTable(model).values()].map((e) => ({ ...e }));
+  }
+
+  async entryDelete(model: string, id: string): Promise<void> {
+    this.record('entryDelete');
+    this.checkFailure('entryDelete');
+    this.entryTable(model).delete(id);
+  }
+
+  async sendEntry(
+    recipientUserIds: string[], modelKey: string, entryId: string,
+    op: string, sentAt: number, payloadJson: string,
+  ): Promise<void> {
+    this.record('sendEntry');
+    this.checkFailure('sendEntry');
+    // No local row and no inbox row — §5 property 2. The sender writes its own copy, so a test that
+    // forgets to will see an empty store rather than a silently-correct one.
+    this.__sent.push({ recipientUserIds, modelKey, entryId, op, sentAt, payloadJson });
   }
 
   // ─── Test controls (`__` prefix — NOT part of the native surface) ───
@@ -156,7 +254,7 @@ export class FakeObscuraBridge {
     model: string,
     entry: { id: string; data: Record<string, any>; timestamp?: number; authorDeviceId?: string },
   ): void {
-    const incoming: StoredEntry = {
+    const incoming: OrmRow = {
       id: entry.id,
       data: entry.data,
       timestamp: entry.timestamp ?? this.nextTimestamp(),
@@ -172,6 +270,32 @@ export class FakeObscuraBridge {
   __deliverEntryTwice(model: string, entry: Parameters<FakeObscuraBridge['__deliverEntry']>[1]): void {
     this.__deliverEntry(model, entry);
     this.__deliverEntry(model, entry);
+  }
+
+  /**
+   * Simulate a message arriving: the kit persists an inbox row, then notifies. Merge-before-notify
+   * is the kit's order and the reason "event → drain" is safe.
+   *
+   * Defaults describe a well-formed MODEL_SYNC, so a test only states what it is varying.
+   */
+  __deliverInbox(row: Partial<InboxRow> & { payload: string }): InboxRow {
+    const full: InboxRow = {
+      id: this.nextInboxId++,
+      envelopeId: `env_${this.nextInboxId}`,
+      kind: 'MODEL_SYNC',
+      receivedAt: this.nextTimestamp(),
+      senderUserId: 'user_peer',
+      senderDeviceId: 'device_peer',
+      senderDisplayName: 'peer',
+      modelKey: 'directMessage',
+      entryId: `entry_${this.nextInboxId}`,
+      op: 'CREATE',
+      sentAt: this.nextTimestamp(),
+      ...row,
+    };
+    this.inbox.push(full);
+    this.__emit({ type: 'messageReceived', model: full.modelKey ?? '' });
+    return full;
   }
 
   /** Set the friend graph and emit `friendsUpdated`, as the kit does when it changes. */
@@ -193,7 +317,7 @@ export class FakeObscuraBridge {
   }
 
   /** Raw entry table for a model, for assertions the public API cannot express. */
-  __rawEntries(model: string): StoredEntry[] {
+  __rawEntries(model: string): OrmRow[] {
     return [...this.table(model).values()];
   }
 
@@ -208,6 +332,11 @@ export class FakeObscuraBridge {
   __reset(): void {
     this.schema = {};
     this.entries.clear();
+    this.inbox.length = 0;
+    this.nextInboxId = 1;
+    this.storedEntries.clear();
+    this.__sent.length = 0;
+    this.__discarded.length = 0;
     this.friends = [];
     this.listeners.clear();
     this.debugLog.length = 0;
@@ -301,6 +430,11 @@ export class FakeObscuraBridge {
     this.record('logout');
     this.checkFailure('logout');
     this.entries.clear();
+    this.inbox.length = 0;
+    this.nextInboxId = 1;
+    this.storedEntries.clear();
+    this.__sent.length = 0;
+    this.__discarded.length = 0;
     this.friends = [];
     this.__setConnectionState('disconnected');
     this.__setAuthState('loggedOut');
@@ -399,7 +533,7 @@ export class FakeObscuraBridge {
       throw new Error('createEntry expects a JSON string across the bridge, got ' + typeof dataJson);
     }
     const timestamp = this.nextTimestamp();
-    const entry: StoredEntry = {
+    const entry: OrmRow = {
       id: `${model}_${timestamp}`,
       data: JSON.parse(dataJson),
       timestamp,
@@ -418,7 +552,7 @@ export class FakeObscuraBridge {
     }
     const table = this.table(model);
     const existing = table.get(id);
-    const incoming: StoredEntry = {
+    const incoming: OrmRow = {
       id,
       // Upsert replaces the payload wholesale — it is not a field-level patch. Matching that here
       // keeps a caller that assumes patch semantics from passing under test and failing on device.

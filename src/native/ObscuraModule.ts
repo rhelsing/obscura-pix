@@ -37,6 +37,43 @@ export interface AttachmentRef {
   nonce: string;
 }
 
+/**
+ * One row from the kit's durable inbox (`obscura-proto/KIT_API.md` §3.1).
+ *
+ * The kit stores bytes it cannot read. `payload` is the app's own JSON for kinds the app
+ * understands; for an unknown `kind` it is arbitrary bytes rendered as a lossy string, which is safe
+ * only because §4.1 requires such a row to be **discarded without being read**.
+ */
+export interface InboxRow {
+  /** Monotonic per install. Drain order. Not a message id. */
+  id: number;
+  /** Server-assigned envelope id. The kit's dedupe key; the app does not need it. */
+  envelopeId: string;
+  /** The payload arm, e.g. `MODEL_SYNC`. `UNKNOWN` for an arm the kit does not know. */
+  kind: string;
+  receivedAt: number;
+  /** Authenticated (SPEC §0.10). */
+  senderUserId: string;
+  /** The device whose Signal session decrypted this — cryptographic attribution, and the merge tie-break. */
+  senderDeviceId: string | null;
+  /** Resolved from the kit's friend graph, never from the payload (SPEC §0.5). Null if not a friend. */
+  senderDisplayName: string | null;
+  /** `ModelSync`-derived, so null for every other kind. */
+  modelKey: string | null;
+  entryId: string | null;
+  op: string | null;
+  sentAt: number | null;
+  payload: string;
+}
+
+/** One stored entry (`KIT_API.md` §8.1). `data` is the app's JSON, stored verbatim. */
+export interface StoredEntry {
+  id: string;
+  data: string;
+  sentAt: number;
+  authorDeviceId: string;
+}
+
 export type ConnectionState = 'disconnected' | 'connecting' | 'reconnecting' | 'connected';
 export type AuthState = 'loggedOut' | 'authenticated' | 'pendingApproval';
 export type AppLifecycleState = 'active' | 'background';
@@ -127,6 +164,44 @@ export const Obscura = {
 
   deleteEntry: (model: string, id: string): Promise<void> =>
     Bridge.deleteEntry(model, id),
+
+  // ─── The thin kit surface (obscura-proto/KIT_API.md §3, §5, §8.1) ───────
+  //
+  // Runs alongside the ORM methods above for §10 steps 2-3; those go in step 4.
+  //
+  // `inbox` is how messages arrive, `entries` is where the app keeps what it made of them, and
+  // `sendEntry` is how they leave. Nothing here parses a payload on either side of the bridge.
+
+  /** Rows waiting, oldest first. Side-effect free — peeking twice returns the same rows. */
+  inboxPeek: (limit = 50): Promise<InboxRow[]> => Bridge.inboxPeek(limit),
+
+  /** Drop rows the app has durably processed. Idempotent; a subset is fine. */
+  inboxConsume: (ids: number[]): Promise<void> => Bridge.inboxConsume(ids),
+
+  /**
+   * Drop rows the app can NEVER process. This is data loss chosen deliberately — the server's copy
+   * is already gone — so `reason` is required and the kit logs it as a security event (§3.3 rule 5).
+   */
+  inboxDiscard: (ids: number[], reason: string): Promise<void> =>
+    Bridge.inboxDiscard(ids, reason),
+
+  /** How many rows are waiting. Unbounded growth means the app stopped draining (§3.3 rule 7). */
+  inboxDepth: (): Promise<number> => Bridge.inboxDepth(),
+
+  /** Blind upsert — the APP decides who wins, so merge before calling this (§8.1). */
+  entryPut: (model: string, id: string, dataJson: string, sentAt: number, authorDeviceId: string): Promise<void> =>
+    Bridge.entryPut(model, id, dataJson, sentAt, authorDeviceId),
+
+  entryAll: (model: string): Promise<StoredEntry[]> => Bridge.entryAll(model),
+
+  entryDelete: (model: string, id: string): Promise<void> => Bridge.entryDelete(model, id),
+
+  /** The caller names the recipients (SPEC §0.4). The kit resolves no audience of its own. */
+  sendEntry: (
+    recipientUserIds: string[], modelKey: string, entryId: string,
+    op: string, sentAt: number, payloadJson: string,
+  ): Promise<void> =>
+    Bridge.sendEntry(recipientUserIds, modelKey, entryId, op, sentAt, payloadJson),
 
   // Signals (typing)
   sendTyping: (conversationId: string): Promise<void> =>

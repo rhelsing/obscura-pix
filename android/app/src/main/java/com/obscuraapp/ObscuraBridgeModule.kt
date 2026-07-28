@@ -978,6 +978,189 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
             putString("status", status)
         }
 
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // The thin kit surface (obscura-proto/KIT_API.md §3, §5, §8.1).
+    //
+    // Three groups: drain the inbox, store what you make of it, send what you write. They exist
+    // ALONGSIDE the ORM methods above for the duration of §10 steps 2-3; the ORM ones go in step 4.
+    //
+    // Note what does NOT cross here: nothing parses the payload. `data` moves as an opaque JSON
+    // STRING in both directions, which is a deliberate departure from `entryToMap` above — that
+    // helper flattens a map field-by-field and falls back to `v.toString()` for anything that is not
+    // a String/Number/Boolean, so nested objects and arrays arrive as their Kotlin toString. The app
+    // owns the JSON; the bridge should hand it back byte-identical, not re-encode it.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+
+    @ReactMethod
+    fun inboxPeek(limit: Double, promise: Promise) {
+        scope.launch {
+            try {
+                val rows = requireClient().inbox.peek(limit.toInt())
+                val arr = Arguments.createArray()
+                for (r in rows) arr.pushMap(inboxRowToMap(r))
+                promise.resolve(arr)
+            } catch (e: Exception) {
+                promise.rejectKit("INBOX_PEEK_ERROR", e)
+            }
+        }
+    }
+
+    @ReactMethod
+    fun inboxConsume(ids: ReadableArray, promise: Promise) {
+        scope.launch {
+            try {
+                requireClient().inbox.consume(ids.toLongList())
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.rejectKit("INBOX_CONSUME_ERROR", e)
+            }
+        }
+    }
+
+    /**
+     * Data loss the app chose deliberately (§3.3 rule 5) — the server's copy is already gone, so
+     * nothing else holds these bytes. `reason` is required, not optional, because the kit logs it as
+     * a security-relevant event and "" would make that log useless.
+     */
+    @ReactMethod
+    fun inboxDiscard(ids: ReadableArray, reason: String, promise: Promise) {
+        scope.launch {
+            try {
+                requireClient().inbox.discard(ids.toLongList(), reason)
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.rejectKit("INBOX_DISCARD_ERROR", e)
+            }
+        }
+    }
+
+    @ReactMethod
+    fun inboxDepth(promise: Promise) {
+        scope.launch {
+            try {
+                promise.resolve(requireClient().inbox.depth().toDouble())
+            } catch (e: Exception) {
+                promise.rejectKit("INBOX_DEPTH_ERROR", e)
+            }
+        }
+    }
+
+    @ReactMethod
+    fun entryPut(model: String, id: String, dataJson: String, sentAt: Double, authorDeviceId: String, promise: Promise) {
+        scope.launch {
+            try {
+                requireClient().entries.put(
+                    model,
+                    com.obscura.kit.stores.StoredEntry(
+                        id = id,
+                        data = dataJson,
+                        sentAt = sentAt.toLong(),
+                        authorDeviceId = authorDeviceId,
+                    )
+                )
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.rejectKit("ENTRY_PUT_ERROR", e)
+            }
+        }
+    }
+
+    @ReactMethod
+    fun entryAll(model: String, promise: Promise) {
+        scope.launch {
+            try {
+                val arr = Arguments.createArray()
+                for (e in requireClient().entries.all(model)) {
+                    arr.pushMap(Arguments.createMap().apply {
+                        putString("id", e.id)
+                        putString("data", e.data)
+                        putDouble("sentAt", e.sentAt.toDouble())
+                        putString("authorDeviceId", e.authorDeviceId)
+                    })
+                }
+                promise.resolve(arr)
+            } catch (e: Exception) {
+                promise.rejectKit("ENTRY_ALL_ERROR", e)
+            }
+        }
+    }
+
+    @ReactMethod
+    fun entryDelete(model: String, id: String, promise: Promise) {
+        scope.launch {
+            try {
+                requireClient().entries.delete(model, id)
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.rejectKit("ENTRY_DELETE_ERROR", e)
+            }
+        }
+    }
+
+    /** The caller names the recipients (SPEC §0.4). The kit resolves no audience of its own. */
+    @ReactMethod
+    fun sendEntry(
+        recipientUserIds: ReadableArray,
+        modelKey: String,
+        entryId: String,
+        op: String,
+        sentAt: Double,
+        payloadJson: String,
+        promise: Promise,
+    ) {
+        scope.launch {
+            try {
+                requireClient().send(
+                    recipientUserIds = recipientUserIds.toStringList(),
+                    modelKey = modelKey,
+                    entryId = entryId,
+                    op = op,
+                    sentAt = sentAt.toLong(),
+                    payload = payloadJson.toByteArray(),
+                )
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.rejectKit("SEND_ERROR", e)
+            }
+        }
+    }
+
+    /**
+     * `payload` crosses as a UTF-8 STRING, and that is only meaningful for kinds the app understands.
+     *
+     * For a MODEL_SYNC it is the app's own JSON, byte-identical to what the sender wrote. For an
+     * unknown arm (§4.1) it is arbitrary protobuf bytes and this string is lossy — which is
+     * acceptable precisely because §4.1 requires the app to `discard` a row whose `kind` it does not
+     * recognise WITHOUT reading the payload. A row the app must not read cannot be corrupted by an
+     * encoding it never applies.
+     */
+    private fun inboxRowToMap(r: com.obscura.kit.stores.InboxRecord): WritableMap =
+        Arguments.createMap().apply {
+            putDouble("id", r.id.toDouble())
+            putString("envelopeId", r.envelopeId)
+            putString("kind", r.kind)
+            putDouble("receivedAt", r.receivedAt.toDouble())
+            putString("senderUserId", r.senderUserId)
+            putString("senderDeviceId", r.senderDeviceId)
+            putString("senderDisplayName", r.senderDisplayName)
+            putString("modelKey", r.modelKey)
+            putString("entryId", r.entryId)
+            putString("op", r.op)
+            if (r.sentAt != null) putDouble("sentAt", r.sentAt.toDouble()) else putNull("sentAt")
+            putString("payload", String(r.payload))
+        }
+
+    /**
+     * Inbox ids are `Long`, and the RN bridge has no integer type — everything numeric arrives as a
+     * double. That is exact up to 2^53, and these are per-install row counters, so the conversion is
+     * safe for any inbox that could physically exist.
+     */
+    private fun ReadableArray.toLongList(): List<Long> =
+        (0 until size()).map { getDouble(it).toLong() }
+
+    private fun ReadableArray.toStringList(): List<String> =
+        (0 until size()).mapNotNull { getString(it) }
+
     private fun entryToMap(entry: OrmEntry): WritableMap =
         Arguments.createMap().apply {
             putString("id", entry.id)

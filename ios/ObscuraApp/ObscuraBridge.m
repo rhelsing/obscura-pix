@@ -91,4 +91,30 @@ RCT_EXTERN_METHOD(requestPushPermission:(RCTPromiseResolveBlock)resolve rejecter
 RCT_EXTERN_METHOD(registerPushToken:(NSString *)token
                   resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
+// ── The thin kit surface (obscura-proto/KIT_API.md §3, §5, §8.1) ──────────
+//
+// These MUST mirror the @objc selectors in ObscuraBridge.swift exactly. A Swift @objc method with
+// no RCT_EXTERN_METHOD here is invisible to React Native — it compiles, ships, and the call
+// silently does nothing at runtime.
+RCT_EXTERN_METHOD(inboxPeek:(nonnull NSNumber *)limit
+                  resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(inboxConsume:(NSArray *)ids
+                  resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(inboxDiscard:(NSArray *)ids reason:(NSString *)reason
+                  resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(inboxDepth:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(entryPut:(NSString *)model id:(NSString *)id dataJson:(NSString *)dataJson
+                  sentAt:(nonnull NSNumber *)sentAt authorDeviceId:(NSString *)authorDeviceId
+                  resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(entryAll:(NSString *)model
+                  resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(entryDelete:(NSString *)model id:(NSString *)id
+                  resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(sendEntry:(NSArray *)recipientUserIds modelKey:(NSString *)modelKey
+                  entryId:(NSString *)entryId op:(NSString *)op sentAt:(nonnull NSNumber *)sentAt
+                  payloadJson:(NSString *)payloadJson
+                  resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+
 @end
