@@ -38,18 +38,6 @@ RCT_EXTERN_METHOD(validateAndApproveLink:(NSString *)code
                   resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
 // ── ORM (task #7) ─────────────────────────────────────────────────────────
-RCT_EXTERN_METHOD(defineModels:(NSString *)schemaJson
-                  resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
-RCT_EXTERN_METHOD(createEntry:(NSString *)model dataJson:(NSString *)dataJson
-                  resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
-RCT_EXTERN_METHOD(upsertEntry:(NSString *)model id:(NSString *)id dataJson:(NSString *)dataJson
-                  resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
-RCT_EXTERN_METHOD(queryEntries:(NSString *)model conditionsJson:(NSString *)conditionsJson
-                  resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
-RCT_EXTERN_METHOD(allEntries:(NSString *)model
-                  resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
-RCT_EXTERN_METHOD(deleteEntry:(NSString *)model id:(NSString *)id
-                  resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
 // ── Typing signals (task #8) ──────────────────────────────────────────────
 RCT_EXTERN_METHOD(sendTyping:(NSString *)conversationId

@@ -5,7 +5,6 @@ import {
   Obscura, onObscuraEvent,
   type Friend, type ConnectionState, type ModelEntry,
 } from '../native/ObscuraModule';
-import { obscuraSchema } from '../models/schema';
 import { drainInboxFully } from './drainInbox';
 import { writeEntry } from './writeEntry';
 import { logError } from '../utils/log';
@@ -17,7 +16,7 @@ import { logError } from '../utils/log';
  *   - useSession()           — session shape used by every screen
  *   - useModelEntries(model) — auto-refreshing entries for a single model
  *
- * Side effects (event subscription, defineModels, push permission) live in
+ * Side effects (event subscription, inbox drain, push permission) live in
  * useObscuraBootstrap which is mounted once at the App root.
  */
 
@@ -129,7 +128,7 @@ export function useSession() {
 
 /**
  * All entries for `model`, auto-loading on first call and auto-refreshing
- * on `messageReceived` / `entriesChanged` events (handled centrally in the
+ * on `messageReceived` (handled centrally in the
  * bootstrap subscription).
  *
  * **Tombstones are the APP's concern now.** The kit's `EntryStore` has no opinion about `_deleted` —
@@ -253,7 +252,7 @@ export async function saveEntry(
 
 /**
  * Mount this once at the app root. Wires every native event to a store
- * update, gates the initial defineModels / state pulls behind `authed`,
+ * update, gates the initial state pulls behind `authed`,
  * and requests push permission once per session after first connect.
  *
  * The hook returns null so it can be rendered as a component:
@@ -321,8 +320,7 @@ export function ObscuraBootstrap(): null {
           });
           return;
         }
-        case 'messageReceived':
-        case 'entriesChanged': {
+        case 'messageReceived': {
           // DRAIN FIRST, then refresh. The event is only a wake-up — under the thin kit the data is
           // in the inbox, not in the event, and nothing reaches the entry store until the app moves
           // it there. Refreshing without draining would show a store that has not changed.
@@ -338,9 +336,10 @@ export function ObscuraBootstrap(): null {
   const authed = useStore((s) => s.authed);
   useEffect(() => {
     if (!authed) return;
-    Obscura.defineModels(obscuraSchema).catch((e: unknown) => {
-      console.warn('[session] defineModels failed:', e);
-    });
+    // `defineModels` is gone: the kit no longer parses an application schema (SPEC §0.4), so there
+    // is nothing to define. `obscuraSchema` is still the app's source of truth — `drainInbox` reads
+    // its `sync` strategy for merge rules and `writeEntry` reads its `audience` — it simply never
+    // crosses the bridge now.
     Obscura.getUserId().then((id) => useStore.getState()._setUserId(id || ''));
     Obscura.getUsername().then((name) => useStore.getState()._setUsername(name || ''));
     Obscura.getDeviceId().then((id) => useStore.getState()._setDeviceId(id || ''));

@@ -1,32 +1,34 @@
+import { Obscura, onObscuraEvent, conversationId, type ObscuraEvent } from '../ObscuraModule';
+import { getFakeBridge } from '../__fixtures__/reactNativeMock';
+
 /**
  * The bridge boundary, exercised through the real `ObscuraModule.ts` against the in-memory kit
  * double.
  *
- * **Every one of these assertions was unreachable before the double existed.** Under the old noop
- * `Proxy`, `Obscura.createEntry(...)` resolved `null` and `onObscuraEvent(...)` returned a no-op
- * unsubscribe having subscribed to nothing — so a test of any of this would have passed while
- * asserting nothing. The first test below is the proof of that, and it is deliberately first.
+ * **Every assertion here was unreachable before the double existed.** Under the old noop `Proxy`,
+ * every bridge call resolved `null` and `onObscuraEvent` returned a no-op unsubscribe having
+ * subscribed to nothing — so a test of any of this would have passed while asserting nothing. The
+ * first test below is the proof of that, and it is deliberately first.
+ *
+ * Rewritten 2026-07-30: these used to drive `defineModels` / `createEntry` / `allEntries`, which no
+ * longer exist on either kit (§10 step 4). The same properties are now checked against the surface
+ * that replaced them — `entryPut` / `entryAll` / `inboxPeek` / `sendEntry`.
  */
-
-import { Obscura, onObscuraEvent, conversationId, type ObscuraEvent } from '../ObscuraModule';
-import { getFakeBridge } from '../__fixtures__/reactNativeMock';
-import { obscuraSchema } from '../../models/schema';
 
 const bridge = getFakeBridge();
 
 describe('the double is actually installed', () => {
   /**
    * The regression this whole fixture exists to prevent: if `ObscuraModule` ever falls back to its
-   * noop `Proxy` again — a changed module name, a broken `jest.mock`, a renamed export — every
-   * other test in this file keeps passing while asserting nothing at all. This one fails instead.
+   * noop `Proxy` again — a changed module name, a broken `jest.mock`, a renamed export — every other
+   * test in this file keeps passing while asserting nothing at all. This one fails instead.
    */
   it('resolves real values, not the noop Proxy that resolves null', async () => {
-    await Obscura.defineModels(obscuraSchema);
-    const entry = await Obscura.createEntry('directMessage', { content: 'hi' });
+    await Obscura.entryPut('directMessage', 'dm_1', JSON.stringify({ content: 'hi' }), 1_000, 'device_a');
 
-    expect(entry).not.toBeNull();
-    expect(entry.id).toEqual(expect.any(String));
-    expect(bridge.__calls).toContain('createEntry');
+    const stored = await Obscura.entryAll('directMessage');
+    expect(stored).toHaveLength(1);
+    expect(bridge.__calls).toContain('entryPut');
   });
 
   it('delivers events, which the noop emitter never did', () => {
@@ -43,8 +45,8 @@ describe('the double is actually installed', () => {
     const seen: ObscuraEvent[] = [];
     const off = onObscuraEvent((e) => seen.push(e));
 
-    // Deliver one BEFORE unsubscribing. Without it this test passes vacuously in a world where no
-    // event is ever delivered — which is precisely the world this fixture exists to leave behind.
+    // Deliver one BEFORE unsubscribing. Without it this passes vacuously in a world where no event
+    // is ever delivered — which is precisely the world this fixture exists to leave behind.
     bridge.__setConnectionState('connecting');
     expect(seen).toHaveLength(1);
 
@@ -58,173 +60,125 @@ describe('the double is actually installed', () => {
 
 describe('the JSON boundary', () => {
   /**
-   * `defineModels`, `createEntry`, `upsertEntry` and `queryEntries` stringify their payload in the
-   * wrapper and the native side parses it. The double rejects a non-string for exactly those four,
-   * so dropping a `JSON.stringify` is a test failure rather than a runtime surprise on device —
-   * where it surfaces as a native type-conversion error with no TypeScript to catch it.
+   * `data` and `payload` cross as opaque JSON **strings** in both directions. That is the whole
+   * point of the new surface: the kit stores bytes it does not parse, so what comes back is what
+   * went in — byte for byte, not re-serialised.
+   *
+   * The old bridge did the opposite. `entryToMap` flattened a map field by field and fell back to
+   * `v.toString()` for anything that was not a String/Number/Boolean, so nested objects and arrays
+   * arrived as their Kotlin `toString`. The nested-payload test below is the one that would have
+   * caught it.
    */
-  it('passes model data across as a JSON string and gets a structured entry back', async () => {
-    await Obscura.defineModels(obscuraSchema);
-    const entry = await Obscura.createEntry('directMessage', {
-      conversationId: 'a_b',
-      content: 'hello',
-      senderUsername: 'alice',
-    });
+  it('round-trips a payload the kit never parses', async () => {
+    const data = { conversationId: 'a_b', content: 'hello', senderUsername: 'alice' };
 
-    expect(entry.data).toEqual({ conversationId: 'a_b', content: 'hello', senderUsername: 'alice' });
-    expect(entry.authorDeviceId).toBe('device_self');
+    await Obscura.entryPut('directMessage', 'dm_1', JSON.stringify(data), 1_000, 'device_a');
+
+    const [stored] = await Obscura.entryAll('directMessage');
+    expect(JSON.parse(stored.data)).toEqual(data);
+    expect(stored.authorDeviceId).toBe('device_a');
   });
 
   it('round-trips nested and unicode payloads without mangling them', async () => {
-    await Obscura.defineModels(obscuraSchema);
     const captionMeta = JSON.stringify({ style: 'bold', x: 0.5, colour: '#fff' });
-    const entry = await Obscura.createEntry('story', { content: 'sunset 🌅', captionMeta });
+    const data = { content: 'sunset 🌅', captionMeta, tags: ['a', 'b'], meta: { nested: true } };
 
-    const [stored] = await Obscura.allEntries('story');
-    expect(stored.data.content).toBe('sunset 🌅');
-    expect(stored.data.captionMeta).toBe(captionMeta);
-    expect(stored.id).toBe(entry.id);
+    await Obscura.entryPut('story', 's_1', JSON.stringify(data), 2_000, 'device_a');
+
+    const [stored] = await Obscura.entryAll('story');
+    expect(JSON.parse(stored.data)).toEqual(data);
+  });
+
+  it('rejects a non-string payload, so a forgotten stringify fails here not on device', async () => {
+    await expect(
+      // @ts-expect-error — deliberately passing the wrong type; TS would normally stop this, but the
+      // real bridge is untyped `any` at runtime, which is exactly why the double checks.
+      Obscura.entryPut('story', 's_1', { notAString: true }, 1_000, 'device_a'),
+    ).rejects.toThrow(/JSON string/);
   });
 });
 
-describe('entries', () => {
-  beforeEach(async () => {
-    await Obscura.defineModels(obscuraSchema);
+describe('the entry store', () => {
+  it('keeps models separate', async () => {
+    await Obscura.entryPut('directMessage', 'a', '{}', 1, 'd');
+    await Obscura.entryPut('story', 'b', '{}', 1, 'd');
+
+    expect(await Obscura.entryAll('directMessage')).toHaveLength(1);
+    expect(await Obscura.entryAll('story')).toHaveLength(1);
+    expect(await Obscura.entryAll('profile')).toEqual([]);
   });
 
-  it('returns what was written, per model, without bleeding between models', async () => {
-    await Obscura.createEntry('directMessage', { content: 'dm' });
-    await Obscura.createEntry('story', { content: 'story' });
+  /**
+   * `entryPut` is a **blind** upsert by contract (`KIT_API.md` §8.1) — the app decides who wins, so
+   * an older write replaces a newer one. A double that merged here would hide an app that forgot to.
+   */
+  it('is a blind upsert — an older write overwrites a newer one', async () => {
+    await Obscura.entryPut('pix', 'p', JSON.stringify({ v: 'new' }), 9_000, 'd');
+    await Obscura.entryPut('pix', 'p', JSON.stringify({ v: 'old' }), 1_000, 'd');
 
-    expect(await Obscura.allEntries('directMessage')).toHaveLength(1);
-    expect(await Obscura.allEntries('story')).toHaveLength(1);
-    expect(await Obscura.allEntries('profile')).toEqual([]);
+    const [stored] = await Obscura.entryAll('pix');
+    expect(JSON.parse(stored.data)).toEqual({ v: 'old' });
+    expect(stored.sentAt).toBe(1_000);
   });
 
-  it('upsert replaces the payload wholesale rather than patching fields', async () => {
-    const created = await Obscura.createEntry('profile', { displayName: 'alice', bio: 'hi' });
-    await Obscura.upsertEntry('profile', created.id, { displayName: 'alice2' });
+  it('deletes', async () => {
+    await Obscura.entryPut('story', 's', '{}', 1, 'd');
 
-    const [stored] = await Obscura.allEntries('profile');
-    expect(stored.data).toEqual({ displayName: 'alice2' });
-    expect(stored.data.bio).toBeUndefined();
-  });
+    await Obscura.entryDelete('story', 's');
 
-  it('hides deleted entries from allEntries, as the kit filters tombstones', async () => {
-    const created = await Obscura.createEntry('story', { content: 'gone' });
-    await Obscura.deleteEntry('story', created.id);
-
-    expect(await Obscura.allEntries('story')).toEqual([]);
+    expect(await Obscura.entryAll('story')).toEqual([]);
   });
 });
 
-describe('the receive path', () => {
-  beforeEach(async () => {
-    await Obscura.defineModels(obscuraSchema);
+describe('the inbox', () => {
+  it('peeks without consuming, so a crash mid-drain reprocesses rather than loses', async () => {
+    bridge.__deliverInbox({ entryId: 'dm_1', payload: '{}' });
+
+    const first = await Obscura.inboxPeek();
+    const second = await Obscura.inboxPeek();
+
+    expect(first).toHaveLength(1);
+    expect(second).toEqual(first);
+    expect(await Obscura.inboxDepth()).toBe(1);
   });
 
-  /**
-   * The pattern `store.ts` is built on — an event says *something changed for this model*, and the
-   * app refetches. The event carries no payload, so the refetch is the only way the data arrives,
-   * and the merge must therefore have happened before the event fired.
-   */
-  it('merges before it notifies, so a refetch on the event sees the new entry', async () => {
-    const seen: string[] = [];
-    const off = onObscuraEvent((e) => {
-      if (e.type === 'messageReceived') seen.push(e.model);
-    });
+  it('consumes only what it is given', async () => {
+    const a = bridge.__deliverInbox({ entryId: 'a', payload: '{}' });
+    bridge.__deliverInbox({ entryId: 'b', payload: '{}' });
 
-    bridge.__deliverEntry('directMessage', {
-      id: 'dm_1',
-      data: { content: 'from a peer' },
-      authorDeviceId: 'device_peer',
-    });
+    await Obscura.inboxConsume([a.id]);
 
-    expect(seen).toEqual(['directMessage']);
-    const entries = await Obscura.allEntries('directMessage');
-    expect(entries).toHaveLength(1);
-    expect(entries[0].data.content).toBe('from a peer');
-    off();
+    expect(await Obscura.inboxDepth()).toBe(1);
   });
 
-  /**
-   * Redelivery is guaranteed, not exceptional: the ack is best-effort and its failure is swallowed,
-   * so the server re-sends on the next connection (`KIT_API.md` §3.3.1). Convergence under replay
-   * is what makes that safe — and it is the property the inbox's `envelopeId` dedupe will have to
-   * preserve once the ORM's `INSERT OR REPLACE` is gone.
-   */
-  it('converges when the same entry is delivered twice', async () => {
-    bridge.__deliverEntryTwice('directMessage', {
-      id: 'dm_dup',
-      data: { content: 'once' },
-      timestamp: 5_000,
-      authorDeviceId: 'device_peer',
-    });
+  /** Data loss chosen out loud: the reason must reach the kit, which logs it as a security event. */
+  it('carries a reason into discard', async () => {
+    const row = bridge.__deliverInbox({ kind: 'UNKNOWN', payload: 'x' });
 
-    const entries = await Obscura.allEntries('directMessage');
-    expect(entries).toHaveLength(1);
-    expect(entries[0].data.content).toBe('once');
-  });
+    await Obscura.inboxDiscard([row.id], 'unknown-kind');
 
-  /** `gset` models are immutable: a later write to the same id must not overwrite the first. */
-  it('keeps the first write for an APPEND model', async () => {
-    bridge.__deliverEntry('directMessage', { id: 'dm_1', data: { content: 'first' }, timestamp: 1_000 });
-    bridge.__deliverEntry('directMessage', { id: 'dm_1', data: { content: 'second' }, timestamp: 9_000 });
-
-    const [stored] = await Obscura.allEntries('directMessage');
-    expect(stored.data.content).toBe('first');
-  });
-
-  /** `lww` models take the higher timestamp. `pix.viewedAt` is the real instance of this. */
-  it('takes the later write for a REPLACE model', async () => {
-    bridge.__deliverEntry('pix', { id: 'pix_1', data: { viewedAt: 0 }, timestamp: 1_000 });
-    bridge.__deliverEntry('pix', { id: 'pix_1', data: { viewedAt: 42 }, timestamp: 9_000 });
-
-    const [stored] = await Obscura.allEntries('pix');
-    expect(stored.data.viewedAt).toBe(42);
-  });
-
-  /**
-   * The tie-break that only matters across two users. `pix.viewedAt` is written by the *recipient*,
-   * so an equal-timestamp collision is real rather than theoretical — and without a deterministic
-   * tie-break the two devices converge to different states, silently, forever (`SPEC.md` §2.2).
-   */
-  it('breaks an equal-timestamp tie on authorDeviceId, in either arrival order', async () => {
-    bridge.__deliverEntry('pix', { id: 'p', data: { v: 'aaa' }, timestamp: 7, authorDeviceId: 'device_aaa' });
-    bridge.__deliverEntry('pix', { id: 'p', data: { v: 'zzz' }, timestamp: 7, authorDeviceId: 'device_zzz' });
-    const [forward] = await Obscura.allEntries('pix');
-
-    bridge.__reset();
-    await Obscura.defineModels(obscuraSchema);
-    bridge.__deliverEntry('pix', { id: 'p', data: { v: 'zzz' }, timestamp: 7, authorDeviceId: 'device_zzz' });
-    bridge.__deliverEntry('pix', { id: 'p', data: { v: 'aaa' }, timestamp: 7, authorDeviceId: 'device_aaa' });
-    const [reverse] = await Obscura.allEntries('pix');
-
-    expect(forward.data.v).toBe('zzz');
-    expect(reverse.data.v).toBe('zzz');
+    expect(bridge.__discarded).toEqual([{ ids: [row.id], reason: 'unknown-kind' }]);
+    expect(await Obscura.inboxDepth()).toBe(0);
   });
 });
 
 describe('failures', () => {
   /**
    * Without an injectable failure every `.catch(...)` in the app is dead code under test, because
-   * every bridge call resolves. `logout` is the case that matters most: `store.ts` clears local
-   * state whether or not the native call succeeded, and that is deliberate — a user who taps logout
-   * must not stay logged in because the network was down.
+   * every bridge call resolves.
    */
   it('rejects with a code the app can branch on', async () => {
-    bridge.__failNext('createEntry', 'DIRECT_ROUTING_UNRESOLVED', 'no recipient');
+    bridge.__failNext('sendEntry', 'DIRECT_ROUTING_UNRESOLVED', 'no recipient');
 
-    await expect(Obscura.createEntry('directMessage', { content: 'x' }))
+    await expect(Obscura.sendEntry([], 'directMessage', 'x', 'CREATE', 1, '{}'))
       .rejects.toMatchObject({ code: 'DIRECT_ROUTING_UNRESOLVED' });
   });
 
   it('fails only the next call, so a suite is not poisoned by one injection', async () => {
-    await Obscura.defineModels(obscuraSchema);
-    bridge.__failNext('createEntry', 'SEND_FAILED');
+    bridge.__failNext('entryPut', 'ENTRY_PUT_ERROR');
 
-    await expect(Obscura.createEntry('story', { content: 'x' })).rejects.toThrow();
-    await expect(Obscura.createEntry('story', { content: 'y' })).resolves.toBeTruthy();
+    await expect(Obscura.entryPut('story', 'a', '{}', 1, 'd')).rejects.toThrow();
+    await expect(Obscura.entryPut('story', 'b', '{}', 1, 'd')).resolves.toBeUndefined();
   });
 });
 

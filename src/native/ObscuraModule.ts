@@ -18,6 +18,13 @@ export interface Friend {
   status: 'pending_sent' | 'pending_received' | 'accepted';
 }
 
+/**
+ * An entry as the app holds it in memory.
+ *
+ * No longer a bridge type — nothing across the bridge produces this shape. `entryAll` returns
+ * `StoredEntry` (with `data` as an opaque JSON string) and `loadEntries` parses it into this. Kept
+ * here because every screen imports it from this module.
+ */
 export interface ModelEntry {
   id: string;
   data: Record<string, any>;
@@ -144,26 +151,9 @@ export const Obscura = {
   validateAndApproveLink: (code: string): Promise<void> =>
     Bridge.validateAndApproveLink(code),
 
-  // ORM — schema defined once at startup, cached by native for cold-start restore
-  defineModels: (schema: Record<string, any>): Promise<void> =>
-    Bridge.defineModels(JSON.stringify(schema)),
-
-  // ORM — CRUD. Each mutating call also emits an `entriesChanged` event for
-  // the affected model so other screens can re-query reactively.
-  createEntry: (model: string, data: Record<string, any>): Promise<ModelEntry> =>
-    Bridge.createEntry(model, JSON.stringify(data)),
-
-  upsertEntry: (model: string, id: string, data: Record<string, any>): Promise<ModelEntry> =>
-    Bridge.upsertEntry(model, id, JSON.stringify(data)),
-
-  queryEntries: (model: string, conditions: Record<string, any>): Promise<ModelEntry[]> =>
-    Bridge.queryEntries(model, JSON.stringify(conditions)),
-
-  allEntries: (model: string): Promise<ModelEntry[]> =>
-    Bridge.allEntries(model),
-
-  deleteEntry: (model: string, id: string): Promise<void> =>
-    Bridge.deleteEntry(model, id),
+  // The ORM wrappers — `defineModels`, `createEntry`, `upsertEntry`, `queryEntries`, `allEntries`,
+  // `deleteEntry` — were removed on 2026-07-30 with the native methods behind them (§10 step 4).
+  // Their replacements are the thin kit surface below plus `src/state/{writeEntry,drainInbox}.ts`.
 
   // ─── The thin kit surface (obscura-proto/KIT_API.md §3, §5, §8.1) ───────
   //
@@ -280,7 +270,6 @@ export const OBSCURA_EVENT_TYPES = [
   'launchedFrom',
   'friendsUpdated',
   'messageReceived',
-  'entriesChanged',
   'typingChanged',
   'pushTokenReceived',
   'debugLog',
@@ -296,7 +285,6 @@ export type ObscuraEvent =
   | { type: 'launchedFrom'; screen: string }
   | { type: 'friendsUpdated'; friends: Friend[] }
   | { type: 'messageReceived'; model: string }
-  | { type: 'entriesChanged'; model: string }
   | { type: 'typingChanged'; conversationId: string; typers: string[] }
   | { type: 'pushTokenReceived'; token: string }
   | { type: 'debugLog'; message: string };
