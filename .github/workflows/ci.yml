@@ -72,31 +72,27 @@ jobs:
       # main being green — and, crucially, catches cross-repo toolchain drift
       # (e.g. a kit Kotlin bump past pix's React-Native-pinned Kotlin) as a
       # red build instead of a latent runtime surprise.
-      # ⚠️ PINNED FOR PHASE 3 — this is the mitigation KIT_API.md §10 requires, now active.
+      # ⚠️ UNPINNED — §10 step 4 has landed and pix is fully on the replacement API, which is the
+      # exact condition the pin's own removal instruction named.
       #
-      # Floating on the kit's default branch is the normal state and is deliberate (see above):
-      # it couples pix's green to the kit's main and catches cross-repo toolchain drift. But
-      # §10 steps 2–4 deliberately land a kit DELETION before pix can switch to the replacement
-      # API, so a float would turn "the kit landed its deletion" into "pix CI is red" for every
-      # commit in between, on a repo that cannot fix it yet.
+      # The pin existed because §10 steps 2–4 deliberately land a kit DELETION before pix can switch
+      # to the replacement API, so a float would have turned "the kit landed its deletion" into "pix
+      # CI is red" for every commit in between, on a repo that could not fix it yet. That window is
+      # closed: ObscuraKit-Kotlin#56 deleted the ORM, and every kit call this bridge makes —
+      # `client.sendTyping`, `inbox.peek/consume/discard/depth`, `entries.put/all/delete` — is on the
+      # thin surface. The only remaining mention of the old API in this repo is a comment saying so.
       #
-      # Step 2 (both kits gain `inbox` alongside the ORM) has landed, so the pin goes on now.
-      # Bump this sha deliberately as pix moves through step 3; REMOVE it — restoring the float
-      # — once step 4 has landed and pix is fully on the new API.
+      # Floating again is the point, not a relaxation: it re-couples pix's green to the kit's main
+      # and re-arms the cross-repo toolchain drift check (e.g. a kit Kotlin bump past pix's
+      # React-Native-pinned Kotlin) that the pin had been suppressing for the whole reset.
       #
-      # Note also there is NO iOS job in this workflow. §10's ordering argument — "Kotlin ships
-      # first would break iOS for the whole duration" — is therefore invisible to CI: nothing
-      # here would go red if the Swift kit and pix's shared TypeScript surface diverged.
+      # Note there is still NO iOS job in this workflow. §10's ordering argument — "Kotlin ships
+      # first would break iOS for the whole duration" — is therefore invisible to CI: nothing here
+      # would go red if the Swift kit and pix's shared TypeScript surface diverged.
       - name: Checkout ObscuraKit-Kotlin
         uses: actions/checkout@v7
         with:
           repository: rhelsing/ObscuraKit-Kotlin
-          # ObscuraKit-Kotlin main @ 2026-07-30 — adds the signals-off-the-ORM API (#54) and the
-          # parallel-write removal (#55). Bumped because this pix commit calls
-          # `client.sendTyping/stopTyping/observeTyping`, which the previous pin predates: the pin
-          # protects pix from kit DELETIONS, and the price is that it must move forward whenever pix
-          # starts using a newer kit API. See the block above.
-          ref: 35de131e591c2e6656d2016136e896956db93bbb
           path: ObscuraKit-Kotlin
           # The kit generates protobuf code from its ./proto submodule; without
           # this the composite build fails codegen (Unresolved reference on
