@@ -59,7 +59,7 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
 
   // If `markViewed` was requested, fire a viewedAt upsert on the currently
   // displayed pix. LWW merges so the sender gets the receipt. The
-  // `entriesChanged` event then re-renders other screens reactively.
+  // `saveEntry` refreshes the model, which re-renders other screens reactively.
   const markCurrentViewed = useCallback(() => {
     if (!markViewed || !story) return;
     if (viewedIdsRef.current.has(story.id)) return;

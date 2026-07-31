@@ -11,13 +11,20 @@ import com.obscura.kit.ObscuraClient
 import com.obscura.kit.ObscuraError
 import com.obscura.kit.ReceivedMessage
 import com.obscura.kit.network.LoginScenario
-import com.obscura.kit.orm.OrmEntry
 import com.obscura.kit.stores.FriendData
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
 import org.json.JSONObject
 
 private const val TAG = "ObscuraBridge"
+
+/**
+ * The conversation namespace typing indicators are scoped to.
+ *
+ * Opaque to the kit — it neither parses nor validates it — and it needs no schema. It matches the
+ * app's `directMessage` model only so that signals and messages share a namespace.
+ */
+private const val TYPING_MODEL = "directMessage"
 
 /**
  * The single source of truth for the event *types* the native side may emit on
@@ -35,7 +42,6 @@ private enum class BridgeEvent(val type: String) {
     LAUNCHED_FROM("launchedFrom"),
     FRIENDS_UPDATED("friendsUpdated"),
     MESSAGE_RECEIVED("messageReceived"),
-    ENTRIES_CHANGED("entriesChanged"),
     TYPING_CHANGED("typingChanged"),
     PUSH_TOKEN_RECEIVED("pushTokenReceived"),
     DEBUG_LOG("debugLog"),
@@ -200,7 +206,6 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     }
 
     /** Fired after a successful local CRUD on a model. Lets screens re-query reactively. */
-    private fun emitEntriesChanged(model: String) = emit(BridgeEvent.ENTRIES_CHANGED) { putString("model", model) }
 
     // ─── Auth ───────────────────────────────────────────────────────────────
 
@@ -436,96 +441,21 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
 
     // ─── ORM ────────────────────────────────────────────────────────────────
 
-    @ReactMethod
-    fun defineModels(schemaJson: String, promise: Promise) {
-        scope.launch {
-            try {
-                val c = requireClient()
-                c.defineModelsFromJson(schemaJson)
-                Log.d(TAG, "Models defined + cached")
-                promise.resolve(null)
-            } catch (e: Exception) {
-                Log.e(TAG, "defineModels failed: ${e.message}")
-                promise.rejectKit("DEFINE_ERROR", e)
-            }
-        }
-    }
-
-    @ReactMethod
-    fun createEntry(model: String, dataJson: String, promise: Promise) {
-        scope.launch {
-            try {
-                val entry = requireClient().orm.model(model).create(jsonStringToMap(dataJson))
-                promise.resolve(entryToMap(entry))
-                emitEntriesChanged(model)
-            } catch (e: Exception) {
-                Log.e(TAG, "createEntry($model) failed: ${e.message}")
-                promise.rejectKit("CREATE_ERROR", e)
-            }
-        }
-    }
-
-    @ReactMethod
-    fun upsertEntry(model: String, id: String, dataJson: String, promise: Promise) {
-        scope.launch {
-            try {
-                val entry = requireClient().orm.model(model).upsert(id, jsonStringToMap(dataJson))
-                promise.resolve(entryToMap(entry))
-                emitEntriesChanged(model)
-            } catch (e: Exception) {
-                promise.rejectKit("UPSERT_ERROR", e)
-            }
-        }
-    }
-
-    @ReactMethod
-    fun queryEntries(model: String, conditionsJson: String, promise: Promise) {
-        scope.launch {
-            try {
-                val entries = requireClient().orm.model(model).where(jsonStringToMap(conditionsJson)).exec()
-                val arr = Arguments.createArray()
-                for (e in entries) arr.pushMap(entryToMap(e))
-                promise.resolve(arr)
-            } catch (e: Exception) {
-                promise.rejectKit("QUERY_ERROR", e)
-            }
-        }
-    }
-
-    @ReactMethod
-    fun allEntries(model: String, promise: Promise) {
-        scope.launch {
-            try {
-                val entries = requireClient().orm.model(model).all()
-                val arr = Arguments.createArray()
-                for (e in entries) arr.pushMap(entryToMap(e))
-                promise.resolve(arr)
-            } catch (e: Exception) {
-                promise.rejectKit("ALL_ERROR", e)
-            }
-        }
-    }
-
-    @ReactMethod
-    fun deleteEntry(model: String, id: String, promise: Promise) {
-        scope.launch {
-            try {
-                requireClient().orm.model(model).delete(id)
-                promise.resolve(null)
-                emitEntriesChanged(model)
-            } catch (e: Exception) {
-                promise.rejectKit("DELETE_ERROR", e)
-            }
-        }
-    }
-
     // ─── Signals ────────────────────────────────────────────────────────────
+    //
+    // These reach the kit through `client.sendTyping(...)` rather than
+    // `client.orm.modelOrNull("directMessage")?.typing(...)`. Signals are KEEP-forever code that
+    // happened to live in the ORM package; routing them through the ORM object was the last reason
+    // this bridge touched it at all (obscura-proto RESET.md, "Keep").
+    //
+    // `TYPING_MODEL` is an opaque namespace string, exactly like `modelKey` on the inbox and the
+    // entry store — the kit neither parses nor validates it, and no schema needs defining for it.
 
     @ReactMethod
     fun sendTyping(conversationId: String, promise: Promise) {
         scope.launch {
             try {
-                requireClient().orm.modelOrNull("directMessage")?.typing(conversationId)
+                requireClient().sendTyping(TYPING_MODEL, conversationId)
                 promise.resolve(null)
             } catch (e: Exception) {
                 promise.rejectKit("TYPING_ERROR", e)
@@ -537,7 +467,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     fun stopTyping(conversationId: String, promise: Promise) {
         scope.launch {
             try {
-                requireClient().orm.modelOrNull("directMessage")?.stopTyping(conversationId)
+                requireClient().stopTyping(TYPING_MODEL, conversationId)
                 promise.resolve(null)
             } catch (e: Exception) {
                 promise.rejectKit("STOP_TYPING_ERROR", e)
@@ -548,11 +478,11 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun observeTyping(conversationId: String, promise: Promise) {
         if (typingJobs.containsKey(conversationId)) { promise.resolve(null); return }
-        val model = client?.orm?.modelOrNull("directMessage")
-        if (model == null) { promise.resolve(null); return }
+        val c = client
+        if (c == null) { promise.resolve(null); return }
 
         typingJobs[conversationId] = scope.launch {
-            model.observeTyping(conversationId).collectLatest { typers ->
+            c.observeTyping(TYPING_MODEL, conversationId).collectLatest { typers ->
                 emit(BridgeEvent.TYPING_CHANGED) {
                     putString("conversationId", conversationId)
                     val arr = Arguments.createArray()
@@ -1164,24 +1094,6 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
 
     private fun ReadableArray.toStringList(): List<String> =
         (0 until size()).mapNotNull { getString(it) }
-
-    private fun entryToMap(entry: OrmEntry): WritableMap =
-        Arguments.createMap().apply {
-            putString("id", entry.id)
-            putDouble("timestamp", entry.timestamp.toDouble())
-            putString("authorDeviceId", entry.authorDeviceId)
-            putMap("data", Arguments.createMap().apply {
-                for ((k, v) in entry.data) {
-                    when (v) {
-                        is String -> putString(k, v)
-                        is Number -> putDouble(k, v.toDouble())
-                        is Boolean -> putBoolean(k, v)
-                        null -> putNull(k)
-                        else -> putString(k, v.toString())
-                    }
-                }
-            })
-        }
 
     private fun jsonStringToMap(jsonStr: String): Map<String, Any?> {
         val map = mutableMapOf<String, Any?>()

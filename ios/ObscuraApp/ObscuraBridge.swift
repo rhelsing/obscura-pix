@@ -66,7 +66,7 @@ final class ObscuraBridge: RCTEventEmitter {
     /// and `OBSCURA_EVENT_TYPES` in src/native/ObscuraModule.ts — the raw values MUST match.
     private enum BridgeEvent: String {
         case connectionChanged, authStateChanged, authFailed, appStateChanged
-        case launchedFrom, friendsUpdated, messageReceived, entriesChanged
+        case launchedFrom, friendsUpdated, messageReceived
         case typingChanged, pushTokenReceived, debugLog
     }
 
@@ -506,89 +506,6 @@ extension ObscuraBridge {
         ]
     }
 
-    static func entryDict(_ e: ModelEntry) -> [String: Any] {
-        ["id": e.id, "data": e.data, "timestamp": Double(e.timestamp), "authorDeviceId": e.authorDeviceId]
-    }
-
-    private func requireModel(_ name: String, _ reject: RCTPromiseRejectBlock) -> Model? {
-        guard let m = client.model(name) else {
-            reject("NO_MODEL", "model '\(name)' not defined — call defineModels first", nil)
-            return nil
-        }
-        return m
-    }
-
-    @objc(defineModels:resolver:rejecter:)
-    func defineModels(_ schemaJson: String,
-                      resolver resolve: @escaping RCTPromiseResolveBlock,
-                      rejecter reject: @escaping RCTPromiseRejectBlock) {
-        do { try client.defineModelsFromJson(schemaJson); resolve(nil) }
-        catch { rejectKit(reject, "DEFINE_MODELS_ERROR", error) }
-    }
-
-    @objc(createEntry:dataJson:resolver:rejecter:)
-    func createEntry(_ model: String, dataJson: String,
-                     resolver resolve: @escaping RCTPromiseResolveBlock,
-                     rejecter reject: @escaping RCTPromiseRejectBlock) {
-        guard let m = requireModel(model, reject) else { return }
-        Task {
-            do {
-                let entry = try await m.create(parseJSONObject(dataJson))
-                emit(.entriesChanged, ["model": model])
-                resolve(ObscuraBridge.entryDict(entry))
-            } catch { rejectKit(reject, "CREATE_ERROR", error) }
-        }
-    }
-
-    @objc(upsertEntry:id:dataJson:resolver:rejecter:)
-    func upsertEntry(_ model: String, id: String, dataJson: String,
-                     resolver resolve: @escaping RCTPromiseResolveBlock,
-                     rejecter reject: @escaping RCTPromiseRejectBlock) {
-        guard let m = requireModel(model, reject) else { return }
-        Task {
-            do {
-                let entry = try await m.upsert(id, parseJSONObject(dataJson))
-                emit(.entriesChanged, ["model": model])
-                resolve(ObscuraBridge.entryDict(entry))
-            } catch { rejectKit(reject, "UPSERT_ERROR", error) }
-        }
-    }
-
-    @objc(queryEntries:conditionsJson:resolver:rejecter:)
-    func queryEntries(_ model: String, conditionsJson: String,
-                      resolver resolve: @escaping RCTPromiseResolveBlock,
-                      rejecter reject: @escaping RCTPromiseRejectBlock) {
-        guard let m = requireModel(model, reject) else { return }
-        Task {
-            let entries = await m.where(parseJSONObject(conditionsJson)).exec()
-            resolve(entries.map { ObscuraBridge.entryDict($0) })
-        }
-    }
-
-    @objc(allEntries:resolver:rejecter:)
-    func allEntries(_ model: String,
-                    resolver resolve: @escaping RCTPromiseResolveBlock,
-                    rejecter reject: @escaping RCTPromiseRejectBlock) {
-        guard let m = requireModel(model, reject) else { return }
-        Task {
-            let entries = await m.all()
-            resolve(entries.map { ObscuraBridge.entryDict($0) })
-        }
-    }
-
-    @objc(deleteEntry:id:resolver:rejecter:)
-    func deleteEntry(_ model: String, id: String,
-                     resolver resolve: @escaping RCTPromiseResolveBlock,
-                     rejecter reject: @escaping RCTPromiseRejectBlock) {
-        guard let m = requireModel(model, reject) else { return }
-        Task {
-            do {
-                _ = try await m.delete(id)
-                emit(.entriesChanged, ["model": model])
-                resolve(nil)
-            } catch { rejectKit(reject, "DELETE_ERROR", error) }
-        }
-    }
 }
 
 // MARK: - Typing signals (task #8)
@@ -598,6 +515,16 @@ extension ObscuraBridge {
 
 extension ObscuraBridge {
 
+    /// The conversation namespace typing indicators are scoped to.
+    ///
+    /// Opaque to the kit — it neither parses nor validates it — and it needs no schema. It matches
+    /// the app's `directMessage` model only so signals and messages share a namespace.
+    ///
+    /// These now reach the kit through `client.sendTyping(modelKey:conversationId:)` rather than
+    /// `client.model(...)`. Signals are KEEP-forever code that happened to live in the ORM
+    /// directory; routing them through the ORM object was the last reason this bridge touched it
+    /// (obscura-proto `RESET.md`, "Keep"). Note `requireModel` used to reject with
+    /// "call defineModels first" — signals never needed a schema, so that gate is gone too.
     private static let typingModel = "directMessage"
 
     @objc(sendTyping:resolver:rejecter:)
@@ -605,7 +532,7 @@ extension ObscuraBridge {
                     resolver resolve: @escaping RCTPromiseResolveBlock,
                     rejecter reject: @escaping RCTPromiseRejectBlock) {
         Task {
-            await client.model(ObscuraBridge.typingModel)?.typing(conversationId: conversationId)
+            await client.sendTyping(modelKey: ObscuraBridge.typingModel, conversationId: conversationId)
             resolve(nil)
         }
     }
@@ -615,7 +542,7 @@ extension ObscuraBridge {
                     resolver resolve: @escaping RCTPromiseResolveBlock,
                     rejecter reject: @escaping RCTPromiseRejectBlock) {
         Task {
-            await client.model(ObscuraBridge.typingModel)?.stopTyping(conversationId: conversationId)
+            await client.stopTyping(modelKey: ObscuraBridge.typingModel, conversationId: conversationId)
             resolve(nil)
         }
     }
@@ -624,10 +551,11 @@ extension ObscuraBridge {
     func observeTyping(_ conversationId: String,
                        resolver resolve: @escaping RCTPromiseResolveBlock,
                        rejecter reject: @escaping RCTPromiseRejectBlock) {
-        guard let m = client.model(ObscuraBridge.typingModel) else { resolve(nil); return }
         typingTasks[conversationId]?.cancel()
+        let observation = client.observeTyping(modelKey: ObscuraBridge.typingModel,
+                                               conversationId: conversationId)
         typingTasks[conversationId] = Task { [weak self] in
-            for await typers in m.observeTyping(conversationId: conversationId).values {
+            for await typers in observation.values {
                 self?.emit(.typingChanged, ["conversationId": conversationId, "typers": typers])
             }
         }

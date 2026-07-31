@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "kind": "merge",
+  "description": "L3 CRDT merge conformance. Applies a set of ops (incoming syncs) and pins the resolved state. Cases with multiple applyOrders assert CONVERGENCE: the same op set applied in different arrival orders MUST resolve to the identical state (the core CRDT property). Ops are applied via the merge (incoming-sync) path. Note: the future-timestamp clamp is NOT vector-tested here because it is wall-clock-relative (see SPEC 2); it is covered by per-kit unit tests.",
+  "cases": [
+    {
+      "name": "GSet union merges distinct entries, order-independent",
+      "sync": "gset",
+      "applyOrders": ["forward", "reverse"],
+      "ops": [
+        { "id": "x", "ts": 1, "authorDeviceId": "devA", "data": { "v": "x" } },
+        { "id": "y", "ts": 2, "authorDeviceId": "devB", "data": { "v": "y" } },
+        { "id": "z", "ts": 3, "authorDeviceId": "devA", "data": { "v": "z" } }
+      ],
+      "expect": {
+        "entries": [
+          { "id": "x", "data": { "v": "x" } },
+          { "id": "y", "data": { "v": "y" } },
+          { "id": "z", "data": { "v": "z" } }
+        ]
+      }
+    },
+    {
+      "name": "GSet is idempotent: a duplicate id does not change state",
+      "sync": "gset",
+      "applyOrders": ["forward"],
+      "ops": [
+        { "id": "x", "ts": 1, "authorDeviceId": "devA", "data": { "v": "x" } },
+        { "id": "x", "ts": 1, "authorDeviceId": "devA", "data": { "v": "x" } }
+      ],
+      "expect": {
+        "entries": [
+          { "id": "x", "data": { "v": "x" } }
+        ]
+      }
+    },
+    {
+      "name": "LWW keeps the higher timestamp, order-independent",
+      "sync": "lww",
+      "applyOrders": ["forward", "reverse"],
+      "ops": [
+        { "id": "settings", "ts": 1, "authorDeviceId": "devA", "data": { "theme": "dark" } },
+        { "id": "settings", "ts": 2, "authorDeviceId": "devB", "data": { "theme": "light" } }
+      ],
+      "expect": {
+        "entries": [
+          { "id": "settings", "authorDeviceId": "devB", "data": { "theme": "light" } }
+        ]
+      }
+    },
+    {
+      "name": "LWW equal-timestamp conflict resolves deterministically by authorDeviceId (higher wins), order-independent",
+      "sync": "lww",
+      "applyOrders": ["forward", "reverse"],
+      "ops": [
+        { "id": "settings", "ts": 5, "authorDeviceId": "devA", "data": { "theme": "dark" } },
+        { "id": "settings", "ts": 5, "authorDeviceId": "devB", "data": { "theme": "light" } }
+      ],
+      "expect": {
+        "entries": [
+          { "id": "settings", "authorDeviceId": "devB", "data": { "theme": "light" } }
+        ]
+      }
+    },
+    {
+      "name": "LWW newer tombstone wins: a later delete removes the entry, order-independent",
+      "sync": "lww",
+      "applyOrders": ["forward", "reverse"],
+      "ops": [
+        { "id": "r1", "ts": 1, "authorDeviceId": "devA", "data": { "emoji": "heart" } },
+        { "id": "r1", "ts": 2, "authorDeviceId": "devA", "data": { "_deleted": true } }
+      ],
+      "expect": {
+        "entries": [
+          { "id": "r1", "deleted": true }
+        ]
+      }
+    },
+    {
+      "name": "LWW stale write does not resurrect a newer tombstone, order-independent",
+      "sync": "lww",
+      "applyOrders": ["forward", "reverse"],
+      "ops": [
+        { "id": "r1", "ts": 2, "authorDeviceId": "devA", "data": { "_deleted": true } },
+        { "id": "r1", "ts": 1, "authorDeviceId": "devB", "data": { "emoji": "fire" } }
+      ],
+      "expect": {
+        "entries": [
+          { "id": "r1", "deleted": true }
+        ]
+      }
+    }
+  ]
+}

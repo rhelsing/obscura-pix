@@ -44,47 +44,7 @@
  * (the app decides who wins), and `sendEntry` produces no local row — the sender writes its own copy.
  */
 
-import type { Friend, InboxRow, ModelEntry, StoredEntry } from '../ObscuraModule';
-
-/**
- * An ORM-era row: a `ModelEntry` plus the tombstone flag the old engine kept.
- *
- * Named `OrmRow`, not `StoredEntry`, because `StoredEntry` is the thin kit's public type for the
- * NEW entry store and the two are different shapes — that one carries `data` as an opaque JSON
- * string, this one as a parsed map. They coexist only until §10 step 4.
- */
-interface OrmRow extends ModelEntry {
-  deleted?: boolean;
-}
-
-/** How a model reconciles two writes to the same id. Mirrors `src/domain/merge.ts`. */
-type MergeRule = 'APPEND' | 'REPLACE';
-
-/**
- * The `sync` strategy in `schema.ts` decides the rule: `gset` is an immutable set (first write
- * wins), `lww` is last-writer-wins. Unknown or absent defaults to REPLACE, which is the
- * conservative choice — treating a mutable model as immutable would silently drop updates.
- */
-function ruleFor(sync: unknown): MergeRule {
-  return sync === 'gset' ? 'APPEND' : 'REPLACE';
-}
-
-/**
- * The kit's conflict resolution, duplicated here in ~6 lines rather than imported from
- * `src/domain/merge.ts`.
- *
- * That is deliberate. `merge.ts` is the app's *replacement* for this logic; this fake stands in for
- * the *kit* that still owns it today. Importing one into the other would make a test of "does the
- * app agree with the kit" tautological — both sides would be the same function. Six duplicated
- * lines is the price of the two staying independently checkable, and `merge.vectors.test.ts` pins
- * the real contract for both against `obscura-proto/conformance/merge.json`.
- */
-function winner(rule: MergeRule, existing: OrmRow, incoming: OrmRow): OrmRow {
-  if (rule === 'APPEND') return existing;
-  if (incoming.timestamp > existing.timestamp) return incoming;
-  if (incoming.timestamp < existing.timestamp) return existing;
-  return incoming.authorDeviceId > existing.authorDeviceId ? incoming : existing;
-}
+import type { Friend, InboxRow, StoredEntry } from '../ObscuraModule';
 
 export interface FakeBridgeOptions {
   userId?: string;
@@ -101,8 +61,6 @@ export class FakeObscuraBridge {
   connectionState: 'disconnected' | 'connecting' | 'reconnecting' | 'connected' = 'disconnected';
 
   // ─── Stores ────────────────────────────────────────────
-  private schema: Record<string, any> = {};
-  private entries = new Map<string, Map<string, OrmRow>>();
   private friends: Friend[] = [];
   private listeners = new Set<(event: any) => void>();
   private debugLog: string[] = [];
@@ -135,15 +93,6 @@ export class FakeObscuraBridge {
 
   private record(method: string): void {
     this.__calls.push(method);
-  }
-
-  private table(model: string): Map<string, OrmRow> {
-    let t = this.entries.get(model);
-    if (!t) {
-      t = new Map();
-      this.entries.set(model, t);
-    }
-    return t;
   }
 
   // ─── The thin kit surface ──────────────────────────────────────────────
@@ -243,36 +192,6 @@ export class FakeObscuraBridge {
   }
 
   /**
-   * Simulate an entry arriving from a peer: merge it by the model's rule, then emit
-   * `messageReceived` the way the native bridge does after a MODEL_SYNC lands.
-   *
-   * This is the control that makes the receive path testable at all. Note it merges *before* it
-   * emits — the same order the kit uses, and the reason pix's "event → refetch everything" pattern
-   * is safe today.
-   */
-  __deliverEntry(
-    model: string,
-    entry: { id: string; data: Record<string, any>; timestamp?: number; authorDeviceId?: string },
-  ): void {
-    const incoming: OrmRow = {
-      id: entry.id,
-      data: entry.data,
-      timestamp: entry.timestamp ?? this.nextTimestamp(),
-      authorDeviceId: entry.authorDeviceId ?? 'device_peer',
-    };
-    const table = this.table(model);
-    const existing = table.get(incoming.id);
-    table.set(incoming.id, existing ? winner(ruleFor(this.schema[model]?.sync), existing, incoming) : incoming);
-    this.__emit({ type: 'messageReceived', model });
-  }
-
-  /** Deliver the same entry twice, as a redelivered envelope would. Convergence must hold. */
-  __deliverEntryTwice(model: string, entry: Parameters<FakeObscuraBridge['__deliverEntry']>[1]): void {
-    this.__deliverEntry(model, entry);
-    this.__deliverEntry(model, entry);
-  }
-
-  /**
    * Simulate a message arriving: the kit persists an inbox row, then notifies. Merge-before-notify
    * is the kit's order and the reason "event → drain" is safe.
    *
@@ -317,10 +236,6 @@ export class FakeObscuraBridge {
   }
 
   /** Raw entry table for a model, for assertions the public API cannot express. */
-  __rawEntries(model: string): OrmRow[] {
-    return [...this.table(model).values()];
-  }
-
   /**
    * Clear all state, **in place**.
    *
@@ -330,8 +245,6 @@ export class FakeObscuraBridge {
    * for that reason. Called automatically from `beforeEach` by the jest setup.
    */
   __reset(): void {
-    this.schema = {};
-    this.entries.clear();
     this.inbox.length = 0;
     this.nextInboxId = 1;
     this.storedEntries.clear();
@@ -429,7 +342,6 @@ export class FakeObscuraBridge {
   async logout(): Promise<void> {
     this.record('logout');
     this.checkFailure('logout');
-    this.entries.clear();
     this.inbox.length = 0;
     this.nextInboxId = 1;
     this.storedEntries.clear();
@@ -516,79 +428,6 @@ export class FakeObscuraBridge {
   // NOTE the JSON boundary: `defineModels`, `createEntry`, `upsertEntry` and `queryEntries` receive
   // a STRING from the wrapper, which stringifies. Parsing it here rather than accepting an object
   // is what makes a wrapper that forgets to stringify fail a test instead of working by accident.
-
-  async defineModels(schemaJson: string): Promise<void> {
-    this.record('defineModels');
-    this.checkFailure('defineModels');
-    if (typeof schemaJson !== 'string') {
-      throw new Error('defineModels expects a JSON string across the bridge, got ' + typeof schemaJson);
-    }
-    this.schema = JSON.parse(schemaJson);
-  }
-
-  async createEntry(model: string, dataJson: string): Promise<ModelEntry> {
-    this.record('createEntry');
-    this.checkFailure('createEntry');
-    if (typeof dataJson !== 'string') {
-      throw new Error('createEntry expects a JSON string across the bridge, got ' + typeof dataJson);
-    }
-    const timestamp = this.nextTimestamp();
-    const entry: OrmRow = {
-      id: `${model}_${timestamp}`,
-      data: JSON.parse(dataJson),
-      timestamp,
-      authorDeviceId: this.deviceId,
-    };
-    this.table(model).set(entry.id, entry);
-    this.__emit({ type: 'entriesChanged', model });
-    return { ...entry };
-  }
-
-  async upsertEntry(model: string, id: string, dataJson: string): Promise<ModelEntry> {
-    this.record('upsertEntry');
-    this.checkFailure('upsertEntry');
-    if (typeof dataJson !== 'string') {
-      throw new Error('upsertEntry expects a JSON string across the bridge, got ' + typeof dataJson);
-    }
-    const table = this.table(model);
-    const existing = table.get(id);
-    const incoming: OrmRow = {
-      id,
-      // Upsert replaces the payload wholesale — it is not a field-level patch. Matching that here
-      // keeps a caller that assumes patch semantics from passing under test and failing on device.
-      data: JSON.parse(dataJson),
-      timestamp: this.nextTimestamp(),
-      authorDeviceId: this.deviceId,
-    };
-    table.set(id, existing ? winner(ruleFor(this.schema[model]?.sync), existing, incoming) : incoming);
-    this.__emit({ type: 'entriesChanged', model });
-    return { ...table.get(id)! };
-  }
-
-  async allEntries(model: string): Promise<ModelEntry[]> {
-    this.record('allEntries');
-    this.checkFailure('allEntries');
-    // Tombstones are filtered by the kit (`store.ts` documents this), so they never reach the app.
-    return this.__rawEntries(model)
-      .filter((e) => !e.deleted)
-      .map((e) => ({ ...e }));
-  }
-
-  async queryEntries(model: string, conditionsJson: string): Promise<ModelEntry[]> {
-    this.record('queryEntries');
-    this.checkFailure('queryEntries');
-    const conditions: Record<string, unknown> = JSON.parse(conditionsJson);
-    const all = await this.allEntries(model);
-    return all.filter((e) => Object.entries(conditions).every(([k, v]) => e.data[k] === v));
-  }
-
-  async deleteEntry(model: string, id: string): Promise<void> {
-    this.record('deleteEntry');
-    this.checkFailure('deleteEntry');
-    const existing = this.table(model).get(id);
-    if (existing) existing.deleted = true;
-    this.__emit({ type: 'entriesChanged', model });
-  }
 
   // ─── Signals ───────────────────────────────────────────
 

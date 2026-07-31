@@ -1,3 +1,13 @@
+/**
+ * **Vendored, not submoduled** (2026-07-30). These vectors used to be read from
+ * `proto/conformance/merge.json` through the git submodule. `RESET.md`'s "The `merge.json` handover"
+ * requires the opposite order: pix must be reading a LOCAL copy before the file is deleted from
+ * obscura-proto, or the deletion breaks pix's only merge coverage the day it lands.
+ *
+ * They stop being a cross-implementation contract the moment the kits' merge engine is deleted —
+ * one implementation left means a fixture, not a contract. This is that transition, done in the
+ * order the document asks for.
+ */
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { mergeAll, type Entry, type MergeRule } from '../merge';
@@ -17,7 +27,7 @@ import { mergeAll, type Entry, type MergeRule } from '../merge';
  * filtered out — a port that silently drops half a contract is how a contract stops being one.
  */
 
-const VECTORS = join(__dirname, '../../../proto/conformance/merge.json');
+const VECTORS = join(__dirname, '../__fixtures__/merge.json');
 
 interface VectorOp {
   id: string;

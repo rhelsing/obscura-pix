@@ -1,7 +1,8 @@
 /**
  * Shared ORM schema — single source of truth for all platforms.
- * Both iOS and Android bridges cache this JSON on first defineModels() call
- * and use the cached copy for instant cold-start session restore.
+ * Read by the APP, not by the kit: `drainInbox` takes each model's `sync` strategy as a merge
+ * rule, and `writeEntry` takes its `audience`. It no longer crosses the bridge — the kit does not
+ * parse application schemas (SPEC §0.4).
  */
 export const obscuraSchema = {
   directMessage: {
