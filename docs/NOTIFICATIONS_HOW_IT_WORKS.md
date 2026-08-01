@@ -1,6 +1,7 @@
 # Notifications — How It Works (as-built)
 
-This documents the **actual** notification system as implemented on Android and iOS. For the
+This documents the **actual Android** notification system. `obscura-pix` does not currently contain
+an iOS native bridge or notification extension. For the
 original design intent, privacy invariants, and the cross-platform contract, see
 [PUSH_NOTIFICATIONS.md](./PUSH_NOTIFICATIONS.md) — but where that doc's *flow* disagrees with
 this one, **this doc is correct**.
@@ -8,17 +9,19 @@ this one, **this doc is correct**.
 > **History:** an earlier build had three competing owners of the kit client and two consumers
 > racing for the single-consumer `incomingMessages` channel, so notifications had to be posted
 > from the live receive loop and cold-start (killed-process) wakes did nothing. That race and
-> the cold-start gap are **fixed** — see [Why this changed](#why-this-changed).
+> the cold-start gap are **fixed on Android** — see [Why this changed](#why-this-changed).
 
 ## TL;DR
 
 - The server only ever sends a **silent, content-free push** (`{ "action": "check" }`).
 - The device decides whether to show a notification, and the text is **always generic**
   ("New pix" / "New message") — never sender, content, or IDs.
-- Each platform has **one** process-scoped owner of the kit client, and **one** consumer of
-  `incomingMessages`. That single consumer posts the notification. There is no race.
+- Android has **one** process-scoped owner of the kit client and **one** consumer of
+  `incomingMessages`. `processPendingMessages` observes receive activity without consuming that
+  channel, so there is no competing-consumer race.
 - The owner is created at **process start**, before any RN bridge exists, so a silent push can
   restore the session and drain messages even on a cold start (app was killed).
+- iOS notification delivery is not implemented in this repo yet.
 
 ## Components
 
@@ -34,10 +37,8 @@ this one, **this doc is correct**.
 
 ### iOS
 
-| File | Role |
-|------|------|
-| `ios/ObscuraApp/ObscuraBridge.swift` | RN native module **and** owner of a **process-scoped** `static sharedClient`. `ensureClient()` get-or-restores that one client (concurrency-safe), shared by the live bridge and the static `handleSilentPush`. Restores from `UserDefaultsSessionStorage`. Posts the notification via the static `postGenericNotification`. |
-| `ios/ObscuraApp/AppDelegate.swift` | Receives APNS/FCM tokens and silent pushes; forwards each silent push to `ObscuraBridge.handleSilentPush`. |
+There is no `ios/` implementation in `obscura-pix`. `ObscuraKit-swift` has the native drain API,
+but no shipped app bridge or notification extension wires it to APNs.
 
 ### Shared
 
@@ -49,22 +50,22 @@ this one, **this doc is correct**.
 
 ```
 App foreground (after connect)
-  → requestPushPermission()                      (POST_NOTIFICATIONS on Android 13+ / APNS on iOS)
+  → requestPushPermission()                      (POST_NOTIFICATIONS on Android 13+)
   → Firebase hands back an FCM token              → "FCM token: …"
   → deliverPushToken(token)                       → emits pushTokenReceived event
   → JS: Obscura.registerPushToken(token)
   → bridge.registerPushToken                      → kit → PUT /v1/push-tokens (device-scoped JWT)
 ```
 
-Token rotations arrive natively (`onNewToken` on Android, `MessagingDelegate` on iOS) and route
-through the same `deliverPushToken` path. The server upserts by **deviceId**, so re-registering
-is safe and idempotent.
+Token rotations arrive through Android's `onNewToken` and route through the same
+`deliverPushToken` path. The server upserts by **deviceId**, so re-registering is safe and
+idempotent.
 
 ## Receiving a message → notification
 
-There is **one** consumer per platform, and it handles both the live (process alive) and the
-woken (silent push) case identically — the silent push just guarantees the client is connected
-so the same consumer gets a chance to drain.
+Android has one consumer, and it handles both the live (process alive) and the woken (silent push)
+case identically — the silent push just guarantees the client is connected so the same consumer
+gets a chance to drain.
 
 ### Android
 
@@ -88,42 +89,28 @@ friend sends pix
 
 ### iOS
 
-```
-silent push arrives → AppDelegate.didReceiveRemoteNotification
-  → ObscuraBridge.handleSilentPush(completion:)
-       → ensureClient()              // returns the live client, or restores one from
-                                     // UserDefaultsSessionStorage on a cold start
-       → client.processPendingMessages(timeout: 25)   // connects + drains + classifies
-       → postGenericNotification(counts)               // "New pix" / "New message"
-       → completion(.newData / .noData)
-```
-
-iOS posts only `"New pix"` / `"New message"` (friend requests are surfaced in-app, not as a
-push notification). Foreground presentation is gated by `UNUserNotificationCenter willPresent`.
+Not implemented in `obscura-pix`. When it is added, model classification and notification copy
+must remain in the app/extension; the Swift kit returns only an opaque processed-envelope total.
 
 ## Why this changed
 
-The previous build (Android) had `incomingMessages` read by **two** consumers — the bridge's
+The previous Android build had `incomingMessages` read by **two** consumers — the bridge's
 always-on loop and the FCM drain's `processPendingMessages` — racing for each single-delivery
-envelope. The drain usually lost (`Drained: pix=0`) whenever the process was alive, so the
-notification had to come from the live loop, and a **killed-process** wake had no loop and no
-client at all → no notification.
+envelope. The drain no longer reads that channel: it observes successful receive-path activity
+while `ObscuraSession` remains the sole consumer.
 
 The fix made ownership single and process-scoped:
 
 - **Android** — `ObscuraSession` is the lone owner and the lone consumer, created in
   `MainApplication.onCreate`. `onPushWake` restores + connects and lets that one consumer drain.
-- **iOS** — the kit client is a `static sharedClient` reached via a concurrency-safe
-  `ensureClient()`; `handleSilentPush` no longer bails when the RN bridge is absent — it
-  restores the session itself. The bridge's `init` and a cold-start push share one in-flight
-  restore, so they never build two clients on the same per-user DB.
+- **iOS** — still pending in `obscura-pix`.
 
 ## Foreground vs background
 
 `ObscuraSession` (Android) observes `ProcessLifecycleOwner` and keeps `appInForeground`, seeded
 from the **current** lifecycle state at init (not waiting for the first observer callback). The
 consumer only posts a notification when `appInForeground == false`; foreground messages update
-the in-app UI silently. iOS relies on `UNUserNotificationCenter willPresent` for the same effect.
+the in-app UI silently.
 
 ## What works / what doesn't
 

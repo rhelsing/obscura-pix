@@ -81,7 +81,7 @@ echo
 
 echo
 echo "push delivered. watching logcat for bridge output (Ctrl-C to stop)..."
-echo "looking for: ObscuraBridge / processPendingMessages / ProcessedCounts"
+echo "looking for: ObscuraBridge / processPendingMessages / processed="
 echo
 
 # Stream logcat filtered to the bridge's push-handler output.
