@@ -6,8 +6,10 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useHeaderHeight } from '@react-navigation/elements';
-import { Obscura, type Friend, type ModelEntry } from '../native/ObscuraModule';
+import { Obscura, conversationId, type Friend, type ModelEntry } from '../native/ObscuraModule';
 import { useSession, useModelEntries } from '../state/store';
+import { AUTHOR_USER_ID } from '../models/schema';
+import { authorOf } from '../utils/identity';
 import { StoriesRow } from './StoriesScreen';
 import { Avatar } from '../components/Avatar';
 import type { RootStackParamList } from '../navigation/types';
@@ -30,36 +32,34 @@ export function ChatListScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
-  const { friends, pending, myUsername } = useSession();
+  const { friends, pending, myUserId } = useSession();
   const messages = useModelEntries('directMessage');
   const pixEntries = useModelEntries('pix');
 
-  const onViewPix = (entries: ModelEntry[]) => openPixViewer(nav, entries);
+  const onViewPix = (sender: Friend, entries: ModelEntry[]) => openPixViewer(nav, sender, entries);
 
   // Build activity list — each friend with their latest chat + pix state.
   // Memoized so the four filter passes per friend don't run on every render.
+  //
+  // Membership is the CONVERSATION id and direction is the AUTHENTICATED author — never
+  // `senderUsername` / `recipientUsername`, which are names the sender chose. The conversation id is
+  // checked on the way in (`drain.ts`) to name this user and the actual sender, so a stranger cannot
+  // put an entry into a conversation with a friend, and `_authorUserId` is stamped from the envelope
+  // rather than the payload. `includes(f.userId)` was also a substring test on an id, which a
+  // prefix-sharing id would have satisfied.
   const activities: FriendActivity[] = useMemo(() => friends.map(f => {
-    const friendMessages = messages.filter(m =>
-      m.data.senderUsername === f.username || m.data.conversationId?.includes(f.userId)
-    );
+    const convId = conversationId(myUserId, f.userId);
+    const isMine = (e: ModelEntry) => authorOf(e.data, AUTHOR_USER_ID) === myUserId;
+    const inConversation = (e: ModelEntry) => e.data.conversationId === convId;
+
+    const friendMessages = messages.filter(inConversation);
     const lastMessage = friendMessages.sort((a, b) => b.timestamp - a.timestamp)[0];
 
-    const receivedNew = pixEntries.filter(p =>
-      p.data.senderUsername === f.username && p.data.recipientUsername === myUsername
-      && !p.data.viewedAt
-    );
-    const receivedViewed = pixEntries.filter(p =>
-      p.data.senderUsername === f.username && p.data.recipientUsername === myUsername
-      && !!p.data.viewedAt
-    );
-    const sentPending = pixEntries.filter(p =>
-      p.data.senderUsername === myUsername && p.data.recipientUsername === f.username
-      && !p.data.viewedAt
-    );
-    const sentOpened = pixEntries.filter(p =>
-      p.data.senderUsername === myUsername && p.data.recipientUsername === f.username
-      && !!p.data.viewedAt
-    );
+    const conversationPix = pixEntries.filter(inConversation);
+    const receivedNew = conversationPix.filter(p => !isMine(p) && !p.data.viewedAt);
+    const receivedViewed = conversationPix.filter(p => !isMine(p) && !!p.data.viewedAt);
+    const sentPending = conversationPix.filter(p => isMine(p) && !p.data.viewedAt);
+    const sentOpened = conversationPix.filter(p => isMine(p) && !!p.data.viewedAt);
 
     const allPix = [...receivedNew, ...receivedViewed, ...sentPending, ...sentOpened]
       .sort((a, b) => b.timestamp - a.timestamp);
@@ -77,7 +77,7 @@ export function ChatListScreen() {
       ...allPix.map(p => p.timestamp), 0
     );
     return { friend: f, lastMessage, unopenedPix: receivedNew, pixState, pixCount: receivedNew.length, latestTimestamp };
-  }).sort((a, b) => b.latestTimestamp - a.latestTimestamp), [friends, messages, pixEntries, myUsername]);
+  }).sort((a, b) => b.latestTimestamp - a.latestTimestamp), [friends, messages, pixEntries, myUserId]);
 
   return (
     // Full-screen page under the floating transparent header (pad content clear
@@ -112,8 +112,10 @@ export function ChatListScreen() {
         keyboardDismissMode="on-drag"
         renderItem={({ item }) => {
           const hasPix = item.unopenedPix.length > 0;
+          const mine = item.lastMessage !== undefined
+            && authorOf(item.lastMessage.data, AUTHOR_USER_ID) === myUserId;
           const preview = item.lastMessage?.data.content
-            ? `${item.lastMessage.data.senderUsername === myUsername ? 'You: ' : ''}${item.lastMessage.data.content}`
+            ? `${mine ? 'You: ' : ''}${item.lastMessage.data.content}`
             : 'Tap to chat';
 
           return (
@@ -121,7 +123,7 @@ export function ChatListScreen() {
               {/* Left: pix icon — tap opens pix viewer */}
               <TouchableOpacity
                 style={cl.iconZone}
-                onPress={() => hasPix ? onViewPix(item.unopenedPix) : nav.navigate('Chat', { friend: item.friend })}
+                onPress={() => hasPix ? onViewPix(item.friend, item.unopenedPix) : nav.navigate('Chat', { friend: item.friend })}
               >
                 {item.pixState === 'received_new' ? (
                   <View style={cl.iconCircleFilled}>

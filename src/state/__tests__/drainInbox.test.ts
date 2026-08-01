@@ -15,13 +15,32 @@ import { getFakeBridge } from '../../native/__fixtures__/reactNativeMock';
 
 const bridge = getFakeBridge();
 
+// UUID-shaped, because a conversation id splits on `_` and these ids go into one.
+const SELF = '11111111-1111-4111-8111-111111111111';
+const PEER = '22222222-2222-4222-8222-222222222222';
+const CONV = [SELF, PEER].sort().join('_');
+
+/**
+ * The drain authorizes every row against the authenticated session, so there has to be one. Without
+ * it `getUserId()` resolves `null` and the drain correctly refuses to store anything.
+ */
+beforeEach(() => {
+  bridge.__authenticate({ userId: SELF });
+});
+
+/** A well-formed inbound row from the peer, in a conversation with this user. */
+function deliver(over: Partial<Parameters<typeof bridge.__deliverInbox>[0]> = {}) {
+  const { payload, ...rest } = over as { payload?: string } & Record<string, unknown>;
+  return bridge.__deliverInbox({
+    senderUserId: PEER,
+    payload: payload ?? JSON.stringify({ conversationId: CONV, content: 'hello' }),
+    ...rest,
+  });
+}
+
 describe('draining', () => {
   it('writes the entry and consumes the row', async () => {
-    bridge.__deliverInbox({
-      modelKey: 'directMessage',
-      entryId: 'dm_1',
-      payload: JSON.stringify({ conversationId: 'a_b', content: 'hello' }),
-    });
+    deliver({ modelKey: 'directMessage', entryId: 'dm_1' });
 
     const result = await drainInbox();
 
@@ -29,13 +48,14 @@ describe('draining', () => {
     expect(await Obscura.inboxDepth()).toBe(0);
     const stored = await Obscura.entryAll('directMessage');
     expect(stored).toHaveLength(1);
-    expect(JSON.parse(stored[0].data)).toEqual({ conversationId: 'a_b', content: 'hello' });
+    expect(JSON.parse(stored[0].data))
+      .toEqual({ conversationId: CONV, content: 'hello', _authorUserId: PEER });
   });
 
   it('preserves the authenticated sender device as the stored tie-break', async () => {
-    bridge.__deliverInbox({
+    deliver({
       modelKey: 'pix', entryId: 'p_1', senderDeviceId: 'device_authenticated',
-      payload: JSON.stringify({ viewedAt: 0 }),
+      payload: JSON.stringify({ conversationId: CONV, viewedAt: 0 }),
     });
 
     await drainInbox();
@@ -49,6 +69,21 @@ describe('draining', () => {
     expect(result).toEqual({ written: 0, consumed: 0, discarded: 0, touched: [] });
     expect(bridge.__calls).not.toContain('entryPut');
   });
+
+  /**
+   * Without an identity there is nothing to authorize against, and the safe answer is to store
+   * nothing rather than to discard everything — the rows stay put and the next trigger retries,
+   * which is exactly what `peek` being side-effect free buys.
+   */
+  it('refuses to drain before the session identity is available', async () => {
+    await Obscura.logout();
+    bridge.__deliverInbox({ payload: JSON.stringify({ conversationId: CONV }) });
+
+    const result = await drainInbox();
+
+    expect(result).toEqual({ written: 0, consumed: 0, discarded: 0, touched: [] });
+    expect(await Obscura.inboxDepth()).toBe(1);
+  });
 });
 
 describe('the effect ORDER', () => {
@@ -59,7 +94,7 @@ describe('the effect ORDER', () => {
    * fails.
    */
   it('writes the entry BEFORE consuming the row', async () => {
-    bridge.__deliverInbox({ entryId: 'dm_1', payload: JSON.stringify({ content: 'x' }) });
+    deliver({ entryId: 'dm_1' });
 
     await drainInbox();
 
@@ -70,12 +105,27 @@ describe('the effect ORDER', () => {
   });
 
   /**
+   * The same assertion in a batch that also DISCARDS. `inboxDiscard` used to delete rows by calling
+   * `inboxConsume` internally, so the index above found the discard's inner call instead — and the
+   * ordering guard silently stopped guarding anything the moment a batch contained both.
+   */
+  it('still sees the real consume when the batch also discards', async () => {
+    deliver({ entryId: 'dm_1' });
+    bridge.__deliverInbox({ kind: 'UNKNOWN', modelKey: null, entryId: null, payload: 'x' });
+
+    await drainInbox();
+
+    expect(bridge.__calls.indexOf('inboxConsume')).toBeGreaterThan(bridge.__calls.indexOf('entryPut'));
+    expect(bridge.__calls).toContain('inboxDiscard');
+  });
+
+  /**
    * The consequence of that order, and the reason it is worth enforcing: if the write fails, the row
    * is still in the inbox, so the next drain reprocesses it. Nothing is lost. That is safe only
    * because `peek` is side-effect free and `merge` is idempotent.
    */
   it('leaves the row in the inbox when the write fails', async () => {
-    bridge.__deliverInbox({ entryId: 'dm_1', payload: JSON.stringify({ content: 'x' }) });
+    deliver({ entryId: 'dm_1' });
     bridge.__failNext('entryPut', 'ENTRY_PUT_ERROR', 'disk full');
 
     await expect(drainInbox()).rejects.toThrow();
@@ -85,7 +135,7 @@ describe('the effect ORDER', () => {
   });
 
   it('recovers on the next drain after a failed write', async () => {
-    bridge.__deliverInbox({ entryId: 'dm_1', payload: JSON.stringify({ content: 'x' }) });
+    deliver({ entryId: 'dm_1' });
     bridge.__failNext('entryPut', 'ENTRY_PUT_ERROR');
     await expect(drainInbox()).rejects.toThrow();
 
@@ -126,10 +176,44 @@ describe('rows the app cannot process', () => {
     expect(bridge.__discarded.find((d) => d.reason === 'unknown-kind')?.ids).toHaveLength(2);
   });
 
-  it('processes the good rows in a batch that also contains bad ones', async () => {
-    bridge.__deliverInbox({ entryId: 'ok_1', payload: JSON.stringify({ content: 'a' }) });
+  /**
+   * §3.3 rule 5: a discard "MUST be logged as a security-relevant event **and surfaced** — it is
+   * data loss, chosen deliberately, and must never be the quiet path". Passing the reason across the
+   * bridge satisfied the first half only; the app's own log said nothing.
+   */
+  it('surfaces the discard app-side, not only to the kit', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     bridge.__deliverInbox({ kind: 'UNKNOWN', modelKey: null, entryId: null, payload: 'x' });
-    bridge.__deliverInbox({ entryId: 'ok_2', payload: JSON.stringify({ content: 'b' }) });
+
+    await drainInbox();
+
+    expect(warn.mock.calls.flat().join('\n')).toContain('unknown-kind');
+    warn.mockRestore();
+  });
+
+  /**
+   * The security case: delivery is not authorization. A stranger can send this device anything
+   * (KIT_API §4.1), including a `profile` written to MY id — which is REPLACE, so a higher `sentAt`
+   * took the row over, and `ProfileScreen`'s save then re-broadcast their text as mine.
+   */
+  it('discards an entry the sender was not entitled to write', async () => {
+    bridge.__deliverInbox({
+      modelKey: 'profile', entryId: `profile_${SELF}`,
+      senderUserId: '99999999-9999-4999-8999-999999999999',
+      payload: JSON.stringify({ displayName: 'owned' }),
+    });
+
+    const result = await drainInbox();
+
+    expect(result).toMatchObject({ written: 0, discarded: 1 });
+    expect(await Obscura.entryAll('profile')).toEqual([]);
+    expect(bridge.__discarded[0].reason).toBe('unauthorized-sender');
+  });
+
+  it('processes the good rows in a batch that also contains bad ones', async () => {
+    deliver({ entryId: 'ok_1' });
+    bridge.__deliverInbox({ kind: 'UNKNOWN', modelKey: null, entryId: null, payload: 'x' });
+    deliver({ entryId: 'ok_2' });
 
     const result = await drainInbox();
 
@@ -140,27 +224,31 @@ describe('rows the app cannot process', () => {
 
 describe('merging against what is already stored', () => {
   it('does not overwrite a newer entry with an older redelivered one', async () => {
-    await Obscura.entryPut('pix', 'p', JSON.stringify({ v: 'newer' }), 9_000, 'device_a');
-    bridge.__deliverInbox({
-      modelKey: 'pix', entryId: 'p', sentAt: 1_000, payload: JSON.stringify({ v: 'older' }),
+    await Obscura.entryPut('pix', 'p', JSON.stringify({ conversationId: CONV, v: 'newer' }), 9_000, 'device_a');
+    deliver({
+      modelKey: 'pix', entryId: 'p', sentAt: 1_000,
+      payload: JSON.stringify({ conversationId: CONV, v: 'older' }),
     });
 
     const result = await drainInbox();
 
     // Consumed — it WAS processed, and the right outcome was "keep what we have".
     expect(result).toMatchObject({ written: 0, consumed: 1 });
-    expect(JSON.parse((await Obscura.entryAll('pix'))[0].data)).toEqual({ v: 'newer' });
+    expect(JSON.parse((await Obscura.entryAll('pix'))[0].data).v).toBe('newer');
   });
 
   it('keeps the first write for an APPEND model when a duplicate arrives', async () => {
-    await Obscura.entryPut('directMessage', 'dm', JSON.stringify({ content: 'first' }), 1_000, 'd');
-    bridge.__deliverInbox({
-      entryId: 'dm', sentAt: 9_000, payload: JSON.stringify({ content: 'second' }),
+    await Obscura.entryPut(
+      'directMessage', 'dm', JSON.stringify({ conversationId: CONV, content: 'first' }), 1_000, 'd',
+    );
+    deliver({
+      entryId: 'dm', sentAt: 9_000,
+      payload: JSON.stringify({ conversationId: CONV, content: 'second' }),
     });
 
     await drainInbox();
 
-    expect(JSON.parse((await Obscura.entryAll('directMessage'))[0].data)).toEqual({ content: 'first' });
+    expect(JSON.parse((await Obscura.entryAll('directMessage'))[0].data).content).toBe('first');
   });
 
   /**
@@ -171,25 +259,61 @@ describe('merging against what is already stored', () => {
   it('is idempotent across a re-drain of the same rows', async () => {
     const row = {
       modelKey: 'pix' as const, entryId: 'p', sentAt: 5_000,
-      payload: JSON.stringify({ v: 'once' }),
+      payload: JSON.stringify({ conversationId: CONV, v: 'once' }),
     };
-    bridge.__deliverInbox(row);
+    deliver(row);
     await drainInbox();
 
-    // The kit redelivers and the app reprocesses.
-    bridge.__deliverInbox(row);
+    // The kit redelivers (a DIFFERENT envelope, since the deduped one is gone) and the app
+    // reprocesses.
+    deliver(row);
     await drainInbox();
 
     const stored = await Obscura.entryAll('pix');
     expect(stored).toHaveLength(1);
-    expect(JSON.parse(stored[0].data)).toEqual({ v: 'once' });
+    expect(JSON.parse(stored[0].data).v).toBe('once');
+  });
+
+  /**
+   * The viewed-receipt, end to end: the recipient's `viewedAt` update must not take the entry's
+   * authorship with it. Both kits stamp the authenticated sender on the row, so without the
+   * carry-over rule the pix would flip to "sent by them" the moment they opened it.
+   */
+  it('keeps the original author when the other participant sends a receipt', async () => {
+    await Obscura.entryPut(
+      'pix', 'p', JSON.stringify({ conversationId: CONV, _authorUserId: SELF }), 1_000, 'device_mine',
+    );
+    deliver({
+      modelKey: 'pix', entryId: 'p', sentAt: 9_000,
+      payload: JSON.stringify({ conversationId: CONV, viewedAt: 9_000, _authorUserId: PEER }),
+    });
+
+    await drainInbox();
+
+    const stored = JSON.parse((await Obscura.entryAll('pix'))[0].data);
+    expect(stored._authorUserId).toBe(SELF);
+    expect(stored.viewedAt).toBe(9_000);
+  });
+});
+
+describe('the inbox dedupes on envelopeId, as both kits do', () => {
+  /**
+   * KIT_API §3.3 rule 8. Persist-then-ack *guarantees* redelivery — the ack is best-effort and its
+   * failure is swallowed — so the same envelope arrives twice as normal behaviour, and
+   * `UNIQUE(envelope_id)` + `INSERT OR IGNORE` is what stops it becoming two rows.
+   */
+  it('does not create a second row for a redelivered envelope', async () => {
+    const first = deliver({ entryId: 'dm_1' });
+    deliver({ envelopeId: first.envelopeId, entryId: 'dm_1' });
+
+    expect(await Obscura.inboxDepth()).toBe(1);
   });
 });
 
 describe('draining fully', () => {
   it('keeps going until the inbox is empty', async () => {
     for (let i = 0; i < 12; i += 1) {
-      bridge.__deliverInbox({ entryId: `dm_${i}`, payload: JSON.stringify({ content: `m${i}` }) });
+      deliver({ entryId: `dm_${i}` });
     }
 
     const result = await drainInboxFully(5);
@@ -200,9 +324,9 @@ describe('draining fully', () => {
   });
 
   it('reports every model it touched, once', async () => {
-    bridge.__deliverInbox({ modelKey: 'directMessage', entryId: 'a', payload: '{}' });
-    bridge.__deliverInbox({ modelKey: 'story', entryId: 'b', payload: '{}' });
-    bridge.__deliverInbox({ modelKey: 'directMessage', entryId: 'c', payload: '{}' });
+    deliver({ modelKey: 'directMessage', entryId: 'a' });
+    deliver({ modelKey: 'story', entryId: 'b', payload: '{}' });
+    deliver({ modelKey: 'directMessage', entryId: 'c' });
 
     const result = await drainInboxFully(1);
 
@@ -216,5 +340,34 @@ describe('draining fully', () => {
 
     expect(result.discarded).toBe(1);
     expect(await Obscura.inboxDepth()).toBe(0);
+  });
+
+  /**
+   * The batch bound is a termination guard, and hitting it is worth logging — but only when rows are
+   * actually left behind. Testing `i === maxBatches - 1` inside the loop fired whenever the LAST
+   * permitted batch made progress, so a run that emptied the inbox on its final batch reported a
+   * failure. Any row count that is an exact multiple of the batch size hits that.
+   */
+  it('does not report a failure when the last permitted batch empties the inbox', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    for (let i = 0; i < 4; i += 1) deliver({ entryId: `dm_${i}` });
+
+    const result = await drainInboxFully(2, 2);
+
+    expect(result.consumed).toBe(4);
+    expect(await Obscura.inboxDepth()).toBe(0);
+    expect(warn.mock.calls.flat().join('\n')).not.toContain('maxBatches');
+    warn.mockRestore();
+  });
+
+  it('reports a failure when the bound is reached with rows still waiting', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    for (let i = 0; i < 6; i += 1) deliver({ entryId: `dm_${i}` });
+
+    await drainInboxFully(2, 2);
+
+    expect(await Obscura.inboxDepth()).toBe(2);
+    expect(warn.mock.calls.flat().join('\n')).toContain('maxBatches');
+    warn.mockRestore();
   });
 });

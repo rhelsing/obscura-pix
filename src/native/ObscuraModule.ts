@@ -100,15 +100,20 @@ export type LoginScenario =
 /**
  * Stable error codes a rejected promise may carry in its `code`, mirroring
  * `ObscuraError.kt` in the kit. Kit-level failures use one of these; anything
- * else falls back to a per-method code (e.g. "CREATE_ERROR").
+ * else falls back to a per-method code (e.g. "ENTRY_PUT_ERROR").
+ *
+ * `DIRECT_ROUTING_UNRESOLVED` is deliberately NOT here. This union is specifically the codes a
+ * NATIVE rejection can carry, and no kit throws it any more — audience resolution moved into the
+ * app (SPEC §1.2, §1.4), so the code is raised by `src/domain/audience.ts`'s
+ * `DirectRoutingUnresolved` and never crosses the bridge. Listing it here would say a native call
+ * can fail that way, which is what a reader would act on.
  */
 export type ObscuraErrorCode =
   | 'NOT_AUTHENTICATED'
   | 'NOT_PROVISIONED'
   | 'NOT_FRIENDS'
   | 'NO_DEVICES'
-  | 'SEND_FAILED'
-  | 'DIRECT_ROUTING_UNRESOLVED';
+  | 'SEND_FAILED';
 
 // ─── Core API ────────────────────────────────────────────
 
@@ -152,12 +157,11 @@ export const Obscura = {
     Bridge.validateAndApproveLink(code),
 
   // The ORM wrappers — `defineModels`, `createEntry`, `upsertEntry`, `queryEntries`, `allEntries`,
-  // `deleteEntry` — were removed on 2026-07-30 with the native methods behind them (§10 step 4).
+  // `deleteEntry` — were removed on 2026-07-30 with the native methods behind them
+  // (`obscura-proto/KIT_API.md` §10 step 4).
   // Their replacements are the thin kit surface below plus `src/state/{writeEntry,drainInbox}.ts`.
 
   // ─── The thin kit surface (obscura-proto/KIT_API.md §3, §5, §8.1) ───────
-  //
-  // Runs alongside the ORM methods above for §10 steps 2-3; those go in step 4.
   //
   // `inbox` is how messages arrive, `entries` is where the app keeps what it made of them, and
   // `sendEntry` is how they leave. Nothing here parses a payload on either side of the bridge.
@@ -184,7 +188,9 @@ export const Obscura = {
 
   entryAll: (model: string): Promise<StoredEntry[]> => Bridge.entryAll(model),
 
-  entryDelete: (model: string, id: string): Promise<void> => Bridge.entryDelete(model, id),
+  // No `entryDelete`. It had zero callers here and nothing in the app or either kit produces
+  // `op: DELETE`, so a delete could only ever remove a row locally and diverge this device from
+  // every other one. The kit-side `entries.delete` is the kits' business.
 
   /** The caller names the recipients (SPEC §0.4). The kit resolves no audience of its own. */
   sendEntry: (

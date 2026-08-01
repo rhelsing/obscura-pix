@@ -7,8 +7,14 @@
  * ## The contract, and why each step is where it is
  *
  * ```
- * peek(limit) → for each row: classify → merge → put → consume | discard
+ * peek(limit) → for each row: classify → AUTHORIZE → attribute → merge → put → consume | discard
  * ```
+ *
+ * - **Authorize before storing.** Delivery is not authorization: any authenticated user can deliver
+ *   to any device (KIT_API §4.1), so "it arrived" says nothing about whether the sender was entitled
+ *   to write it. Until 2026-08-01 there was no check at all and no authenticated identity to check
+ *   against — `senderUserId` was dropped on the floor by `toDrainRow` and the screens attributed
+ *   entries from peer-chosen payload fields instead. See `authorize` for the per-model rules.
  *
  * - **`peek` is side-effect free.** Draining twice without consuming returns the same rows. That is
  *   the crash-safety property, not a bug: an app that dies mid-drain reprocesses, and `merge.ts`'s
@@ -29,6 +35,7 @@
  */
 
 import { merge, type Entry, type MergeRule } from './merge';
+import { AUTHOR_USER_ID } from '../models/schema';
 
 /** The kit's inbox row, narrowed to what the drain actually reads. */
 export interface DrainRow {
@@ -38,6 +45,13 @@ export interface DrainRow {
   entryId: string | null;
   op: string | null;
   sentAt: number | null;
+  /**
+   * The sending **user**, stamped by the server from a device-scoped token and therefore unforgeable
+   * (SPEC §0.10). This is the only trustworthy answer to "who sent this", and until 2026-08-01 the
+   * drain did not carry it at all — so every screen answered the question from the payload instead.
+   */
+  senderUserId: string;
+  /** The device whose Signal session decrypted this — cryptographic attribution, and the tie-break. */
   senderDeviceId: string | null;
   payload: string;
 }
@@ -47,7 +61,71 @@ export type DiscardReason =
   | 'unknown-kind'
   | 'unknown-model'
   | 'missing-fields'
-  | 'unparsable-payload';
+  | 'unparsable-payload'
+  | 'unauthorized-sender';
+
+/**
+ * What the app knows about a model, as the drain needs it.
+ *
+ * The two optional rules are this app's **authorization** policy — the answer to "may *this* sender
+ * write *this* entry". They are optional because they are not universal: `story` has neither, and
+ * that is a real gap rather than an oversight (see `authorize`).
+ */
+export interface ModelRules {
+  merge: MergeRule;
+  /**
+   * The payload field naming a 1:1 conversation. Set for conversation-scoped models: the id must be
+   * canonical two-party and must name **both** this user and the authenticated sender.
+   */
+  conversationField?: string;
+  /**
+   * An entry-id prefix that binds an entry to its owner: the id MUST be
+   * `${ownerIdPrefix}${senderUserId}`. Set for `profile`, whose id is guessable by construction.
+   */
+  ownerIdPrefix?: string;
+}
+
+/**
+ * May this authenticated sender write this entry? `null` when yes.
+ *
+ * **Friendship is deliberately NOT required.** Any authenticated user can deliver to any device
+ * (KIT_API §4.1), so a stranger's entry reaches the inbox no matter what — but a `discard` is
+ * permanent data loss, and gating it on a friend graph that updates over a *different* message than
+ * the entry itself would drop real mail on the accept/first-message race. The screens instead
+ * resolve every name through the friend graph, so a stranger's entry is stored and never attributed
+ * to anybody. What is checked here is narrower and unconditional: an entry must be consistent with
+ * who actually sent it.
+ *
+ * `story` therefore has no rule beyond attribution: a story carries no id or field that binds it to
+ * an author, so the authenticated sender simply *becomes* the author (below) rather than being
+ * checked against a claim. That is the whole fix for "a stranger's story appears under Alice's
+ * name" — there is no longer a claim to believe.
+ */
+function authorize(
+  row: DrainRow,
+  rules: ModelRules,
+  data: Record<string, unknown>,
+  selfUserId: string,
+): DiscardReason | null {
+  if (rules.ownerIdPrefix !== undefined && row.entryId !== rules.ownerIdPrefix + row.senderUserId) {
+    return 'unauthorized-sender';
+  }
+
+  if (rules.conversationField !== undefined) {
+    const raw = data[rules.conversationField];
+    if (typeof raw !== 'string') return 'unauthorized-sender';
+    // Same canonical-form rule as the send side (SPEC §1.3, `audience.ts`), applied to the other
+    // direction: exactly two parts, and they must be ME and the person who actually sent this. A
+    // conversation between two other people is not mine to store, and a conversation between me and
+    // Alice is not something a stranger may write into.
+    const participants = raw.split('_');
+    if (participants.length !== 2) return 'unauthorized-sender';
+    if (!participants.includes(selfUserId)) return 'unauthorized-sender';
+    if (!participants.includes(row.senderUserId)) return 'unauthorized-sender';
+  }
+
+  return null;
+}
 
 export interface DrainPlan {
   /** Entries to write, grouped by model. Already merged against current state. */
@@ -65,11 +143,15 @@ export interface DrainPlan {
  * stored, because the app has nowhere to put it and no way to render it.
  *
  * `state` is the current entries per model, keyed by entry id — the merge input. It is not mutated.
+ *
+ * `selfUserId` is this device's authenticated user. It is required, not optional: the conversation
+ * rule is meaningless without it, and defaulting it to `''` would silently authorize everything.
  */
 export function planDrain(
   rows: readonly DrainRow[],
-  knownModels: ReadonlyMap<string, MergeRule>,
+  knownModels: ReadonlyMap<string, ModelRules>,
   state: ReadonlyMap<string, ReadonlyMap<string, Entry>>,
+  selfUserId: string,
 ): DrainPlan {
   const plan: DrainPlan = { writes: new Map(), consume: [], discard: [] };
   // Merge accumulates within the batch too: two rows touching one entry id must resolve against
@@ -94,7 +176,12 @@ export function planDrain(
     // MODEL_SYNC-derived fields the merge cannot work without. `senderDeviceId` is the REPLACE
     // tie-break and must be the AUTHENTICATED device (SPEC §0.10 rule 4) — a row without one cannot
     // be ordered deterministically, so storing it would make two devices converge differently.
-    if (row.entryId === null || row.sentAt === null || row.senderDeviceId === null) {
+    // `senderUserId` is the authorization and attribution input: without it there is nothing to
+    // check a claim against and nothing to attribute the entry to.
+    if (
+      row.entryId === null || row.sentAt === null ||
+      row.senderDeviceId === null || row.senderUserId === ''
+    ) {
       plan.discard.push({ id: row.id, reason: 'missing-fields' });
       continue;
     }
@@ -114,18 +201,40 @@ export function planDrain(
     }
 
     const model = row.modelKey;
-    const rule = knownModels.get(model)!;
+    const rules = knownModels.get(model)!;
+
+    const unauthorized = authorize(row, rules, data, selfUserId);
+    if (unauthorized !== null) {
+      plan.discard.push({ id: row.id, reason: unauthorized });
+      continue;
+    }
+
+    const current = working.get(model) ?? new Map(state.get(model) ?? new Map());
+
+    // ATTRIBUTION. The authenticated sender becomes the author — except when this device already
+    // holds the entry, in which case the author it already recorded stands.
+    //
+    // The exception is what makes a REPLACE model with two legitimate writers work. A `pix` is
+    // created by Alice and updated by Bob (the viewed-receipt), so on Alice's device Bob's update
+    // must not flip the entry's author to Bob and turn "Bob viewed your pix" into "Bob sent you a
+    // pix". The author is fixed by whoever this device saw first and is never taken from the
+    // payload — a peer can put anything in `_authorUserId` and it is overwritten here every time.
+    //
+    // Known ordering wrinkle, and it is a mislabel rather than a leak: if Bob's receipt reaches
+    // Alice's *second* device before Alice's own create does, that device records Bob as the author.
+    // Both candidates are the conversation's two participants, which `authorize` has already pinned.
+    const prior = current.get(row.entryId)?.data[AUTHOR_USER_ID];
     const entry: Entry = {
       id: row.entryId,
       sentAt: row.sentAt,
       authorDeviceId: row.senderDeviceId,
-      // A DELETE arrives as an entry the app records as deleted. The kit no longer has an opinion
-      // about tombstones — this is the app's `_deleted` convention, in the app's own payload.
-      data: row.op === 'DELETE' ? { ...data, _deleted: true } : data,
+      data: {
+        ...data,
+        [AUTHOR_USER_ID]: typeof prior === 'string' ? prior : row.senderUserId,
+      },
     };
 
-    const current = working.get(model) ?? new Map(state.get(model) ?? new Map());
-    const next = merge(rule, current, [entry]);
+    const next = merge(rules.merge, current, [entry]);
     working.set(model, next);
     plan.consume.push(row.id);
 

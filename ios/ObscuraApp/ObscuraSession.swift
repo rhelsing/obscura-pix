@@ -43,8 +43,8 @@ final class BridgeLogger: ObscuraLogger, @unchecked Sendable {
 ///   - Client lifecycle (placeholder → user-scoped encrypted DB on login/register)
 ///   - Keychain-backed session persistence (token/refresh/userId/deviceId/username)
 ///   - Restore-from-Keychain on cold start (sets `deviceId` before `authState`
-///     flips to `.authenticated`, so the JS-driven `defineModels` stamps a correct
-///     `authorDeviceId` — see docs/IOS_PARITY.md)
+///     flips to `.authenticated`, so the app can stamp a correct `authorDeviceId`
+///     on `entryPut` — see docs/IOS_PARITY.md)
 ///   - App foreground/background tracking (reconnect on resume)
 ///
 /// The RN bridge (`ObscuraBridge`) subscribes to `client.observeEvents()` and is

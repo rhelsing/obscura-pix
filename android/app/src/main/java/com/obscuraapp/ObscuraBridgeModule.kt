@@ -911,14 +911,14 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     // ─────────────────────────────────────────────────────────────────────────────────────────
     // The thin kit surface (obscura-proto/KIT_API.md §3, §5, §8.1).
     //
-    // Three groups: drain the inbox, store what you make of it, send what you write. They exist
-    // ALONGSIDE the ORM methods above for the duration of §10 steps 2-3; the ORM ones go in step 4.
+    // Three groups: drain the inbox, store what you make of it, send what you write. They replaced
+    // the ORM methods, which were deleted on 2026-07-30 (KIT_API.md §10 step 4).
     //
     // Note what does NOT cross here: nothing parses the payload. `data` moves as an opaque JSON
-    // STRING in both directions, which is a deliberate departure from `entryToMap` above — that
-    // helper flattens a map field-by-field and falls back to `v.toString()` for anything that is not
-    // a String/Number/Boolean, so nested objects and arrays arrive as their Kotlin toString. The app
-    // owns the JSON; the bridge should hand it back byte-identical, not re-encode it.
+    // STRING in both directions, which is a deliberate departure from the deleted `entryToMap` —
+    // that helper flattened a map field-by-field and fell back to `v.toString()` for anything that
+    // was not a String/Number/Boolean, so nested objects and arrays arrived as their Kotlin
+    // toString. The app owns the JSON; the bridge hands it back byte-identical, never re-encoded.
     // ─────────────────────────────────────────────────────────────────────────────────────────
 
     @ReactMethod
@@ -1011,18 +1011,6 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 promise.resolve(arr)
             } catch (e: Exception) {
                 promise.rejectKit("ENTRY_ALL_ERROR", e)
-            }
-        }
-    }
-
-    @ReactMethod
-    fun entryDelete(model: String, id: String, promise: Promise) {
-        scope.launch {
-            try {
-                requireClient().entries.delete(model, id)
-                promise.resolve(null)
-            } catch (e: Exception) {
-                promise.rejectKit("ENTRY_DELETE_ERROR", e)
             }
         }
     }

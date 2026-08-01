@@ -1,4 +1,4 @@
-import { writeEntry, newEntryId } from '../writeEntry';
+import { writeEntry, newEntryId, flushOutbox } from '../writeEntry';
 import { DirectRoutingUnresolved } from '../../domain/audience';
 import { Obscura } from '../../native/ObscuraModule';
 import { getFakeBridge } from '../../native/__fixtures__/reactNativeMock';
@@ -39,7 +39,11 @@ describe('storing and sending', () => {
     const stored = await Obscura.entryAll('directMessage');
     expect(stored).toHaveLength(1);
     expect(stored[0].id).toBe(id);
-    expect(JSON.parse(stored[0].data)).toEqual({ conversationId: convId, content: 'hi' });
+    // `_authorUserId` is stamped by `writeEntry`, not supplied by the caller: this device authored
+    // the write, so this user is the author (SPEC §0.5). Every screen reads it instead of the
+    // `senderUsername` the payload used to carry.
+    expect(JSON.parse(stored[0].data))
+      .toEqual({ conversationId: convId, content: 'hi', _authorUserId: SELF });
 
     expect(bridge.__sent).toHaveLength(1);
     expect(bridge.__sent[0].recipientUserIds).toEqual([BOB]);
@@ -71,7 +75,7 @@ describe('storing and sending', () => {
 
     const stored = await Obscura.entryAll('story');
     expect(bridge.__sent[0].payloadJson).toBe(stored[0].data);
-    expect(JSON.parse(bridge.__sent[0].payloadJson)).toEqual(data);
+    expect(JSON.parse(bridge.__sent[0].payloadJson)).toEqual({ ...data, _authorUserId: SELF });
   });
 
   it('creates with CREATE and updates with UPDATE', async () => {
@@ -139,9 +143,9 @@ describe('audience failures', () => {
   });
 
   /**
-   * `pix` resolves by CONVERSATION, not by recipient — `schema.ts` declares
-   * `audience: { kind: 'conversation', field: 'conversationId' }`, and `recipientUsername` is a
-   * display label the resolver never reads.
+   * `pix` resolves by CONVERSATION — `schema.ts` declares
+   * `audience: { kind: 'conversation', field: 'conversationId' }`. It no longer carries a recipient
+   * name at all; the conversation id names both parties by authenticated userId.
    *
    * **A conversation participant who is not an accepted friend gets nothing.** The conversation id
    * is a payload field, so without that intersection this call would mail the entry — `mediaRef`,
@@ -151,14 +155,26 @@ describe('audience failures', () => {
    * This test asserted `[STRANGER]` until 2026-07-28 and was pinning the leak as correct.
    */
   it('resolves pix by conversation, and drops a participant who is not a friend', async () => {
-    await writeEntry(args('pix', {
-      conversationId: [SELF, STRANGER].sort().join('_'),
-      recipientUsername: 'someone-else-entirely',
-    }));
+    await writeEntry(args('pix', { conversationId: [SELF, STRANGER].sort().join('_') }));
 
     // Stored — it is the user's own entry — but sent to nobody but their own devices.
     expect(await Obscura.entryAll('pix')).toHaveLength(1);
     expect(bridge.__sent[0].recipientUserIds).toEqual([]);
+  });
+
+  /**
+   * The other half of the same guard, on the receive-echo path. A conversation between two people
+   * who are not me is not one this device can address at all — the intersection alone would happily
+   * resolve it to both of them (SPEC §1.2).
+   */
+  it('refuses a conversation this user is not part of', async () => {
+    const theirs = [BOB, '44444444-4444-4444-8444-444444444444'].sort().join('_');
+
+    await expect(writeEntry(args('pix', { conversationId: theirs })))
+      .rejects.toThrow(DirectRoutingUnresolved);
+
+    expect(bridge.__sent).toEqual([]);
+    expect(bridge.__calls).not.toContain('entryPut');
   });
 
   it('sends to a conversation participant who IS a friend', async () => {
@@ -175,6 +191,90 @@ describe('audience failures', () => {
 
     expect(bridge.__sent).toEqual([]);
     expect(bridge.__calls).not.toContain('entryPut');
+  });
+});
+
+describe('attribution', () => {
+  /**
+   * The viewed-receipt: the RECIPIENT writes `viewedAt` onto a `pix` its SENDER created, re-sending
+   * `{ ...story.data }`. Stamping self there would relabel the sender's pix as one of mine, and
+   * `ChatScreen` would show "You sent a pix" for a pix I received.
+   */
+  it('keeps an existing author rather than claiming an entry it is only updating', async () => {
+    const convId = [SELF, BOB].sort().join('_');
+
+    await writeEntry(args('pix', {
+      conversationId: convId, _authorUserId: BOB, viewedAt: 123,
+    }, 'pix_from_bob'));
+
+    expect(JSON.parse((await Obscura.entryAll('pix'))[0].data)._authorUserId).toBe(BOB);
+  });
+});
+
+describe('the outbox', () => {
+  /**
+   * The gap this closes: `writeEntry` keeps the local row and rethrows when a send reaches nobody,
+   * a screen toasts once, and then **nothing ever retried it**. The receive side has four triggers
+   * (reconnect, foreground, cold start, wake); the send side had none, so an undelivered entry sat
+   * in the user's own timeline looking sent, permanently.
+   */
+  it('marks an entry whose send reached nobody, and retries it on the next flush', async () => {
+    bridge.__failNext('sendEntry', 'SEND_FAILED', 'offline');
+    await expect(writeEntry(args('story', { content: 'stranded' }))).rejects.toThrow('offline');
+    expect(bridge.__sent).toEqual([]);
+
+    const delivered = await flushOutbox({ selfUserId: SELF, friends: FRIENDS });
+
+    expect(delivered).toBe(1);
+    expect(bridge.__sent).toHaveLength(1);
+    expect(JSON.parse(bridge.__sent[0].payloadJson).content).toBe('stranded');
+  });
+
+  /** The mark is delivery bookkeeping. A peer must never see it, and it must not survive success. */
+  it('never puts the mark on the wire, and clears it once delivered', async () => {
+    bridge.__failNext('sendEntry', 'SEND_FAILED');
+    await expect(writeEntry(args('story', { content: 'x' }))).rejects.toThrow();
+    expect(JSON.parse((await Obscura.entryAll('story'))[0].data)._undelivered).toBe('CREATE');
+
+    await flushOutbox({ selfUserId: SELF, friends: FRIENDS });
+
+    expect(JSON.parse(bridge.__sent[0].payloadJson)._undelivered).toBeUndefined();
+    expect(JSON.parse((await Obscura.entryAll('story'))[0].data)._undelivered).toBeUndefined();
+  });
+
+  /** Still offline: the mark stays, so the trigger after this one tries again. */
+  it('keeps the mark when the retry also fails', async () => {
+    bridge.__failNext('sendEntry', 'SEND_FAILED');
+    await expect(writeEntry(args('story', { content: 'x' }))).rejects.toThrow();
+
+    bridge.__failNext('sendEntry', 'SEND_FAILED');
+    expect(await flushOutbox({ selfUserId: SELF, friends: FRIENDS })).toBe(0);
+
+    expect(JSON.parse((await Obscura.entryAll('story'))[0].data)._undelivered).toBe('CREATE');
+  });
+
+  it('does nothing when everything was delivered', async () => {
+    await writeEntry(args('story', { content: 'fine' }));
+    const sentBefore = bridge.__sent.length;
+
+    expect(await flushOutbox({ selfUserId: SELF, friends: FRIENDS })).toBe(0);
+    expect(bridge.__sent).toHaveLength(sentBefore);
+  });
+
+  /**
+   * A newer local write supersedes the stranded one, and `entryPut` is blind — so re-putting the
+   * old `sentAt` would roll the newer version back. The mark is simply dropped with the row it
+   * described.
+   */
+  it('does not resurrect an entry a newer write has replaced', async () => {
+    const id = 'profile_x';
+    bridge.__failNext('sendEntry', 'SEND_FAILED');
+    await expect(writeEntry(args('profile', { displayName: 'old' }, id))).rejects.toThrow();
+
+    await writeEntry(args('profile', { displayName: 'new' }, id));
+
+    expect(JSON.parse((await Obscura.entryAll('profile'))[0].data).displayName).toBe('new');
+    expect(JSON.parse((await Obscura.entryAll('profile'))[0].data)._undelivered).toBeUndefined();
   });
 });
 

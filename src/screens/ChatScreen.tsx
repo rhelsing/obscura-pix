@@ -8,6 +8,8 @@ import { useHeaderHeight } from '@react-navigation/elements';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura, onObscuraEvent, conversationId, type ModelEntry } from '../native/ObscuraModule';
 import { useSession, useModelEntries, saveEntry } from '../state/store';
+import { AUTHOR_USER_ID } from '../models/schema';
+import { authorOf } from '../utils/identity';
 import { toast } from '../components/Toast';
 import { SendIcon } from '../components/icons';
 import type { RootStackScreenProps, RootStackParamList } from '../navigation/types';
@@ -55,7 +57,7 @@ type TimelineItem = ModelEntry & { _kind: 'message' | 'pix' };
 export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
   const { friend } = route.params;
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { myUserId, myUsername } = useSession();
+  const { myUserId } = useSession();
   const headerHeight = useHeaderHeight();
   const allMessages = useModelEntries('directMessage');
   const allPix = useModelEntries('pix');
@@ -68,16 +70,16 @@ export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
     () => allMessages.filter(m => m.data.conversationId === convId),
     [allMessages, convId],
   );
-  // Pix between me and this friend (sent or received).
+  // Pix between me and this friend (sent or received). The conversation id is the membership test:
+  // `drain.ts` will only store a pix whose conversation names this user AND its authenticated
+  // sender, so a row that reaches this filter is genuinely between the two of us. The old test
+  // paired `senderUsername` with `recipientUsername`, two names the sender chose.
   const pixEntries = useMemo(
-    () => allPix.filter(p =>
-      (p.data.senderUsername === friend.username && p.data.recipientUsername === myUsername) ||
-      (p.data.senderUsername === myUsername && p.data.recipientUsername === friend.username)
-    ),
-    [allPix, friend.username, myUsername],
+    () => allPix.filter(p => p.data.conversationId === convId),
+    [allPix, convId],
   );
 
-  const onViewPix = (entry: ModelEntry) => openPixViewer(nav, [entry]);
+  const onViewPix = (entry: ModelEntry) => openPixViewer(nav, friend, [entry]);
 
   // Typing observer + bubble — separate from entry-cache subscriptions since
   // typing isn't backed by entries.
@@ -108,9 +110,9 @@ export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
     setText('');
     try {
       await Obscura.stopTyping(convId);
-      await saveEntry('directMessage', {
-        conversationId: convId, content: msg, senderUsername: myUsername,
-      });
+      // No `senderUsername`: `saveEntry` stamps the authenticated author, and every reader resolves
+      // the name from the friend graph rather than believing what the payload says.
+      await saveEntry('directMessage', { conversationId: convId, content: msg });
     } catch (e: any) {
       toast.error(e.message);
     }
@@ -124,7 +126,7 @@ export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
   const renderItem = ({ item }: { item: TimelineItem }) => {
     // ─── Chat message
     if (item._kind === 'message') {
-      const isMine = item.data.senderUsername === myUsername;
+      const isMine = authorOf(item.data, AUTHOR_USER_ID) === myUserId;
       return (
         <View style={[cs.msgRow, isMine ? cs.msgRowRight : cs.msgRowLeft]}>
           <View style={[cs.msgBubble, isMine ? cs.myBubble : cs.theirBubble]}>
@@ -135,7 +137,9 @@ export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
     }
 
     // ─── Pix entry
-    const iSent = item.data.senderUsername === myUsername;
+    // The author survives the viewed-receipt: `drain.ts` keeps the author this device recorded when
+    // it first saw the entry, so the recipient writing `viewedAt` does not relabel the pix as theirs.
+    const iSent = authorOf(item.data, AUTHOR_USER_ID) === myUserId;
     const viewed = !!item.data.viewedAt;
 
     if (!iSent && !viewed) {

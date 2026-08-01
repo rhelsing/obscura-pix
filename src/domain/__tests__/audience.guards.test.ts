@@ -8,8 +8,10 @@ import {
 /**
  * The five leak guards, vendored from `obscura-proto/conformance/routing.json`.
  *
- * `RESET.md`'s "The `routing.json` leak guards" hands these over: the kits stop resolving audiences,
- * so these vectors stop being a cross-implementation contract and become this repo's fixture. They
+ * SPEC §1 hands these over by name — "its five leak guards live in
+ * `obscura-pix/src/domain/__tests__/audience.guards.test.ts`" — because the kits stopped resolving
+ * audiences, so these vectors stopped being a cross-implementation contract and became this repo's
+ * fixture. `conformance/routing.json` was duly deleted on 2026-07-31. They
  * are transcribed **verbatim** — same schema, same entry data, same expectation — so a reviewer can
  * diff them against the file they came from.
  *
@@ -141,6 +143,31 @@ describe('resolution the app actually uses', () => {
 
     expect(resolveAudience(CONVERSATION, { conversationId: convId }, 'uMe', pending)).toEqual([]);
   });
+
+  /**
+   * **The leak this file was one guard short of.** The intersection with the accepted graph cannot
+   * widen past my friends — but two of my friends talking to each other is still not my
+   * conversation, and mailing them an entry out of it is a confidentiality breach in the same class
+   * as a broadcast. Reachable through the viewed-receipt, the one path that echoes peer bytes out.
+   */
+  it('LEAK GUARD: a conversation this user is not part of must fail loud, never resolve', () => {
+    const convId = ['uA', 'uB'].sort().join('_');
+
+    expect(() => resolveAudience(CONVERSATION, { conversationId: convId }, SELF, FRIENDS))
+      .toThrow(DirectRoutingUnresolved);
+  });
+
+  /**
+   * SPEC §1.3: splitting on `_` MUST yield exactly two NON-EMPTY parts. Filtering the empties out
+   * before counting accepts every one of these as two-party.
+   */
+  it.each(['uMe__uB', '_uMe_uB', 'uMe_uB_', '__uMe___uB__', '_uMe', 'uMe_'])(
+    'rejects %p as a non-canonical two-party id',
+    (convId) => {
+      expect(() => resolveAudience(CONVERSATION, { conversationId: convId }, SELF, FRIENDS))
+        .toThrow(DirectRoutingUnresolved);
+    },
+  );
 
   it('resolves a named friend to exactly that friend', () => {
     const entry = { recipientUsername: 'bob' };

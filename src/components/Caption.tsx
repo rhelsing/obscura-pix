@@ -9,7 +9,7 @@ import { clamp } from '../utils/gesture';
  *
  * The caption travels as a JSON blob in the entry's `captionMeta` string field
  * (see schema.ts). The plain text stays in `caption` for push/preview. Nothing
- * about this touches the native bridge — createEntry stores the JSON opaquely,
+ * about this touches the native bridge — `entryPut` stores the JSON opaquely,
  * identically on iOS and Android.
  */
 

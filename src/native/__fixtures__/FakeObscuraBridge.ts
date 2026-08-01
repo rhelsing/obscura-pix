@@ -34,10 +34,9 @@
  *
  * ## The thin kit surface
  *
- * `inboxPeek` / `inboxConsume` / `inboxDiscard` / `inboxDepth`, `entryPut` / `entryAll` /
- * `entryDelete`, and `sendEntry` mirror the shape both kits shipped (`KIT_API.md` §3, §5, §8.1) —
- * added only AFTER the kits designed it, never before, so the double never becomes the place an API
- * is invented.
+ * `inboxPeek` / `inboxConsume` / `inboxDiscard` / `inboxDepth`, `entryPut` / `entryAll`, and
+ * `sendEntry` mirror the shape both kits shipped (`KIT_API.md` §3, §5, §8.1) — added only AFTER the
+ * kits designed it, never before, so the double never becomes the place an API is invented.
  *
  * The properties that matter are modelled faithfully because the app's correctness depends on them:
  * `inboxPeek` is side-effect free, ids are monotonic and never reused, `entryPut` is a BLIND upsert
@@ -140,7 +139,12 @@ export class FakeObscuraBridge {
     this.checkFailure('inboxDiscard');
     if (ids.length === 0) return; // an empty discard is not a data-loss event
     this.__discarded.push({ ids, reason });
-    await this.inboxConsume(ids);
+    // Deletes the rows itself rather than delegating to `inboxConsume`. Delegating pushed an extra
+    // `'inboxConsume'` onto `__calls`, so an ordering assertion of the shape
+    // `__calls.indexOf('inboxConsume')` read a DISCARD as a consume as soon as a batch contained
+    // both — and the assertion it silently weakened is the one guarding write-before-consume.
+    const drop = new Set(ids);
+    this.inbox = this.inbox.filter((r) => !drop.has(r.id));
   }
 
   async inboxDepth(): Promise<number> {
@@ -167,12 +171,6 @@ export class FakeObscuraBridge {
     return [...this.entryTable(model).values()].map((e) => ({ ...e }));
   }
 
-  async entryDelete(model: string, id: string): Promise<void> {
-    this.record('entryDelete');
-    this.checkFailure('entryDelete');
-    this.entryTable(model).delete(id);
-  }
-
   async sendEntry(
     recipientUserIds: string[], modelKey: string, entryId: string,
     op: string, sentAt: number, payloadJson: string,
@@ -196,25 +194,49 @@ export class FakeObscuraBridge {
    * is the kit's order and the reason "event → drain" is safe.
    *
    * Defaults describe a well-formed MODEL_SYNC, so a test only states what it is varying.
+   *
+   * **Deduped on `envelopeId`**, because both kits are `UNIQUE(envelope_id)` + `INSERT OR IGNORE`
+   * (KIT_API §3.3 rule 8). Without it a test could build a two-rows-one-envelope state the real kits
+   * cannot produce — and redelivery is guaranteed by persist-then-ack, so that is precisely the
+   * state the dedupe key exists to prevent. A redelivery is still observable: pass the same
+   * `envelopeId` and the second call returns the existing row rather than adding one.
    */
   __deliverInbox(row: Partial<InboxRow> & { payload: string }): InboxRow {
+    const id = this.nextInboxId;
     const full: InboxRow = {
-      id: this.nextInboxId++,
-      envelopeId: `env_${this.nextInboxId}`,
+      id,
+      envelopeId: `env_${id}`,
       kind: 'MODEL_SYNC',
       receivedAt: this.nextTimestamp(),
       senderUserId: 'user_peer',
       senderDeviceId: 'device_peer',
       senderDisplayName: 'peer',
       modelKey: 'directMessage',
-      entryId: `entry_${this.nextInboxId}`,
+      entryId: `entry_${id}`,
       op: 'CREATE',
       sentAt: this.nextTimestamp(),
       ...row,
     };
+    const existing = this.inbox.find((r) => r.envelopeId === full.envelopeId);
+    if (existing) return { ...existing };
+    this.nextInboxId += 1;
     this.inbox.push(full);
     this.__emit({ type: 'messageReceived', model: full.modelKey ?? '' });
     return full;
+  }
+
+  /**
+   * Put the double in the state every drain test needs: an authenticated session.
+   *
+   * `getUserId()` resolves `null` while logged out, and the drain refuses to authorize anything
+   * without an identity — so a test that skips this drains nothing, which is the correct behaviour
+   * and a confusing way to discover it.
+   */
+  __authenticate(opts: FakeBridgeOptions = {}): void {
+    if (opts.userId !== undefined) this.userId = opts.userId;
+    if (opts.username !== undefined) this.username = opts.username;
+    if (opts.deviceId !== undefined) this.deviceId = opts.deviceId;
+    this.__setAuthState('authenticated');
   }
 
   /** Set the friend graph and emit `friendsUpdated`, as the kit does when it changes. */
@@ -422,12 +444,6 @@ export class FakeObscuraBridge {
     this.record('validateAndApproveLink');
     this.checkFailure('validateAndApproveLink');
   }
-
-  // ─── ORM ───────────────────────────────────────────────
-  //
-  // NOTE the JSON boundary: `defineModels`, `createEntry`, `upsertEntry` and `queryEntries` receive
-  // a STRING from the wrapper, which stringifies. Parsing it here rather than accepting an object
-  // is what makes a wrapper that forgets to stringify fail a test instead of working by accident.
 
   // ─── Signals ───────────────────────────────────────────
 

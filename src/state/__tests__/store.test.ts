@@ -1,0 +1,352 @@
+import {
+  useStore, loadEntries, drainAndRefresh, saveEntry,
+  applyObscuraEvent, loadSession,
+} from '../store';
+import { Obscura } from '../../native/ObscuraModule';
+import { getFakeBridge } from '../../native/__fixtures__/reactNativeMock';
+
+/**
+ * `store.ts` without a renderer.
+ *
+ * The region this file covers was 17% covered and 0% branch, and it is the region that decides
+ * whether a message is ever seen: `loadEntries`, `drainAndRefresh`, `saveEntry` — the single write
+ * path every screen uses — and **every drain trigger**. Two live defects were in here (a refresh
+ * skipped when a send threw, and `authStateChanged: 'authenticated'` ignored), and neither could be
+ * caught, because the triggers lived inside a hook.
+ *
+ * They no longer do: `applyObscuraEvent` and `loadSession` are plain functions the `ObscuraBootstrap`
+ * hook subscribes and calls. That extraction is what makes this file possible without adding a
+ * React renderer dependency, which `jest.config.js` explains is a decision of its own.
+ */
+
+const bridge = getFakeBridge();
+
+const SELF = '11111111-1111-4111-8111-111111111111';
+const DEVICE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const BOB = '22222222-2222-4222-8222-222222222222';
+const CONV = [SELF, BOB].sort().join('_');
+
+/** Let the fire-and-forget promises inside the event handlers settle. */
+async function flush(): Promise<void> {
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+  await new Promise((r) => setImmediate(r));
+}
+
+function session() {
+  const s = useStore.getState();
+  s.setAuthed(true);
+  s._setUserId(SELF);
+  s._setUsername('me');
+  s._setDeviceId(DEVICE);
+  s._setFriendsAndPending([{ userId: BOB, username: 'bob', status: 'accepted' }], []);
+}
+
+beforeEach(() => {
+  useStore.getState().reset();
+  bridge.__authenticate({ userId: SELF, deviceId: DEVICE });
+});
+
+describe('loadEntries', () => {
+  it('parses the stored JSON into the cache', async () => {
+    await Obscura.entryPut('story', 's1', JSON.stringify({ content: 'hi' }), 1_000, 'd');
+
+    await loadEntries('story');
+
+    expect(useStore.getState().entries.story).toEqual([
+      { id: 's1', data: { content: 'hi' }, timestamp: 1_000, authorDeviceId: 'd' },
+    ]);
+  });
+
+  /** One unreadable row is a bug to fix, not a reason to show the user nothing. */
+  it('skips a row it cannot parse and keeps the rest', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    await Obscura.entryPut('story', 'bad', 'not json', 1, 'd');
+    await Obscura.entryPut('story', 'good', JSON.stringify({ content: 'ok' }), 2, 'd');
+
+    await loadEntries('story');
+
+    expect(useStore.getState().entries.story).toHaveLength(1);
+    expect(useStore.getState().entries.story?.[0].id).toBe('good');
+    warn.mockRestore();
+  });
+
+  /** `undefined` means never-loaded and `[]` means loaded-and-empty; the refresh logic reads both. */
+  it('creates the slot even when the model is empty', async () => {
+    await loadEntries('pix');
+
+    expect(useStore.getState().entries.pix).toEqual([]);
+  });
+});
+
+describe('drainAndRefresh', () => {
+  it('drains the inbox into the store and refreshes a slice a screen has opened', async () => {
+    session();
+    await loadEntries('directMessage'); // a screen opened this model
+    bridge.__deliverInbox({
+      senderUserId: BOB, entryId: 'dm_1',
+      payload: JSON.stringify({ conversationId: CONV, content: 'hello' }),
+    });
+
+    await drainAndRefresh();
+
+    expect(await Obscura.inboxDepth()).toBe(0);
+    expect(useStore.getState().entries.directMessage).toHaveLength(1);
+  });
+
+  /** A model no screen has opened is drained to the store but not pulled into memory. */
+  it('does not fetch a model nobody has opened', async () => {
+    session();
+    bridge.__deliverInbox({
+      senderUserId: BOB, entryId: 'dm_1',
+      payload: JSON.stringify({ conversationId: CONV, content: 'hello' }),
+    });
+
+    await drainAndRefresh();
+
+    expect(useStore.getState().entries.directMessage).toBeUndefined();
+    expect(await Obscura.entryAll('directMessage')).toHaveLength(1);
+  });
+
+  it('refreshes an explicitly named model too', async () => {
+    session();
+    await loadEntries('story');
+    await Obscura.entryPut('story', 's', JSON.stringify({ content: 'x' }), 1, 'd');
+
+    await drainAndRefresh('story');
+
+    expect(useStore.getState().entries.story).toHaveLength(1);
+  });
+
+  /**
+   * §3.3 rule 7 / §3.5: an inbox that is not empty after a FULL drain means the app has stopped
+   * keeping up, and the chain that ends with the server silently evicting the user's oldest
+   * messages starts exactly there. A number nobody reads is not observability.
+   */
+  it('logs when the inbox is still not empty after a full drain', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    session();
+    // The kit reporting a non-empty inbox after the app believes it finished — which is what a
+    // concurrent delivery, or an app that has fallen behind, actually looks like from here.
+    const depth = jest.spyOn(bridge, 'inboxDepth').mockResolvedValueOnce(3);
+
+    await drainAndRefresh();
+
+    expect(warn.mock.calls.flat().join('\n')).toContain('notDrained');
+    depth.mockRestore();
+    warn.mockRestore();
+  });
+
+  /** A drain failure must not propagate into an event handler that cannot do anything with it. */
+  it('swallows a drain failure rather than rejecting', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    session();
+    bridge.__failNext('inboxPeek', 'PEEK_ERROR');
+
+    await expect(drainAndRefresh()).resolves.toBeUndefined();
+    warn.mockRestore();
+  });
+});
+
+describe('saveEntry', () => {
+  /**
+   * The session loads asynchronously after `authed` flips, and a write in that window is quietly
+   * wrong rather than failing: an empty `authorDeviceId` sorts LOWEST so it loses every REPLACE
+   * tie-break on every device, and an empty `selfUserId` disables the self-filter in
+   * `resolveAudience`.
+   */
+  it('refuses to write before the session identity has loaded', async () => {
+    await expect(saveEntry('story', { content: 'x' }))
+      .rejects.toThrow('before the session identity loaded');
+
+    expect(bridge.__calls).not.toContain('entryPut');
+  });
+
+  it('refuses when the device id is missing even though the user id is not', async () => {
+    useStore.getState()._setUserId(SELF);
+
+    await expect(saveEntry('story', { content: 'x' })).rejects.toThrow();
+  });
+
+  it('stores, sends, and refreshes the model so the screen shows it', async () => {
+    session();
+    await loadEntries('story');
+
+    const id = await saveEntry('story', { content: 'mine' });
+
+    expect(useStore.getState().entries.story).toHaveLength(1);
+    expect(useStore.getState().entries.story?.[0].id).toBe(id);
+    expect(bridge.__sent).toHaveLength(1);
+  });
+
+  /**
+   * **The defect.** `writeEntry` deliberately keeps the local row and rethrows when a send reaches
+   * nobody, so the throw propagated past the refresh and the entry the app had just committed never
+   * entered the cache: in `ChatScreen.send()` the user saw a toast and their own message was simply
+   * absent until an unrelated drain happened to refresh that model.
+   */
+  it('refreshes the model even when the send fails', async () => {
+    session();
+    await loadEntries('directMessage');
+    bridge.__failNext('sendEntry', 'SEND_FAILED', 'offline');
+
+    await expect(saveEntry('directMessage', { conversationId: CONV, content: 'hi' }))
+      .rejects.toThrow('offline');
+
+    expect(useStore.getState().entries.directMessage).toHaveLength(1);
+    expect(useStore.getState().entries.directMessage?.[0].data.content).toBe('hi');
+  });
+
+  /** Nothing was stored, so the refresh is a no-op read rather than a wrong one. */
+  it('leaves the cache empty when the audience could not be resolved', async () => {
+    session();
+    await loadEntries('directMessage');
+
+    await expect(saveEntry('directMessage', { content: 'no conversation id' })).rejects.toThrow();
+
+    expect(useStore.getState().entries.directMessage).toEqual([]);
+  });
+});
+
+describe('the drain triggers', () => {
+  /** Every one of these is a moment the inbox may have grown with no `messageReceived` to say so. */
+  async function deliverAndTrigger(fire: () => void): Promise<void> {
+    session();
+    bridge.__deliverInbox({
+      senderUserId: BOB, entryId: 'dm_1',
+      payload: JSON.stringify({ conversationId: CONV, content: 'hello' }),
+    });
+    fire();
+    await flush();
+  }
+
+  it('drains on reconnect — the moment the server redelivers what it did not see acked', async () => {
+    await deliverAndTrigger(() => applyObscuraEvent({ type: 'connectionChanged', state: 'connected' }));
+
+    expect(await Obscura.inboxDepth()).toBe(0);
+    expect(useStore.getState().connState).toBe('connected');
+  });
+
+  it('does not drain on a connection state that is not `connected`', async () => {
+    await deliverAndTrigger(() => applyObscuraEvent({ type: 'connectionChanged', state: 'reconnecting' }));
+
+    expect(await Obscura.inboxDepth()).toBe(1);
+  });
+
+  /**
+   * On iOS the app may have been suspended while a Notification Service Extension decrypted,
+   * persisted and ACKED with no JS runtime alive — so foreground is the first chance to see them.
+   */
+  it('drains on foreground', async () => {
+    await deliverAndTrigger(() => applyObscuraEvent({ type: 'appStateChanged', state: 'active' }));
+
+    expect(await Obscura.inboxDepth()).toBe(0);
+  });
+
+  it('does not drain on background', async () => {
+    await deliverAndTrigger(() => applyObscuraEvent({ type: 'appStateChanged', state: 'background' }));
+
+    expect(await Obscura.inboxDepth()).toBe(1);
+  });
+
+  /** The event is only a wake-up: under the thin kit the data is in the inbox, not in the event. */
+  it('drains on messageReceived rather than merely refreshing', async () => {
+    await deliverAndTrigger(() =>
+      applyObscuraEvent({ type: 'messageReceived', model: 'directMessage' }));
+
+    expect(await Obscura.inboxDepth()).toBe(0);
+    expect(await Obscura.entryAll('directMessage')).toHaveLength(1);
+  });
+
+  /**
+   * COLD START — the trigger that matters most and the one whose absence stranded messages. The
+   * push path acks with no JS runtime running, so no `messageReceived` is ever emitted for those
+   * rows.
+   */
+  it('drains on cold start, after pulling the identity it needs to authorize with', async () => {
+    bridge.__setFriends([{ userId: BOB, username: 'bob', status: 'accepted' }]);
+    bridge.__deliverInbox({
+      senderUserId: BOB, entryId: 'dm_1',
+      payload: JSON.stringify({ conversationId: CONV, content: 'hello' }),
+    });
+
+    await loadSession();
+    await flush();
+
+    expect(useStore.getState().myUserId).toBe(SELF);
+    expect(useStore.getState().friends).toHaveLength(1);
+    expect(await Obscura.inboxDepth()).toBe(0);
+  });
+
+  /**
+   * **The defect.** `authenticated` was ignored, so `authed` only ever flipped true from the
+   * cold-start `getAuthState()` or an explicit login. When the kit emits this after a device link is
+   * approved, the `[authed]` effect never fired — no cold-start drain — until the app restarted.
+   */
+  it('flips authed on `authStateChanged: authenticated`, which is what runs the cold-start drain', () => {
+    expect(useStore.getState().authed).toBe(false);
+
+    applyObscuraEvent({ type: 'authStateChanged', state: 'authenticated' });
+
+    expect(useStore.getState().authed).toBe(true);
+  });
+
+  it('clears the session on `loggedOut`', () => {
+    session();
+
+    applyObscuraEvent({ type: 'authStateChanged', state: 'loggedOut' });
+
+    expect(useStore.getState().authed).toBe(false);
+    expect(useStore.getState().myUserId).toBe('');
+  });
+
+  it('clears the session on authFailed', () => {
+    session();
+
+    applyObscuraEvent({ type: 'authFailed', reason: 'refresh exhausted' });
+
+    expect(useStore.getState().authed).toBe(false);
+  });
+
+  it('splits friendsUpdated by status', () => {
+    applyObscuraEvent({
+      type: 'friendsUpdated',
+      friends: [
+        { userId: BOB, username: 'bob', status: 'accepted' },
+        { userId: 'c', username: 'carol', status: 'pending_received' },
+      ],
+    });
+
+    expect(useStore.getState().friends.map((f) => f.username)).toEqual(['bob']);
+    expect(useStore.getState().pending.map((f) => f.username)).toEqual(['carol']);
+  });
+
+  it('registers a push token when one arrives', async () => {
+    applyObscuraEvent({ type: 'pushTokenReceived', token: 'token-abcdefgh' });
+    await flush();
+
+    expect(bridge.__registeredPushToken()).toBe('token-abcdefgh');
+  });
+});
+
+describe('the outbox trigger', () => {
+  /**
+   * The asymmetry this closes: the receive side had four triggers and the send side had none, so an
+   * entry whose send reached nobody sat in the user's timeline looking sent, forever. The retry is
+   * wired to the same signals as the drain, because "the network is back" is equally true of both
+   * directions.
+   */
+  it('retries an undelivered entry on reconnect', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    session();
+    bridge.__failNext('sendEntry', 'SEND_FAILED', 'offline');
+    await expect(saveEntry('story', { content: 'stranded' })).rejects.toThrow();
+    expect(bridge.__sent).toEqual([]);
+
+    applyObscuraEvent({ type: 'connectionChanged', state: 'connected' });
+    await flush();
+
+    expect(bridge.__sent).toHaveLength(1);
+    expect(JSON.parse(bridge.__sent[0].payloadJson).content).toBe('stranded');
+    warn.mockRestore();
+  });
+});

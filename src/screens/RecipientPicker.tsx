@@ -16,7 +16,7 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
   const { photo, mediaType = 'photo', caption, captionMeta, displayDuration } = route.params;
   const isVideo = mediaType === 'video';
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { friends, myUsername, myUserId } = useSession();
+  const { friends, myUserId } = useSession();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [includeStory, setIncludeStory] = useState(false);
   const [sending, setSending] = useState(false);
@@ -58,10 +58,11 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
       const undelivered: string[] = [];
       for (const friend of recipients) {
         try {
+          // No `senderUsername` / `recipientUsername`. The conversation id already names both
+          // parties with authenticated userIds, and `saveEntry` stamps the author — a payload name
+          // was only ever a claim the recipient had no way to check (SPEC §0.5).
           await saveEntry('pix', {
             conversationId: conversationId(myUserId, friend.userId),
-            recipientUsername: friend.username,
-            senderUsername: myUsername,
             mediaRef: attachment.id,
             contentKey: attachment.contentKey,
             nonce: attachment.nonce,
@@ -80,7 +81,6 @@ export function RecipientPicker({ route }: RootStackScreenProps<'RecipientPicker
       if (includeStory) {
         await saveEntry('story', {
           content: caption || '',
-          authorUsername: myUsername,
           mediaRef: attachment.id,
           contentKey: attachment.contentKey,
           nonce: attachment.nonce,

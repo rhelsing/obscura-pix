@@ -11,8 +11,8 @@ import com.obscura.kit.persistence.SessionStorage
  *
  * Honors the [SessionStorage] replace-whole-blob contract: [save] clears the
  * file first, then writes exactly `data` — so a key absent from `data` is gone.
- * Callers (persistSession / defineModelsFromJson) load-merge-save, so nothing is
- * dropped. Values are String or Int (registrationId).
+ * Callers load-merge-save, so nothing is dropped. Values are String or Int
+ * (registrationId).
  */
 class SharedPreferencesSessionStorage(
     private val prefs: SharedPreferences

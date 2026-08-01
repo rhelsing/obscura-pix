@@ -97,8 +97,6 @@ RCT_EXTERN_METHOD(entryPut:(NSString *)model id:(NSString *)id dataJson:(NSStrin
                   resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(entryAll:(NSString *)model
                   resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
-RCT_EXTERN_METHOD(entryDelete:(NSString *)model id:(NSString *)id
-                  resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
 RCT_EXTERN_METHOD(sendEntry:(NSArray *)recipientUserIds modelKey:(NSString *)modelKey
                   entryId:(NSString *)entryId op:(NSString *)op sentAt:(nonnull NSNumber *)sentAt

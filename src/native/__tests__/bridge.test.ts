@@ -11,8 +11,8 @@ import { getFakeBridge } from '../__fixtures__/reactNativeMock';
  * first test below is the proof of that, and it is deliberately first.
  *
  * Rewritten 2026-07-30: these used to drive `defineModels` / `createEntry` / `allEntries`, which no
- * longer exist on either kit (§10 step 4). The same properties are now checked against the surface
- * that replaced them — `entryPut` / `entryAll` / `inboxPeek` / `sendEntry`.
+ * longer exist on either kit (`KIT_API.md` §10 step 4). The same properties are now checked against
+ * the surface that replaced them — `entryPut` / `entryAll` / `inboxPeek` / `sendEntry`.
  */
 
 const bridge = getFakeBridge();
@@ -70,7 +70,7 @@ describe('the JSON boundary', () => {
    * caught it.
    */
   it('round-trips a payload the kit never parses', async () => {
-    const data = { conversationId: 'a_b', content: 'hello', senderUsername: 'alice' };
+    const data = { conversationId: 'a_b', content: 'hello', _authorUserId: 'u_alice' };
 
     await Obscura.entryPut('directMessage', 'dm_1', JSON.stringify(data), 1_000, 'device_a');
 
@@ -121,13 +121,9 @@ describe('the entry store', () => {
     expect(stored.sentAt).toBe(1_000);
   });
 
-  it('deletes', async () => {
-    await Obscura.entryPut('story', 's', '{}', 1, 'd');
-
-    await Obscura.entryDelete('story', 's');
-
-    expect(await Obscura.entryAll('story')).toEqual([]);
-  });
+  // No delete test, because there is no `entryDelete` on the bridge any more: it had zero callers
+  // and nothing in the app or either kit produces `op: DELETE`, so the only thing it could do was
+  // remove a row here and diverge this device from every other one.
 });
 
 describe('the inbox', () => {
@@ -168,10 +164,10 @@ describe('failures', () => {
    * every bridge call resolves.
    */
   it('rejects with a code the app can branch on', async () => {
-    bridge.__failNext('sendEntry', 'DIRECT_ROUTING_UNRESOLVED', 'no recipient');
+    bridge.__failNext('sendEntry', 'SEND_FAILED', 'reached nobody');
 
     await expect(Obscura.sendEntry([], 'directMessage', 'x', 'CREATE', 1, '{}'))
-      .rejects.toMatchObject({ code: 'DIRECT_ROUTING_UNRESOLVED' });
+      .rejects.toMatchObject({ code: 'SEND_FAILED' });
   });
 
   it('fails only the next call, so a suite is not poisoned by one injection', async () => {
