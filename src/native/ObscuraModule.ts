@@ -21,9 +21,8 @@ export interface Friend {
 /**
  * An entry as the app holds it in memory.
  *
- * No longer a bridge type — nothing across the bridge produces this shape. `entryAll` returns
- * `StoredEntry` (with `data` as an opaque JSON string) and `loadEntries` parses it into this. Kept
- * here because every screen imports it from this module.
+ * `entryAll` returns `StoredEntry` with opaque JSON; `loadEntries` parses it
+ * into this screen-facing shape.
  */
 export interface ModelEntry {
   id: string;
@@ -102,17 +101,17 @@ export type LoginScenario =
  * `ObscuraError.kt` in the kit. Kit-level failures use one of these; anything
  * else falls back to a per-method code (e.g. "ENTRY_PUT_ERROR").
  *
- * `DIRECT_ROUTING_UNRESOLVED` is deliberately NOT here. This union is specifically the codes a
- * NATIVE rejection can carry, and no kit throws it any more — audience resolution moved into the
- * app (SPEC §1.2, §1.4), so the code is raised by `src/domain/audience.ts`'s
- * `DirectRoutingUnresolved` and never crosses the bridge. Listing it here would say a native call
- * can fail that way, which is what a reader would act on.
+ * `DIRECT_ROUTING_UNRESOLVED` is app-owned (SPEC §1.2, §1.4), raised
+ * by `src/domain/audience.ts`, and therefore excluded from native errors.
  */
 export type ObscuraErrorCode =
   | 'NOT_AUTHENTICATED'
   | 'NOT_PROVISIONED'
   | 'NOT_FRIENDS'
   | 'NO_DEVICES'
+  | 'NO_MESSENGER'
+  | 'TIMEOUT'
+  | 'DEVICE_LINK_FAILED'
   | 'SEND_FAILED';
 
 // ─── Core API ────────────────────────────────────────────
@@ -156,12 +155,7 @@ export const Obscura = {
   validateAndApproveLink: (code: string): Promise<void> =>
     Bridge.validateAndApproveLink(code),
 
-  // The ORM wrappers — `defineModels`, `createEntry`, `upsertEntry`, `queryEntries`, `allEntries`,
-  // `deleteEntry` — were removed on 2026-07-30 with the native methods behind them
-  // (`obscura-proto/KIT_API.md` §10 step 4).
-  // Their replacements are the thin kit surface below plus `src/state/{writeEntry,drainInbox}.ts`.
-
-  // ─── The thin kit surface (obscura-proto/KIT_API.md §3, §5, §8.1) ───────
+  // ─── Kit data surface (obscura-proto/KIT_API.md §3, §5, §8.1) ──────────
   //
   // `inbox` is how messages arrive, `entries` is where the app keeps what it made of them, and
   // `sendEntry` is how they leave. Nothing here parses a payload on either side of the bridge.
@@ -229,10 +223,9 @@ export const Obscura = {
   writeTestImage: (width: number, height: number): Promise<ResizedImage> =>
     Bridge.writeTestImage(width, height),
 
-  // Push notifications. `requestPushPermission` triggers platform-native
-  // permission UI + token fetch. The token arrives asynchronously via the
-  // `pushTokenReceived` event; consumers should listen for it and call
-  // `registerPushToken(token)` to upsert it on the server.
+  // Push notifications. Android emits `pushTokenReceived` after a granted
+  // permission request and on Firebase token rotation. iOS token forwarding is
+  // not wired. Consumers register every token event with the server.
   requestPushPermission: (): Promise<boolean> => Bridge.requestPushPermission(),
   registerPushToken: (token: string): Promise<void> => Bridge.registerPushToken(token),
 

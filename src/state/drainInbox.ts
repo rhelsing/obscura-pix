@@ -56,8 +56,7 @@ function toDrainRow(row: InboxRow): DrainRow {
     entryId: row.entryId,
     op: row.op,
     sentAt: row.sentAt,
-    // The two authenticated fields (SPEC §0.10). `senderUserId` was previously not copied at all,
-    // which is why nothing downstream could tell who a row was really from.
+    // Authenticated sender identity (SPEC §0.10).
     senderUserId: row.senderUserId,
     senderDeviceId: row.senderDeviceId,
     payload: row.payload,

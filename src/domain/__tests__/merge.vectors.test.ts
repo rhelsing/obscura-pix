@@ -1,12 +1,5 @@
 /**
- * **Vendored, not submoduled** (2026-07-30). These vectors used to be read from
- * `proto/conformance/merge.json` through the git submodule. `RESET.md`'s "The `merge.json` handover"
- * requires the opposite order: pix must be reading a LOCAL copy before the file is deleted from
- * obscura-proto, or the deletion breaks pix's only merge coverage the day it lands.
- *
- * They stop being a cross-implementation contract the moment the kits' merge engine is deleted —
- * one implementation left means a fixture, not a contract. This is that transition, done in the
- * order the document asks for.
+ * Local fixtures for the application-owned merge implementation.
  */
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -15,17 +8,8 @@ import { mergeAll, type Entry, type MergeRule } from '../merge';
 /**
  * `obscura-proto/conformance/merge.json`, run against this app's merge implementation.
  *
- * **Why these vectors live here now.** They pinned behaviour the KITS implemented, and the kits'
- * engine was deleted on 2026-07-31 — so they were ported BEFORE the deletion, while there was still
- * something to check the TypeScript against. There is now exactly one implementation left, which is
- * why `conformance/merge.json` stopped being a contract and became this repo's fixture
- * (`obscura-proto/KIT_API.md` §8.2, "merge.json is a contract today and a fixture tomorrow").
- *
- * **The port is partial, and deliberately explicit about it.** Four of the six cases carry over;
- * two pin tombstone semantics that retired with `deleteEntry` (zero callers in this app, and now
- * absent from the bridge entirely). Those two are asserted as *recognised and retired* rather than
- * quietly filtered out — a port that silently drops half a contract is how a contract stops being
- * one.
+ * Four cases cover the current APPEND and REPLACE rules. Two tombstone cases are
+ * recognized but unsupported because the app has no delete operation.
  */
 
 const VECTORS = join(__dirname, '../__fixtures__/merge.json');
@@ -49,7 +33,7 @@ interface VectorCase {
 
 const suite: { cases: VectorCase[] } = JSON.parse(readFileSync(VECTORS, 'utf8'));
 
-/** The kit's wire vocabulary -> this app's. `gset`/`lww` are the CRDT names being retired. */
+/** Fixture vocabulary mapped to the app's merge rules. */
 const RULE: Record<string, MergeRule> = { gset: 'APPEND', lww: 'REPLACE' };
 
 const toEntry = (op: VectorOp): Entry => ({
@@ -62,19 +46,19 @@ const toEntry = (op: VectorOp): Entry => ({
 const isTombstoneCase = (c: VectorCase) =>
   c.ops.some((op) => Object.prototype.hasOwnProperty.call(op.data, '_deleted'));
 
-const portable = suite.cases.filter((c) => !isTombstoneCase(c));
-const retired = suite.cases.filter(isTombstoneCase);
+const supported = suite.cases.filter((c) => !isTombstoneCase(c));
+const tombstones = suite.cases.filter(isTombstoneCase);
 
 describe('merge.json conformance', () => {
   it('the vector file is present and was not silently emptied', () => {
     // Guards the port itself: a wrong path or a renamed file would otherwise make every
     // vector-driven test below vacuously pass by iterating an empty list.
     expect(suite.cases.length).toBe(6);
-    expect(portable.length).toBe(4);
-    expect(retired.length).toBe(2);
+    expect(supported.length).toBe(4);
+    expect(tombstones.length).toBe(2);
   });
 
-  describe.each(portable.map((c) => [c.name, c] as const))('%s', (_name, testCase) => {
+  describe.each(supported.map((c) => [c.name, c] as const))('%s', (_name, testCase) => {
     const rule = RULE[testCase.sync];
 
     it.each(testCase.applyOrders)('applied in %s order', (order) => {
@@ -116,12 +100,8 @@ describe('merge.json conformance', () => {
     });
   });
 
-  it('the two tombstone cases are retired with deletes, not accidentally dropped', () => {
-    // SPEC §2.3 was DELETED with tombstones: `deleteEntry` had zero callers in this app and is now
-    // gone from the bridge on all three surfaces, so the whole tombstone-ordering design was dead on
-    // arrival. Naming them here means the port is a decision with a record, not an omission someone
-    // discovers later.
-    expect(retired.map((c) => c.name)).toEqual([
+  it('recognizes the unsupported tombstone cases', () => {
+    expect(tombstones.map((c) => c.name)).toEqual([
       'LWW newer tombstone wins: a later delete removes the entry, order-independent',
       'LWW stale write does not resurrect a newer tombstone, order-independent',
     ]);

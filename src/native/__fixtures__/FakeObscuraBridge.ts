@@ -1,42 +1,18 @@
 /**
  * An in-memory stand-in for the native `ObscuraBridge`.
  *
- * ## Why this exists
+ * Jest has no native module or event emitter, so tests install this fake before
+ * importing `ObscuraModule`. It persists entries and inbox rows and emits events,
+ * allowing tests to exercise the real TypeScript bridge facade.
  *
- * `ObscuraModule.ts` binds its `Bridge` at import time from `TurboModuleRegistry` / `NativeModules`,
- * and under jest neither exists — so it falls back to `new Proxy({}, { get: () => noop })`, where
- * **every one of the 41 bridge methods resolves `null`**. `getEmitter()` likewise returns `null`
- * when the native module is absent, so `onObscuraEvent` hands back a no-op unsubscribe and no event
- * ever fires. Both directions are dead. That is why pix's suite covers a pure function and nothing
- * else: nothing else was reachable.
- *
- * That matters now because of what `obscura-proto/PLAN.md` Phase 3 does. Migration step 3 is "pix
- * switches to the new API" — the app stops calling the ORM and starts driving an inbox with its own
- * merge — and that switch is *entirely* bridge-mediated. Against a noop bridge, a test of it passes
- * whether or not it works. Worse, the reset **deletes the 722 kit tests that currently guarantee
- * this behaviour**, so the oracle disappears at the moment it is most needed. This double is what
- * makes the destination testable before the source is gone.
- *
- * ## What it is, and what it must never become
- *
- * A **fake**, not a mock: it has real semantics (entries persist, merges resolve, events fire) so
- * tests can assert on behaviour rather than on which methods were called. But it is deliberately
- * *not* a kit:
+ * It deliberately does not model kit internals:
  *
  *   - no crypto, no Signal sessions, no network, no persistence across instances;
  *   - `userId` / `deviceId` are whatever you set, with no authentication of any kind;
  *   - it models the **bridge contract**, not the kit's internals.
  *
- * The failure mode to guard against is the one `KIT_API.md` §9 names for the query API: it grows a
- * filter, then an index, then real merge policy, and becomes a third implementation that has to be
- * kept in step with two real ones. If a test needs the fake to grow a behaviour, check first that
- * the behaviour is part of the *bridge contract* and not part of the kit.
- *
- * ## The thin kit surface
- *
  * `inboxPeek` / `inboxConsume` / `inboxDiscard` / `inboxDepth`, `entryPut` / `entryAll`, and
- * `sendEntry` mirror the shape both kits shipped (`KIT_API.md` §3, §5, §8.1) — added only AFTER the
- * kits designed it, never before, so the double never becomes the place an API is invented.
+ * `sendEntry` mirror the kit surface (`KIT_API.md` §3, §5, §8.1).
  *
  * The properties that matter are modelled faithfully because the app's correctness depends on them:
  * `inboxPeek` is side-effect free, ids are monotonic and never reused, `entryPut` is a BLIND upsert

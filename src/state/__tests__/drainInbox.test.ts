@@ -9,8 +9,6 @@ import { getFakeBridge } from '../../native/__fixtures__/reactNativeMock';
  * part that can destroy a message. An inbox row is the only copy — the kit already acked, so the
  * server deleted its own — so "consume" is irreversible and everything here is about what happens
  * before it.
- *
- * None of this was testable before the double existed: every bridge call resolved `null`.
  */
 
 const bridge = getFakeBridge();
@@ -105,9 +103,7 @@ describe('the effect ORDER', () => {
   });
 
   /**
-   * The same assertion in a batch that also DISCARDS. `inboxDiscard` used to delete rows by calling
-   * `inboxConsume` internally, so the index above found the discard's inner call instead — and the
-   * ordering guard silently stopped guarding anything the moment a batch contained both.
+   * Assert the same ordering in a mixed consume/discard batch.
    */
   it('still sees the real consume when the batch also discards', async () => {
     deliver({ entryId: 'dm_1' });

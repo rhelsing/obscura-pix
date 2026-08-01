@@ -3,11 +3,10 @@
 
 // Registers the Swift `ObscuraBridge` (an RCTEventEmitter) with React Native.
 // addListener/removeListeners are inherited from RCTEventEmitter and exposed
-// automatically. RPC methods are declared here as they're implemented
-// (tasks #5–#13); the single `ObscuraEvent` stream flows once JS subscribes.
+// automatically. Every Swift @objc RPC must also be declared here.
 @interface RCT_EXTERN_MODULE(ObscuraBridge, RCTEventEmitter)
 
-// ── Auth + state-reads (task #5) ──────────────────────────────────────────
+// ── Auth + state reads ────────────────────────────────────────────────────
 RCT_EXTERN_METHOD(registerUser:(NSString *)username password:(NSString *)password
                   resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(loginSmart:(NSString *)username password:(NSString *)password
@@ -23,7 +22,7 @@ RCT_EXTERN_METHOD(getUserId:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromise
 RCT_EXTERN_METHOD(getUsername:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(getDeviceId:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
-// ── Friends + device linking (task #6) ────────────────────────────────────
+// ── Friends + device linking ──────────────────────────────────────────────
 RCT_EXTERN_METHOD(befriend:(NSString *)userId username:(NSString *)username
                   resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(acceptFriend:(NSString *)userId username:(NSString *)username
@@ -37,9 +36,7 @@ RCT_EXTERN_METHOD(generateLinkCode:(RCTPromiseResolveBlock)resolve rejecter:(RCT
 RCT_EXTERN_METHOD(validateAndApproveLink:(NSString *)code
                   resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
-// ── ORM (task #7) ─────────────────────────────────────────────────────────
-
-// ── Typing signals (task #8) ──────────────────────────────────────────────
+// ── Typing signals ────────────────────────────────────────────────────────
 RCT_EXTERN_METHOD(sendTyping:(NSString *)conversationId
                   resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(stopTyping:(NSString *)conversationId
@@ -49,19 +46,19 @@ RCT_EXTERN_METHOD(observeTyping:(NSString *)conversationId
 RCT_EXTERN_METHOD(stopObservingTyping:(NSString *)conversationId
                   resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
-// ── Attachments (task #9) ─────────────────────────────────────────────────
+// ── Attachments ───────────────────────────────────────────────────────────
 RCT_EXTERN_METHOD(uploadAttachment:(NSString *)filePath
                   resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(downloadAttachment:(NSString *)id contentKey:(NSString *)contentKey nonce:(NSString *)nonce
                   resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
-// ── Image processing (task #10) ───────────────────────────────────────────
+// ── Image processing ──────────────────────────────────────────────────────
 RCT_EXTERN_METHOD(resizeImage:(NSString *)srcPath maxDim:(NSInteger)maxDim quality:(NSInteger)quality
                   resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(writeTestImage:(NSInteger)width height:(NSInteger)height
                   resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
-// ── Misc (task #13) ───────────────────────────────────────────────────────
+// ── Misc ──────────────────────────────────────────────────────────────────
 RCT_EXTERN_METHOD(setClipboard:(NSString *)text
                   resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(deleteFile:(NSString *)path
@@ -70,16 +67,16 @@ RCT_EXTERN_METHOD(setSecureScreen:(BOOL)enabled
                   resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(prewarmAudioSession:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
-// ── Deep linking + debug log (task #12) ───────────────────────────────────
+// ── Deep linking + debug log ──────────────────────────────────────────────
 RCT_EXTERN_METHOD(getLaunchIntent:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(getDebugLog:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
-// ── Push (task #11, partial — permission + token registration) ────────────
+// ── Push permission + kit token registration ─────────────────────────────
 RCT_EXTERN_METHOD(requestPushPermission:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(registerPushToken:(NSString *)token
                   resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
-// ── The thin kit surface (obscura-proto/KIT_API.md §3, §5, §8.1) ──────────
+// ── Kit data surface (obscura-proto/KIT_API.md §3, §5, §8.1) ─────────────
 //
 // These MUST mirror the @objc selectors in ObscuraBridge.swift exactly. A Swift @objc method with
 // no RCT_EXTERN_METHOD here is invisible to React Native — it compiles, ships, and the call

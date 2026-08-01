@@ -13,8 +13,8 @@ import UserNotifications
 ///
 ///   - Relays the kit's unified `observeEvents()` stream to JS as the single
 ///     `ObscuraEvent` stream (discriminated by `type`, per docs/BRIDGE.md).
-///   - (later tasks) translates `@objc` RPC methods into `ObscuraSession.client`
-///     calls and marshals between JS and Swift types.
+///   - Translates `@objc` RPC methods into `ObscuraSession.client` calls and
+///     marshals between JS and Swift types.
 ///
 /// Registered with React via `ObscuraBridge.m` (`RCT_EXTERN_MODULE`).
 @objc(ObscuraBridge)
@@ -22,18 +22,15 @@ final class ObscuraBridge: RCTEventEmitter {
 
     private var hasListeners = false
     private var eventTask: Task<Void, Never>?
-    /// Active typing observations, keyed by conversationId (task #8).
+    /// Active typing observations, keyed by conversationId.
     private var typingTasks: [String: Task<Void, Never>] = [:]
 
-    /// Weak ref so AppDelegate hooks (deep links) can reach the live bridge.
-    static weak var shared: ObscuraBridge?
-    /// Cold-start deep-link target, set by AppDelegate before the bridge exists;
-    /// consumed once by `getLaunchIntent`.
+    /// Consume-once cold-start deep-link target. Notification callbacks do not
+    /// populate it until iOS push delivery is implemented.
     static var pendingLaunchScreen: String?
 
     override init() {
         super.init()
-        ObscuraBridge.shared = self
         // Kit diagnostics -> debugLog event.
         ObscuraSession.shared.logger.onLog = { [weak self] msg in
             self?.emit(.debugLog, ["message": msg])
@@ -124,7 +121,7 @@ final class ObscuraBridge: RCTEventEmitter {
     var client: ObscuraClient { ObscuraSession.shared.client }
 }
 
-// MARK: - Auth + state-reads (task #5)
+// MARK: - Auth + state reads
 
 extension ObscuraBridge {
 
@@ -254,7 +251,7 @@ extension ObscuraBridge {
     }
 }
 
-// MARK: - Friends + device linking (task #6)
+// MARK: - Friends + device linking
 
 extension ObscuraBridge {
 
@@ -333,31 +330,17 @@ extension ObscuraBridge {
     }
 }
 
-// MARK: - ORM (task #7)
+// MARK: - Kit data surface
 
 extension ObscuraBridge {
-
-    /// Parse a JSON object string from JS into `[String: Any]`.
-    private func parseJSONObject(_ s: String) -> [String: Any] {
-        guard let d = s.data(using: .utf8) else { return [:] }
-        do {
-            return (try JSONSerialization.jsonObject(with: d)) as? [String: Any] ?? [:]
-        } catch {
-            ObscuraSession.shared.logger.log("parseJSONObject failed: \(error)")
-            return [:]
-        }
-    }
 
     /// `ModelEntry` -> the `{ id, data, timestamp, authorDeviceId }` shape JS expects.
     /// (signature is intentionally omitted — matches Android + BRIDGE.md.)
     // ─────────────────────────────────────────────────────────────────────────────────────────
-    // The thin kit surface (obscura-proto/KIT_API.md §3, §5, §8.1).
+    // Kit data surface (obscura-proto/KIT_API.md §3, §5, §8.1).
     //
-    // Three groups: drain the inbox, store what you make of it, send what you write. They replaced
-    // the ORM methods, which were deleted on 2026-07-30 (KIT_API.md §10 step 4).
-    //
-    // Nothing here parses the payload: `data` moves as an opaque JSON STRING in both directions, so
-    // the bridge hands back byte-identical bytes rather than re-encoding a decoded map.
+    // Drain the inbox, store application entries, and send application writes.
+    // Payload data crosses as an opaque JSON string and is never re-encoded.
     // ─────────────────────────────────────────────────────────────────────────────────────────
 
     @objc(inboxPeek:resolver:rejecter:)
@@ -494,10 +477,7 @@ extension ObscuraBridge {
 
 }
 
-// MARK: - Typing signals (task #8)
-//
-// Typing rides on the "directMessage" model (chat), matching Android. The
-// untyped Model typing API is provided by the kit (obscura-client-ios task #19).
+// MARK: - Typing signals
 
 extension ObscuraBridge {
 
@@ -506,10 +486,7 @@ extension ObscuraBridge {
     /// Opaque to the kit — it neither parses nor validates it — and it needs no schema. It matches
     /// the app's `directMessage` model only so signals and messages share a namespace.
     ///
-    /// These reach the kit through `client.sendTyping(modelKey:conversationId:)`. Signals survived
-    /// the reset (KIT_API.md §6, "Signals"); they merely happened to live in the ORM directory, and
-    /// routing them through the ORM object was the last reason this bridge touched it. The old
-    /// "call defineModels first" gate is gone with the schema — signals never needed one.
+    /// These reach the kit through `client.sendTyping(modelKey:conversationId:)`.
     private static let typingModel = "directMessage"
 
     @objc(sendTyping:resolver:rejecter:)
@@ -557,7 +534,7 @@ extension ObscuraBridge {
     }
 }
 
-// MARK: - Attachments (task #9)
+// MARK: - Attachments
 //
 // Bytes never cross the bridge: upload reads a file path, download decrypts to
 // a cache file and returns its path. Mirrors ObscuraBridgeModule.kt.
@@ -642,7 +619,7 @@ extension ObscuraBridge {
     }
 }
 
-// MARK: - Image processing (task #10) — pure native, path-in/path-out
+// MARK: - Image processing — pure native, path-in/path-out
 
 extension ObscuraBridge {
 
@@ -722,7 +699,7 @@ extension ObscuraBridge {
     }
 }
 
-// MARK: - Misc (task #13)
+// MARK: - Misc
 
 extension ObscuraBridge {
 
@@ -770,13 +747,10 @@ extension ObscuraBridge {
     }
 }
 
-// MARK: - Push (task #11, partial)
+// MARK: - Push permission + kit token registration
 //
-// Permission + token-registration are implemented (JS calls requestPushPermission
-// unconditionally at bootstrap, so these MUST exist). FCM/APNs token *delivery*
-// via pushTokenReceived still needs the Firebase SDK + AppDelegate wiring — see
-// docs/IOS_PARITY.md "Push (#11)". So no token is delivered yet; requestPush
-// only reports the permission result honestly.
+// Permission requests and kit token registration are implemented. APNs/FCM
+// token delivery is not wired to `pushTokenReceived`, so iOS push is not active.
 
 extension ObscuraBridge {
 
@@ -787,8 +761,7 @@ extension ObscuraBridge {
             if let error = error {
                 self.rejectKit(reject, "PUSH_PERMISSION_ERROR", error); return
             }
-            // Only-on-grant: register for remote notifications so APNs/FCM can
-            // later deliver a token (token plumbing lands with #11/Firebase).
+            // Only request an APNs token after notification permission is granted.
             if granted {
                 DispatchQueue.main.async { UIApplication.shared.registerForRemoteNotifications() }
             }
@@ -807,12 +780,12 @@ extension ObscuraBridge {
     }
 }
 
-// MARK: - Deep linking + debug log (task #12)
+// MARK: - Deep linking + debug log
 //
 // appStateChanged is already wired in init() via ObscuraSession.onAppStateChanged.
 // Cold-start deep links arrive via getLaunchIntent (consume-once); warm-start taps
-// via the launchedFrom event. The deep-link *source* (notification userInfo) is
-// wired when push lands (task #11); until then getLaunchIntent returns null.
+// via the launchedFrom event. Notification callbacks are not wired, so
+// getLaunchIntent currently returns nil.
 
 extension ObscuraBridge {
 

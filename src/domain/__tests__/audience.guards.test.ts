@@ -6,24 +6,10 @@ import {
 } from '../audience';
 
 /**
- * The five leak guards, vendored from `obscura-proto/conformance/routing.json`.
+ * Audience confidentiality guards required by SPEC §1.
  *
- * SPEC §1 hands these over by name — "its five leak guards live in
- * `obscura-pix/src/domain/__tests__/audience.guards.test.ts`" — because the kits stopped resolving
- * audiences, so these vectors stopped being a cross-implementation contract and became this repo's
- * fixture. `conformance/routing.json` was duly deleted on 2026-07-31. They
- * are transcribed **verbatim** — same schema, same entry data, same expectation — so a reviewer can
- * diff them against the file they came from.
- *
- * The original justification for deleting them was "a kit no longer resolves an audience, so it
- * cannot misroute". That is a non-sequitur: **the risk moves here, it does not evaporate.** And it
- * is not hypothetical — the typing-indicator leak fixed on 2026-07-25 was exactly this shape (a 1:1
- * payload, an audience nobody resolved, broadcast to every friend), on a code path `routing.json`
- * never covered.
- *
- * `routing.json`'s expectations include self in `recipients`; `resolveAudience` deliberately excludes
- * it, because the kit self-syncs to the author's other devices as part of `send`. So the comparisons
- * below add self back rather than changing what the function returns.
+ * The fixture expectations include self; `resolveAudience` excludes it because
+ * the kit self-syncs to the author's other devices.
  */
 
 // routing.json `topology`, verbatim.
@@ -114,7 +100,7 @@ describe('resolution the app actually uses', () => {
    */
   it('resolves the same conversation from either participant', () => {
     const convId = ['uMe', 'uB'].sort().join('_');
-    // Each side sees the other as a friend — friendship is mutual, and the resolver now intersects
+    // Each side sees the other as a friend; the resolver intersects
     // participants with the ACCEPTED graph, so the fixture has to model both directions honestly.
     const bobsFriends = [{ userId: 'uMe', username: 'me', status: 'accepted' }];
 

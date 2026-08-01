@@ -131,9 +131,8 @@ export function useSession() {
  * on `messageReceived` (handled centrally in the
  * bootstrap subscription).
  *
- * There is no tombstone filter. Nothing in this app or either kit produces `op: DELETE` any more —
- * `deleteEntry` had zero callers and went with the ORM, and for the two APPEND models a delete would
- * lose the merge regardless — so a `_deleted` check was a branch with no producer.
+ * There is no tombstone filter because the current application and kit APIs have
+ * no delete operation.
  */
 export function useModelEntries(model: string): ModelEntry[] {
   const entries = useStore((s) => s.entries[model]);
@@ -206,13 +205,12 @@ export async function drainAndRefresh(alsoRefresh?: string): Promise<void> {
 /**
  * Store an entry and send it to its audience, then refresh the model so the screen shows it.
  *
- * The single write path for the app, replacing `Obscura.createEntry` / `Obscura.upsertEntry`. It
- * exists at store level rather than as a bare `writeEntry` call because the audience needs the
+ * This is the single application write path. It exists at store level rather
+ * than as a bare `writeEntry` call because the audience needs the
  * session — who I am, which device, who my friends are — and threading three fields through every
  * screen would invite one of them being passed wrong.
  *
- * The refresh is explicit because it has to be: `entryPut` is a plain write and emits no event, so
- * unlike the old `createEntry` nothing tells the UI by itself.
+ * The refresh is explicit because `entryPut` is a plain write and emits no event.
  *
  * Throws `DirectRoutingUnresolved` when the audience cannot be resolved — nothing is stored or sent.
  * Callers should surface that: it means the entry reached nobody.
@@ -246,9 +244,7 @@ export async function saveEntry(
     });
   } finally {
     // `finally`, not "after the await". `writeEntry` deliberately KEEPS the local row and rethrows
-    // when a send reaches nobody, so on that path the throw used to propagate past the refresh and
-    // the entry the app had just committed never entered the cache: in `ChatScreen.send()` the user
-    // saw a toast and their own message simply absent until an unrelated drain refreshed the model.
+    // when a send reaches nobody, so the refresh must also run on that path.
     //
     // An unresolvable audience throws before anything is stored, so refreshing then is a no-op read
     // rather than a wrong one.
@@ -277,9 +273,8 @@ export async function flushOutboxFromStore(): Promise<void> {
 /**
  * Drain the inbox and flush the outbox — the pair of things a "the network moved" signal means.
  *
- * They are always triggered together and never individually, which is the point: the receive side
- * had four triggers and the send side had none, and that asymmetry is what left a failed send
- * sitting in the user's timeline looking delivered.
+ * They are always triggered together so the receive and retry paths respond to
+ * the same connectivity and lifecycle signals.
  */
 function syncBothWays(label: string, alsoRefresh?: string): void {
   drainAndRefresh(alsoRefresh).catch((e) => logError('entries.drain:' + label, e));
@@ -313,19 +308,14 @@ export function applyObscuraEvent(event: ObscuraEvent): void {
       return;
     case 'authStateChanged':
       if (event.state === 'loggedOut') { s.reset(); return; }
-      // `authenticated` was previously ignored, so `authed` only ever flipped true from the
-      // cold-start `getAuthState()` or an explicit login. When the kit emits this AFTER a device
-      // link is approved — the `pendingApproval` → `authenticated` transition — the `[authed]`
-      // effect never fired, so the cold-start drain never ran and every message that arrived
-      // before the next app restart stayed in the inbox.
+      // Device-link approval transitions through `pendingApproval` to
+      // `authenticated`; update the store so session loading and draining run.
       if (event.state === 'authenticated') s.setAuthed(true);
       return;
 
     case 'appStateChanged':
-      // Coming back to the foreground. On iOS especially, the app may have been suspended while
-      // a Notification Service Extension decrypted, persisted and ACKED messages with no JS
-      // runtime alive to hear about it — so returning to foreground is the first chance the app
-      // has to see them at all.
+      // Native background processing may persist messages while the JS runtime
+      // is suspended, so foregrounding must drain again.
       if (event.state === 'active') syncBothWays('foreground');
       return;
     case 'authFailed':
@@ -357,10 +347,8 @@ export function applyObscuraEvent(event: ObscuraEvent): void {
  * drain is the trigger whose absence stranded messages, and it was unreachable from a test.
  */
 export async function loadSession(): Promise<void> {
-  // `defineModels` is gone: the kit no longer parses an application schema (SPEC §0.4), so there
-  // is nothing to define. `obscuraSchema` is still the app's source of truth — `drainInbox` reads
-  // its `sync` strategy and authorization rules and `writeEntry` reads its `audience` — it simply
-  // never crosses the bridge now.
+  // `obscuraSchema` stays in the app: `drainInbox` reads its merge and
+  // authorization rules, and `writeEntry` reads its audience (SPEC §0.4).
   const store = useStore.getState();
   await Promise.all([
     Obscura.getUserId()
@@ -384,12 +372,9 @@ export async function loadSession(): Promise<void> {
       .catch((e) => logError('bootstrap.conn', e)),
   ]);
 
-  // COLD START. This is the trigger that matters most, and the one whose absence stranded
-  // messages: the push path (Android FCM, and an iOS NSE in Phase 4) decrypts, persists and ACKS
-  // with no JS runtime running, so no `messageReceived` is ever emitted for those rows. Without a
-  // drain here they sit in the inbox — invisible to the UI, with the server's copies already
-  // deleted — until some LATER live message happens to fire an event. If the friend never
-  // messages again, permanently.
+  // Android push can decrypt, persist, and ACK with no JS runtime, so no
+  // `messageReceived` event is emitted for those rows. Cold-start sync discovers
+  // them independently of the best-effort event path.
   //
   // The emit is best-effort by design (SPEC §0.9 rule 4 permits dropping the NOTIFICATION, since
   // the row is the delivery path) — which is exactly why the row must have a trigger that does not

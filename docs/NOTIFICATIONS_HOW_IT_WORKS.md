@@ -1,20 +1,15 @@
-# Notifications — How It Works (as-built)
+# Android notifications
 
-This documents the **actual Android** notification system. `obscura-pix` does not currently contain
-an iOS native bridge or notification extension. For the
-original design intent, privacy invariants, and the cross-platform contract, see
-[PUSH_NOTIFICATIONS.md](./PUSH_NOTIFICATIONS.md) — but where that doc's *flow* disagrees with
-this one, **this doc is correct**.
-
-> **History:** an earlier build had three competing owners of the kit client and two consumers
-> racing for the single-consumer `incomingMessages` channel, so notifications had to be posted
-> from the live receive loop and cold-start (killed-process) wakes did nothing. That race and
-> the cold-start gap are **fixed on Android** — see [Why this changed](#why-this-changed).
+This documents the current Android implementation. The iOS bridge exists, but
+token forwarding, background wake handling, and notification delivery are not
+wired. The current APNs payload targets an app background handler, not a
+Notification Service Extension. Shared privacy and transport constraints live in
+[`PUSH_NOTIFICATIONS.md`](PUSH_NOTIFICATIONS.md).
 
 ## TL;DR
 
 - The server only ever sends a **silent, content-free push** (`{ "action": "check" }`).
-- The device decides whether to show a notification, and the text is **always generic**
+- The device decides whether to show a notification, and the body is **always generic**
   ("New pix" / "New message") — never sender, content, or IDs.
 - Android has **one** process-scoped owner of the kit client and **one** consumer of
   `incomingMessages`. `processPendingMessages` observes receive activity without consuming that
@@ -37,8 +32,9 @@ this one, **this doc is correct**.
 
 ### iOS
 
-There is no `ios/` implementation in `obscura-pix`. `ObscuraKit-swift` has the native drain API,
-but no shipped app bridge or notification extension wires it to APNs.
+The Swift bridge has push permission and registration methods, but token
+forwarding, app-delegate wake handling, and local notification posting are not
+implemented.
 
 ### Shared
 
@@ -89,21 +85,16 @@ friend sends pix
 
 ### iOS
 
-Not implemented in `obscura-pix`. When it is added, model classification and notification copy
-must remain in the app/extension; the Swift kit returns only an opaque processed-envelope total.
+Not implemented in `obscura-pix`. When it is added, model classification and
+notification copy must remain in the native app; the Swift kit returns only an
+opaque processed-envelope total.
 
-## Why this changed
+## Ownership invariant
 
-The previous Android build had `incomingMessages` read by **two** consumers — the bridge's
-always-on loop and the FCM drain's `processPendingMessages` — racing for each single-delivery
-envelope. The drain no longer reads that channel: it observes successful receive-path activity
-while `ObscuraSession` remains the sole consumer.
-
-The fix made ownership single and process-scoped:
-
-- **Android** — `ObscuraSession` is the lone owner and the lone consumer, created in
-  `MainApplication.onCreate`. `onPushWake` restores + connects and lets that one consumer drain.
-- **iOS** — still pending in `obscura-pix`.
+`ObscuraSession` is the lone Android kit owner and `incomingMessages`
+consumer. It is created in `MainApplication.onCreate`; `onPushWake` restores
+and connects that same owner. Push draining observes receive activity without
+competing for the channel.
 
 ## Foreground vs background
 
@@ -123,23 +114,20 @@ the in-app UI silently.
 
 ## Privacy invariant
 
-Title is only ever `"New pix"` or `"New message"` (Android may also show `"New friend request"`);
-the tap intent carries **no** conversation/sender/message IDs. Android uses a fixed
-`NOTIFICATION_ID` so repeat posts replace rather than stack. See
-[PUSH_NOTIFICATIONS.md](./PUSH_NOTIFICATIONS.md#privacy-model) for the threat model (forensic
-extraction of the notification DB).
+The title is `"Obscura"`. The body is `"New pix"`, `"New message"`, or
+`"New friend request"`; the tap intent carries **no**
+conversation/sender/message IDs. Android uses a fixed `NOTIFICATION_ID` so
+repeat posts replace rather than stack. See
+[PUSH_NOTIFICATIONS.md](./PUSH_NOTIFICATIONS.md#privacy-invariants).
 
-## Server contract (unchanged)
+## Server contract
 
 ```
 PUT /v1/push-tokens        body { "token": "<fcm-token>" }   (device-scoped JWT)
 ```
 Push payload the server sends (silent, content-free):
-```json
-{ "data": { "action": "check" },
-  "android": { "priority": "HIGH", "collapseKey": "obscura_check" },
-  "apns":    { "apns-push-type": "background", "content-available": 1 } }
-```
+see the canonical FCM message configuration in
+[`PUSH_NOTIFICATIONS.md`](PUSH_NOTIFICATIONS.md#server-api).
 The app and server must share the **same Firebase project** (`obscura-af88b`, sender
 `245820007515`). If the server's FCM credentials point at a different project, FCM returns 200
 and silently delivers to nobody.

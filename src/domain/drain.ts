@@ -1,8 +1,7 @@
 /**
  * Draining the kit's inbox (`obscura-proto/KIT_API.md` §3).
  *
- * This is the app's half of the reset: the kit stores bytes it cannot read, and this decides what
- * they mean. It is the second piece of domain logic to move out of the kits, after `merge.ts`.
+ * The kit stores opaque bytes; the application decides what they mean.
  *
  * ## The contract, and why each step is where it is
  *
@@ -11,10 +10,7 @@
  * ```
  *
  * - **Authorize before storing.** Delivery is not authorization: any authenticated user can deliver
- *   to any device (KIT_API §4.1), so "it arrived" says nothing about whether the sender was entitled
- *   to write it. Until 2026-08-01 there was no check at all and no authenticated identity to check
- *   against — `senderUserId` was dropped on the floor by `toDrainRow` and the screens attributed
- *   entries from peer-chosen payload fields instead. See `authorize` for the per-model rules.
+ *   to any device (KIT_API §4.1), so arrival does not prove that the sender may write a row.
  *
  * - **`peek` is side-effect free.** Draining twice without consuming returns the same rows. That is
  *   the crash-safety property, not a bug: an app that dies mid-drain reprocesses, and `merge.ts`'s
@@ -46,9 +42,7 @@ export interface DrainRow {
   op: string | null;
   sentAt: number | null;
   /**
-   * The sending **user**, stamped by the server from a device-scoped token and therefore unforgeable
-   * (SPEC §0.10). This is the only trustworthy answer to "who sent this", and until 2026-08-01 the
-   * drain did not carry it at all — so every screen answered the question from the payload instead.
+   * The sending **user**, authenticated by the device-scoped session (SPEC §0.10).
    */
   senderUserId: string;
   /** The device whose Signal session decrypted this — cryptographic attribution, and the tie-break. */
@@ -96,10 +90,8 @@ export interface ModelRules {
  * to anybody. What is checked here is narrower and unconditional: an entry must be consistent with
  * who actually sent it.
  *
- * `story` therefore has no rule beyond attribution: a story carries no id or field that binds it to
- * an author, so the authenticated sender simply *becomes* the author (below) rather than being
- * checked against a claim. That is the whole fix for "a stranger's story appears under Alice's
- * name" — there is no longer a claim to believe.
+ * `story` has no rule beyond attribution: it carries no id or field that binds it
+ * to an author, so the authenticated sender becomes the author.
  */
 function authorize(
   row: DrainRow,

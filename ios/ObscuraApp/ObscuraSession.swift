@@ -66,9 +66,8 @@ final class ObscuraSession {
     var onAppStateChanged: ((Bool) -> Void)?
 
     private init() {
-        // Pre-init (self not fully constructed): NSLog rather than self.logger. Logged every launch
-        // on purpose — an unprovisioned App Group degrades silently, and the symptom otherwise shows
-        // up much later as an NSE that reads nothing.
+        // Pre-init (self not fully constructed): NSLog rather than self.logger.
+        // Log every launch because App Group provisioning failure is otherwise silent.
         SharedContainer.logStatus { NSLog("%@", $0) }
 
         if let saved = KeychainSession.load(), let username = saved.username {
@@ -100,15 +99,12 @@ final class ObscuraSession {
 
     /// The root the SQLCipher database lives under.
     ///
-    /// Prefers the App Group container so a Notification Service Extension can open the same file
-    /// (`obscura-proto/KIT_API.md` P2). Falls back to the app-private container — the pre-P2
-    /// location — when the group is not provisioned, so an unentitled build still runs. That
-    /// fallback is logged loudly by `SharedContainer.logStatus`; it must NOT stay silent once an
-    /// NSE exists, because at that point the wrong path means an extension that reads nothing.
+    /// Prefers the App Group container so a Notification Service Extension can
+    /// open the same file. An unprovisioned build falls back to the app-private
+    /// container and logs that limitation.
     ///
-    /// Note the two roots are different directories: switching to the group orphans any database
-    /// already written to the old one, and the device re-provisions. That is intended and is why
-    /// this lands now rather than after there is data worth keeping.
+    /// The roots are different directories. Changing availability does not
+    /// migrate an existing database; the device provisions against the selected root.
     private static var baseDir: URL {
         let root = SharedContainer.containerURL
             ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]

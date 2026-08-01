@@ -31,13 +31,8 @@ export function ProfileScreen() {
   const [showLog, setShowLog] = useState(false);
   const identity = { myUserId, myUsername, friends };
 
-  // The user's own saved profile entry (id is device-independent, unlike
-  // authorDeviceId which changes when a different device last wrote it).
-  //
-  // The id is guessable by construction, which used to be the whole problem: `profile` is REPLACE,
-  // so a stranger writing `profile_<myUserId>` with a higher `sentAt` took this row over — and the
-  // save below then re-broadcast their text to all my friends as mine. `drain.ts` now refuses any
-  // `profile_<x>` that does not come from `<x>`.
+  // Profile ids are device-independent. The drain accepts `profile_<x>` only
+  // from authenticated user `<x>`.
   const ownProfile = profiles.find(p => p.id === profileEntryId(myUserId));
 
   // Hydrate the editable fields from the saved profile once it's available,

@@ -439,17 +439,10 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         }
     }
 
-    // ─── ORM ────────────────────────────────────────────────────────────────
-
     // ─── Signals ────────────────────────────────────────────────────────────
     //
-    // These reach the kit through `client.sendTyping(...)` rather than
-    // `client.orm.modelOrNull("directMessage")?.typing(...)`. Signals are KEEP-forever code that
-    // happened to live in the ORM package; routing them through the ORM object was the last reason
-    // this bridge touched it at all (obscura-proto RESET.md, "Keep").
-    //
-    // `TYPING_MODEL` is an opaque namespace string, exactly like `modelKey` on the inbox and the
-    // entry store — the kit neither parses nor validates it, and no schema needs defining for it.
+    // `TYPING_MODEL` is an opaque namespace string, like `modelKey` on the
+    // inbox and entry store. The kit does not parse or validate it.
 
     @ReactMethod
     fun sendTyping(conversationId: String, promise: Promise) {
@@ -771,7 +764,8 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
      *
      * We DO NOT register the token with our server here — that's a separate
      * `registerPushToken` call from JS after the `pushTokenReceived` event.
-     * Reasoning: keep server-side state out of denial paths.
+     * This guarantee applies only to this explicit request; Firebase
+     * `onNewToken` may emit independently and JS currently registers it.
      */
     @ReactMethod
     fun requestPushPermission(promise: Promise) {
@@ -848,9 +842,6 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
 
     // ─── File helpers ───────────────────────────────────────────────────────
     // Just enough to let JS clean up temp files (e.g. vision-camera's capture path).
-    // Everything else that used to live here moved into the typed contract above
-    // (uploadAttachment, downloadAttachment, resizeImage, writeTestImage) so bytes
-    // never round-trip through the JS bridge as base64.
 
     @ReactMethod
     fun deleteFile(path: String, promise: Promise) {
@@ -909,16 +900,10 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         }
 
     // ─────────────────────────────────────────────────────────────────────────────────────────
-    // The thin kit surface (obscura-proto/KIT_API.md §3, §5, §8.1).
+    // Kit data surface (obscura-proto/KIT_API.md §3, §5, §8.1).
     //
-    // Three groups: drain the inbox, store what you make of it, send what you write. They replaced
-    // the ORM methods, which were deleted on 2026-07-30 (KIT_API.md §10 step 4).
-    //
-    // Note what does NOT cross here: nothing parses the payload. `data` moves as an opaque JSON
-    // STRING in both directions, which is a deliberate departure from the deleted `entryToMap` —
-    // that helper flattened a map field-by-field and fell back to `v.toString()` for anything that
-    // was not a String/Number/Boolean, so nested objects and arrays arrived as their Kotlin
-    // toString. The app owns the JSON; the bridge hands it back byte-identical, never re-encoded.
+    // Drain the inbox, store application entries, and send application writes.
+    // Payload data crosses as an opaque JSON string and is never re-encoded.
     // ─────────────────────────────────────────────────────────────────────────────────────────
 
     @ReactMethod

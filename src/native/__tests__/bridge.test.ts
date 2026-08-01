@@ -5,14 +5,8 @@ import { getFakeBridge } from '../__fixtures__/reactNativeMock';
  * The bridge boundary, exercised through the real `ObscuraModule.ts` against the in-memory kit
  * double.
  *
- * **Every assertion here was unreachable before the double existed.** Under the old noop `Proxy`,
- * every bridge call resolved `null` and `onObscuraEvent` returned a no-op unsubscribe having
- * subscribed to nothing — so a test of any of this would have passed while asserting nothing. The
- * first test below is the proof of that, and it is deliberately first.
- *
- * Rewritten 2026-07-30: these used to drive `defineModels` / `createEntry` / `allEntries`, which no
- * longer exist on either kit (`KIT_API.md` §10 step 4). The same properties are now checked against
- * the surface that replaced them — `entryPut` / `entryAll` / `inboxPeek` / `sendEntry`.
+ * The first test ensures the fake is installed; otherwise the facade's
+ * no-native fallback would make bridge calls inert.
  */
 
 const bridge = getFakeBridge();
@@ -61,14 +55,9 @@ describe('the double is actually installed', () => {
 describe('the JSON boundary', () => {
   /**
    * `data` and `payload` cross as opaque JSON **strings** in both directions. That is the whole
-   * point of the new surface: the kit stores bytes it does not parse, so what comes back is what
+     * point of the surface: the kit stores bytes it does not parse, so what comes back is what
    * went in — byte for byte, not re-serialised.
-   *
-   * The old bridge did the opposite. `entryToMap` flattened a map field by field and fell back to
-   * `v.toString()` for anything that was not a String/Number/Boolean, so nested objects and arrays
-   * arrived as their Kotlin `toString`. The nested-payload test below is the one that would have
-   * caught it.
-   */
+     */
   it('round-trips a payload the kit never parses', async () => {
     const data = { conversationId: 'a_b', content: 'hello', _authorUserId: 'u_alice' };
 
