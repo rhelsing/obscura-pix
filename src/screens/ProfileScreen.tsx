@@ -7,6 +7,8 @@ import { Obscura } from '../native/ObscuraModule';
 import { logError, getJsLog } from '../utils/log';
 import { toast } from '../components/Toast';
 import { useSession, useModelEntries, saveEntry } from '../state/store';
+import { AUTHOR_USER_ID, profileEntryId } from '../models/schema';
+import { authorOf, displayNameFor } from '../utils/identity';
 import { s, colors } from '../styles';
 import type { ConnectionState } from '../native/ObscuraModule';
 
@@ -21,16 +23,22 @@ const CONN_META: Record<ConnectionState, { color: string; label: string }> = {
 };
 
 export function ProfileScreen() {
-  const { myUserId, myUsername, myDeviceId, connState, logout } = useSession();
+  const { myUserId, myUsername, friends, connState, logout } = useSession();
   const profiles = useModelEntries('profile');
   const [displayName, setDisplayName] = useState(myUsername);
   const [bio, setBio] = useState('');
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const [showLog, setShowLog] = useState(false);
+  const identity = { myUserId, myUsername, friends };
 
   // The user's own saved profile entry (id is device-independent, unlike
   // authorDeviceId which changes when a different device last wrote it).
-  const ownProfile = profiles.find(p => p.id === `profile_${myUserId}`);
+  //
+  // The id is guessable by construction, which used to be the whole problem: `profile` is REPLACE,
+  // so a stranger writing `profile_<myUserId>` with a higher `sentAt` took this row over — and the
+  // save below then re-broadcast their text to all my friends as mine. `drain.ts` now refuses any
+  // `profile_<x>` that does not come from `<x>`.
+  const ownProfile = profiles.find(p => p.id === profileEntryId(myUserId));
 
   // Hydrate the editable fields from the saved profile once it's available,
   // falling back to the username for a brand-new profile. `hydrated` stops it
@@ -71,7 +79,7 @@ export function ProfileScreen() {
 
   const save = async () => {
     try {
-      await saveEntry('profile', { displayName, bio }, `profile_${myUserId}`);
+      await saveEntry('profile', { displayName, bio }, profileEntryId(myUserId));
       toast.success('Profile updated');
     } catch (e: any) { toast.error(e.message); }
   };
@@ -87,11 +95,14 @@ export function ProfileScreen() {
     );
   };
 
-  // Filter on deviceId — `authorDeviceId` is the kit's per-device id, not
-  // the per-user id. Comparing it to `myUserId` (different namespace!) used
-  // to mean every entry passed the filter and your own profile showed up
-  // under "friend profiles".
-  const friendProfiles = profiles.filter(p => p.authorDeviceId !== myDeviceId);
+  // Everyone else's profile, keyed on the AUTHENTICATED owner rather than on `authorDeviceId` —
+  // which excluded only the device that last wrote, so my own profile reappeared here as soon as my
+  // other device saved it. The heading is the friend-graph username (an identity the kit proved);
+  // `displayName` below it is the profile's content, which its owner is entitled to choose.
+  const friendProfiles = profiles
+    .map(p => ({ entry: p, name: displayNameFor(authorOf(p.data, AUTHOR_USER_ID), identity) }))
+    .filter((p): p is { entry: typeof p.entry; name: string } =>
+      p.name !== null && p.entry.id !== profileEntryId(myUserId));
 
   const conn = CONN_META[connState] ?? CONN_META.disconnected;
 
@@ -112,10 +123,11 @@ export function ProfileScreen() {
 
         {friendProfiles.length > 0 && (<>
           <Text style={pf.sectionTitle}>friend profiles</Text>
-          {friendProfiles.map(p => (
-            <View key={p.id} style={pf.storyCard}>
-              <Text style={pf.storyAuthor}>{p.data.displayName}</Text>
-              {p.data.bio ? <Text style={pf.storyContent}>{p.data.bio}</Text> : null}
+          {friendProfiles.map(({ entry, name }) => (
+            <View key={entry.id} style={pf.storyCard}>
+              <Text style={pf.storyAuthor}>{name}</Text>
+              {entry.data.displayName ? <Text style={pf.storyContent}>{entry.data.displayName}</Text> : null}
+              {entry.data.bio ? <Text style={pf.storyContent}>{entry.data.bio}</Text> : null}
             </View>
           ))}
         </>)}

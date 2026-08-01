@@ -3,7 +3,7 @@ import {
   resolveAudience, DirectRoutingUnresolved,
   type AudienceConfig, type AudienceFriend,
 } from '../domain/audience';
-import { obscuraSchema } from '../models/schema';
+import { obscuraSchema, AUTHOR_USER_ID } from '../models/schema';
 import { withEntryLock } from './entryLock';
 import { logError } from '../utils/log';
 
@@ -108,7 +108,21 @@ export async function writeEntry(args: WriteEntryArgs): Promise<string> {
   const recipients = resolveAudience(audienceFor(model), data, selfUserId, friends);
 
   const id = args.id ?? newEntryId(model);
-  const payload = JSON.stringify(data);
+
+  // ATTRIBUTION, the local half of `drain.ts`'s rule: this device authored the write, so this user
+  // is the author — unless the caller is updating an entry someone else created, in which case the
+  // author already recorded on it stands. That second case is the viewed-receipt: the RECIPIENT
+  // writes `viewedAt` onto a `pix` the sender created, and stamping self there would relabel the
+  // sender's pix as one of mine.
+  //
+  // A peer never gets to decide this. On the way in, `drain.ts` overwrites the field with the
+  // authenticated sender; the copy that goes out on the wire is only ever a carrier.
+  const priorAuthor = data[AUTHOR_USER_ID];
+  const stored: Record<string, unknown> = {
+    ...data,
+    [AUTHOR_USER_ID]: typeof priorAuthor === 'string' ? priorAuthor : selfUserId,
+  };
+  const payload = JSON.stringify(stored);
 
   // `sentAt` must beat whatever is already stored, or a local write can lose to it.
   //
@@ -136,8 +150,9 @@ export async function writeEntry(args: WriteEntryArgs): Promise<string> {
     return next;
   });
 
+  const op = args.id === undefined ? 'CREATE' : 'UPDATE';
   try {
-    await Obscura.sendEntry(recipients, model, id, args.id === undefined ? 'CREATE' : 'UPDATE', sentAt, payload);
+    await Obscura.sendEntry(recipients, model, id, op, sentAt, payload);
   } catch (e) {
     // The local write already succeeded and STAYS — the user's content is theirs whether or not the
     // network cooperated, and undoing it would be the worse failure.
@@ -148,9 +163,116 @@ export async function writeEntry(args: WriteEntryArgs): Promise<string> {
     // nowhere, forever. An earlier version justified swallowing with "the kit queues and retries" —
     // that is not true in the sense required: the retry queue is in-memory, flushed on the next
     // send, and lost on process death.
+    //
+    // Which is why the row is also MARKED. Telling the user once and then forgetting is what left
+    // an undelivered entry sitting in their timeline looking sent, forever, with no trigger that
+    // would ever retry it — the receive side has four (reconnect, foreground, cold start, wake) and
+    // the send side had none. See `flushOutbox`.
+    await markUndelivered(model, id, stored, sentAt, myDeviceId, op);
     logError('writeEntry.send:' + model, e);
     throw e;
   }
 
   return id;
+}
+
+// ─── The outbox ──────────────────────────────────────────
+//
+// There is no separate outbox table. The mark lives on the entry itself, which makes it durable for
+// free — the entry store is SQLite in the kit's own database (§8.1) — and means an undelivered entry
+// cannot be orphaned from its content. It is stripped before the payload goes on the wire: it is
+// this device's delivery bookkeeping and means nothing to a peer.
+
+/** Set on a stored entry whose send reached nobody. The value is the `op` to retry with. */
+const UNDELIVERED = '_undelivered';
+
+/**
+ * Record that this entry did not reach anybody, without disturbing a newer write.
+ *
+ * The read-then-write under the lock is not decoration: `entryPut` is blind, so re-putting our own
+ * `sentAt` after a concurrent drain stored a NEWER version of the same id would roll that version
+ * back. If we have been superseded there is also nothing to retry — the newer write is what the
+ * peers should get, and it has its own delivery outcome.
+ */
+async function markUndelivered(
+  model: string, id: string, data: Record<string, unknown>,
+  sentAt: number, myDeviceId: string, op: string,
+): Promise<void> {
+  try {
+    await withEntryLock(async () => {
+      const existing = (await Obscura.entryAll(model)).find((e) => e.id === id);
+      if (existing === undefined || existing.sentAt !== sentAt) return;
+      const marked = JSON.stringify({ ...data, [UNDELIVERED]: op });
+      await Obscura.entryPut(model, id, marked, sentAt, myDeviceId);
+    });
+  } catch (e) {
+    // Best effort. The caller is already throwing about the send; failing to record the retry must
+    // not replace that error with a less useful one.
+    logError('writeEntry.mark:' + model, e);
+  }
+}
+
+export interface FlushOutboxArgs {
+  selfUserId: string;
+  friends: readonly AudienceFriend[];
+}
+
+/**
+ * Retry every entry whose send reached nobody, and clear the mark on the ones that get through.
+ *
+ * Wired to the same signals as the inbox drain (reconnect, foreground, cold start) — the asymmetry
+ * this closes is that those signals mean "the network is back", which is exactly as true for the
+ * outbound half as for the inbound one.
+ *
+ * @returns how many entries were delivered on this pass.
+ */
+export async function flushOutbox(args: FlushOutboxArgs): Promise<number> {
+  const { selfUserId, friends } = args;
+  let delivered = 0;
+
+  for (const model of Object.keys(obscuraSchema)) {
+    let stored;
+    try {
+      stored = await Obscura.entryAll(model);
+    } catch (e) {
+      logError('flushOutbox.read:' + model, e);
+      continue;
+    }
+
+    for (const row of stored) {
+      let data: Record<string, unknown>;
+      try {
+        data = JSON.parse(row.data) as Record<string, unknown>;
+      } catch {
+        continue; // `loadEntries` already logs unreadable rows; do not log the same row twice.
+      }
+      const op = data[UNDELIVERED];
+      if (typeof op !== 'string') continue;
+
+      // Strip the mark before it goes anywhere. What the peer receives must be the entry, not this
+      // device's opinion about its delivery.
+      const payload = { ...data };
+      delete payload[UNDELIVERED];
+      try {
+        const recipients = resolveAudience(audienceFor(model), payload, selfUserId, friends);
+        await Obscura.sendEntry(recipients, model, row.id, op, row.sentAt, JSON.stringify(payload));
+      } catch (e) {
+        // Still undelivered, or now unroutable (a friend removed since). Either way the mark stays
+        // and the next trigger tries again — dropping it silently is the behaviour being fixed.
+        logError('flushOutbox.send:' + model, e);
+        continue;
+      }
+
+      // Clearing the mark keeps the row's `(sentAt, authorDeviceId)` exactly as it was: this is
+      // bookkeeping, and it must not shift the entry's position in a REPLACE comparison.
+      await withEntryLock(async () => {
+        const current = (await Obscura.entryAll(model)).find((e) => e.id === row.id);
+        if (current === undefined || current.sentAt !== row.sentAt) return; // superseded
+        await Obscura.entryPut(model, row.id, JSON.stringify(payload), row.sentAt, current.authorDeviceId);
+      });
+      delivered += 1;
+    }
+  }
+
+  return delivered;
 }

@@ -15,16 +15,17 @@ import { mergeAll, type Entry, type MergeRule } from '../merge';
 /**
  * `obscura-proto/conformance/merge.json`, run against this app's merge implementation.
  *
- * **Why these vectors live here now.** They pin behaviour the KITS implement today. Phase 3 deletes
- * that engine and moves the behaviour here, and the vectors are the only executable statement of it
- * that exists — so they are ported BEFORE the deletion, while there is still something to check the
- * TypeScript against. Once the Kotlin/Swift ORM is gone, nothing else can say whether this file is
- * right (`obscura-proto/PLAN.md` Phase 3).
+ * **Why these vectors live here now.** They pinned behaviour the KITS implemented, and the kits'
+ * engine was deleted on 2026-07-31 — so they were ported BEFORE the deletion, while there was still
+ * something to check the TypeScript against. There is now exactly one implementation left, which is
+ * why `conformance/merge.json` stopped being a contract and became this repo's fixture
+ * (`obscura-proto/KIT_API.md` §8.2, "merge.json is a contract today and a fixture tomorrow").
  *
  * **The port is partial, and deliberately explicit about it.** Four of the six cases carry over;
- * two pin tombstone semantics that `RESET.md` removes along with `deleteEntry` (which has zero
- * callers in this app). Those two are asserted as *recognised and retired* rather than quietly
- * filtered out — a port that silently drops half a contract is how a contract stops being one.
+ * two pin tombstone semantics that retired with `deleteEntry` (zero callers in this app, and now
+ * absent from the bridge entirely). Those two are asserted as *recognised and retired* rather than
+ * quietly filtered out — a port that silently drops half a contract is how a contract stops being
+ * one.
  */
 
 const VECTORS = join(__dirname, '../__fixtures__/merge.json');
@@ -116,9 +117,10 @@ describe('merge.json conformance', () => {
   });
 
   it('the two tombstone cases are retired with deletes, not accidentally dropped', () => {
-    // RESET.md deletes tombstones: deleteEntry has zero callers in this app, so the whole
-    // tombstone-ordering design is dead on arrival. Naming them here means the port is a decision
-    // with a record, not an omission someone discovers later.
+    // SPEC §2.3 was DELETED with tombstones: `deleteEntry` had zero callers in this app and is now
+    // gone from the bridge on all three surfaces, so the whole tombstone-ordering design was dead on
+    // arrival. Naming them here means the port is a decision with a record, not an omission someone
+    // discovers later.
     expect(retired.map((c) => c.name)).toEqual([
       'LWW newer tombstone wins: a later delete removes the entry, order-independent',
       'LWW stale write does not resurrect a newer tombstone, order-independent',

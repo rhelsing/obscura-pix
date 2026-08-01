@@ -14,6 +14,8 @@ import { Obscura, type ModelEntry } from '../native/ObscuraModule';
 import { logError } from '../utils/log';
 import { timeAgo as fmtTimeAgo } from '../utils/format';
 import { useSession, useModelEntries, saveEntry } from '../state/store';
+import { AUTHOR_USER_ID } from '../models/schema';
+import { authorOf, displayNameFor } from '../utils/identity';
 import type { RootStackParamList, RootStackScreenProps, StoryGroup } from '../navigation/types';
 import { colors } from '../styles';
 
@@ -259,17 +261,25 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
 
 export function StoriesRow() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { myUsername } = useSession();
+  const { myUserId, myUsername, friends } = useSession();
   const stories = useModelEntries('story');
 
-  // Group stories by author, me first. Within each group, oldest first so
+  // Group stories by their AUTHENTICATED author, me first. Within each group, oldest first so
   // the viewer plays the day's stories in chronological order (Snapchat
   // convention). Across groups, "me" is pinned to position 0; the rest are
   // sorted by their most recent story so freshly-posting friends bubble up.
+  //
+  // The grouping key is the userId the drain took off the envelope, never `authorUsername`. Reading
+  // the name out of the payload meant a stranger who sent `{ authorUsername: "alice" }` got a story
+  // in my feed under Alice's circle — delivery does not require friendship (KIT_API §4.1), so
+  // nothing stopped them. A story whose author resolves to no authenticated name is dropped from
+  // the row rather than shown as "unknown": it is still content a stranger put there.
   const groups: StoryGroup[] = useMemo(() => {
+    const identity = { myUserId, myUsername, friends };
     const map = new Map<string, ModelEntry[]>();
     for (const s of stories) {
-      const author = s.data.authorUsername || 'unknown';
+      const author = authorOf(s.data, AUTHOR_USER_ID);
+      if (displayNameFor(author, identity) === null) continue;
       if (!map.has(author)) map.set(author, []);
       map.get(author)!.push(s);
     }
@@ -277,11 +287,11 @@ export function StoriesRow() {
       entries.sort((a, b) => a.timestamp - b.timestamp); // oldest first within a group
     }
     const result: StoryGroup[] = [];
-    const myStories = map.get(myUsername) || [];
-    result.push({ username: myUsername, stories: myStories, isMe: true });
-    map.delete(myUsername);
-    const friendGroups = Array.from(map.entries()).map(([username, entries]) => ({
-      username,
+    result.push({ userId: myUserId, username: myUsername, stories: map.get(myUserId) || [], isMe: true });
+    map.delete(myUserId);
+    const friendGroups = Array.from(map.entries()).map(([userId, entries]) => ({
+      userId,
+      username: displayNameFor(userId, identity) ?? '',
       stories: entries,
       isMe: false,
     }));
@@ -293,7 +303,7 @@ export function StoriesRow() {
     });
     result.push(...friendGroups);
     return result;
-  }, [stories, myUsername]);
+  }, [stories, myUserId, myUsername, friends]);
 
   const openViewer = (idx: number) => {
     const group = groups[idx];
@@ -318,7 +328,7 @@ export function StoriesRow() {
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={ss.circleRow}
         contentContainerStyle={ss.circleRowContent}>
         {groups.map((g, i) => (
-          <StoryCircle key={g.username} group={g} onPress={() => openViewer(i)} />
+          <StoryCircle key={g.userId} group={g} onPress={() => openViewer(i)} />
         ))}
       </ScrollView>
     </View>

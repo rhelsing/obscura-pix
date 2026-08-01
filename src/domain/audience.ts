@@ -24,11 +24,12 @@
  *
  * ## Provenance
  *
- * The five guards below are vendored from `obscura-proto/conformance/routing.json`, which
- * `RESET.md` hands over to this repo: the kits stop resolving audiences, so the vectors stop being a
- * cross-implementation contract and become this file's fixture. `__tests__/audience.guards.test.ts`
- * runs them verbatim. The other five routing cases retire with the engine — they pinned resolution
- * behaviour that no longer exists in two places.
+ * The five guards below are vendored from `obscura-proto/conformance/routing.json`, which was
+ * handed over to this repo and then deleted on 2026-07-31 (SPEC §1, "the five leak guards live in
+ * `obscura-pix/src/domain/__tests__/audience.guards.test.ts`"): the kits stopped resolving
+ * audiences, so the vectors stopped being a cross-implementation contract and became this file's
+ * fixture. `__tests__/audience.guards.test.ts` runs them verbatim. The other five routing cases
+ * retired with the engine — they pinned resolution behaviour that no longer exists in two places.
  */
 
 /** A friend, as the audience resolver needs them. */
@@ -38,12 +39,17 @@ export interface AudienceFriend {
   status: string;
 }
 
-/** How a model's schema declares who its entries reach. */
+/**
+ * How a model's schema declares who its entries reach.
+ *
+ * There is deliberately no `{ kind: 'friends' }`: "every accepted friend" is what `undefined` means
+ * (see `resolveAudience`), so a second spelling of it was a branch no model declared and no test
+ * reached.
+ */
 export type AudienceConfig =
   | { kind: 'conversation'; field: string }
   | { kind: 'recipient'; field: string }
-  | { kind: 'self' }
-  | { kind: 'friends' };
+  | { kind: 'self' };
 
 /**
  * Raised when an audience cannot be resolved.
@@ -87,9 +93,6 @@ export function resolveAudience(
       // Own devices only. The kit's self-sync covers it, so there is no one else to name.
       return [];
 
-    case 'friends':
-      return accepted.map((f) => f.userId).filter((id) => id !== selfUserId);
-
     case 'conversation': {
       const raw = data[audience.field];
       if (typeof raw !== 'string' || raw.length === 0) {
@@ -104,12 +107,30 @@ export function resolveAudience(
       // today — but it is an assumption, not a guarantee, and it is silent when violated. It fails
       // in the SAFE direction at least: an id with an extra `_` yields the wrong participant count
       // and refuses, rather than resolving to a wrong or wider audience.
-      const participants = raw.split('_').filter((p) => p.length > 0);
-      if (participants.length !== 2) {
+      //
+      // SPEC §1.3 is exact: splitting on `_` MUST yield **exactly two non-empty parts**. So count
+      // first and require non-empty second — filtering the empties out *before* counting (as this
+      // did until 2026-08-01) accepts `uA__uB`, `_uA_uB`, `uA_uB_` and `__uA___uB__` as two-party.
+      // Nothing covered it either way: deleting the filter left the whole suite green.
+      const participants = raw.split('_');
+      if (participants.length !== 2 || participants.some((p) => p.length === 0)) {
         // GUARD: the named failure mode. A canonical conversation id has exactly two participants;
         // anything else is not a conversation this app knows how to address, and guessing widens it.
         throw new DirectRoutingUnresolved(
-          `'${raw}' is not a canonical two-party conversation id (${participants.length} participants)`,
+          `'${raw}' is not a canonical two-party conversation id (${participants.length} parts)`,
+        );
+      }
+      // GUARD: **I must be one of the two participants.** The intersection below cannot widen past
+      // my friends, but without this it happily resolves a conversation between two *other* people
+      // to both of them — `resolveAudience(CONVERSATION, {conversationId:'uA_uB'}, 'uMe', …)`
+      // returned `['uA','uB']`, two external recipients in a conversation I am not in.
+      //
+      // Reachable end-to-end: `StoriesScreen` echoes a viewed pix back to its own `conversationId`,
+      // and that id came from a peer's payload. An id that does not name me is not a conversation I
+      // am in, so SPEC §1.2's fail-loud rule applies — this audience cannot be resolved.
+      if (!participants.includes(selfUserId)) {
+        throw new DirectRoutingUnresolved(
+          `'${raw}' does not name this user, so it is not a conversation this device can address`,
         );
       }
       // GUARD, and the one that was missing: **the participants are intersected with the accepted

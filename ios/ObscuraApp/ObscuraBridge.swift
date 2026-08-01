@@ -353,8 +353,8 @@ extension ObscuraBridge {
     // ─────────────────────────────────────────────────────────────────────────────────────────
     // The thin kit surface (obscura-proto/KIT_API.md §3, §5, §8.1).
     //
-    // Three groups: drain the inbox, store what you make of it, send what you write. They exist
-    // ALONGSIDE the ORM methods above for the duration of §10 steps 2-3; the ORM ones go in step 4.
+    // Three groups: drain the inbox, store what you make of it, send what you write. They replaced
+    // the ORM methods, which were deleted on 2026-07-30 (KIT_API.md §10 step 4).
     //
     // Nothing here parses the payload: `data` moves as an opaque JSON STRING in both directions, so
     // the bridge hands back byte-identical bytes rather than re-encoding a decoded map.
@@ -451,20 +451,6 @@ extension ObscuraBridge {
         }
     }
 
-    @objc(entryDelete:id:resolver:rejecter:)
-    func entryDelete(_ model: String, id: String,
-                     resolver resolve: @escaping RCTPromiseResolveBlock,
-                     rejecter reject: @escaping RCTPromiseRejectBlock) {
-        Task {
-            do {
-                try await client.entries.delete(model: model, id: id)
-                resolve(nil)
-            } catch {
-                rejectKit(reject, "ENTRY_DELETE_ERROR", error)
-            }
-        }
-    }
-
     /// The caller names the recipients (SPEC §0.4). The kit resolves no audience of its own.
     @objc(sendEntry:modelKey:entryId:op:sentAt:payloadJson:resolver:rejecter:)
     func sendEntry(_ recipientUserIds: [String], modelKey: String, entryId: String, op: String,
@@ -520,11 +506,10 @@ extension ObscuraBridge {
     /// Opaque to the kit — it neither parses nor validates it — and it needs no schema. It matches
     /// the app's `directMessage` model only so signals and messages share a namespace.
     ///
-    /// These now reach the kit through `client.sendTyping(modelKey:conversationId:)` rather than
-    /// `client.model(...)`. Signals are KEEP-forever code that happened to live in the ORM
-    /// directory; routing them through the ORM object was the last reason this bridge touched it
-    /// (obscura-proto `RESET.md`, "Keep"). Note `requireModel` used to reject with
-    /// "call defineModels first" — signals never needed a schema, so that gate is gone too.
+    /// These reach the kit through `client.sendTyping(modelKey:conversationId:)`. Signals survived
+    /// the reset (KIT_API.md §6, "Signals"); they merely happened to live in the ORM directory, and
+    /// routing them through the ORM object was the last reason this bridge touched it. The old
+    /// "call defineModels first" gate is gone with the schema — signals never needed one.
     private static let typingModel = "directMessage"
 
     @objc(sendTyping:resolver:rejecter:)

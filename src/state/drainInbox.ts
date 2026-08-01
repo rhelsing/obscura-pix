@@ -1,6 +1,6 @@
 import { Obscura, type InboxRow } from '../native/ObscuraModule';
-import { planDrain, type DrainRow } from '../domain/drain';
-import type { Entry, MergeRule } from '../domain/merge';
+import { planDrain, type DrainRow, type ModelRules } from '../domain/drain';
+import type { Entry } from '../domain/merge';
 import { obscuraSchema } from '../models/schema';
 import { withEntryLock } from './entryLock';
 import { logError } from '../utils/log';
@@ -23,11 +23,27 @@ import { logError } from '../utils/log';
  * `merge` is idempotent.
  */
 
-/** `schema.ts`'s `sync` strategy, as a merge rule. `gset` is immutable, `lww` is last-writer-wins. */
-function mergeRules(): Map<string, MergeRule> {
-  const rules = new Map<string, MergeRule>();
+/**
+ * `schema.ts` translated into what the drain needs per model: the merge rule (`gset` is immutable,
+ * `lww` is last-writer-wins) and the authorization rules.
+ *
+ * The authorization rules are derived from the same declarations the *send* side uses, so the two
+ * directions cannot disagree: a model whose audience is a conversation is exactly a model whose
+ * inbound entries must name a conversation between this user and the sender.
+ */
+function modelRules(): Map<string, ModelRules> {
+  const rules = new Map<string, ModelRules>();
   for (const [model, config] of Object.entries(obscuraSchema)) {
-    rules.set(model, (config as { sync?: string }).sync === 'gset' ? 'APPEND' : 'REPLACE');
+    const c = config as {
+      sync?: string;
+      audience?: { kind: string; field?: string };
+      ownerIdPrefix?: string;
+    };
+    rules.set(model, {
+      merge: c.sync === 'gset' ? 'APPEND' : 'REPLACE',
+      conversationField: c.audience?.kind === 'conversation' ? c.audience.field : undefined,
+      ownerIdPrefix: c.ownerIdPrefix,
+    });
   }
   return rules;
 }
@@ -40,6 +56,9 @@ function toDrainRow(row: InboxRow): DrainRow {
     entryId: row.entryId,
     op: row.op,
     sentAt: row.sentAt,
+    // The two authenticated fields (SPEC §0.10). `senderUserId` was previously not copied at all,
+    // which is why nothing downstream could tell who a row was really from.
+    senderUserId: row.senderUserId,
     senderDeviceId: row.senderDeviceId,
     payload: row.payload,
   };
@@ -89,11 +108,23 @@ export async function drainInbox(limit = 50): Promise<DrainResult> {
   return withEntryLock(() => drainInboxUnlocked(limit));
 }
 
+const EMPTY_RESULT: DrainResult = { written: 0, consumed: 0, discarded: 0, touched: [] };
+
 async function drainInboxUnlocked(limit: number): Promise<DrainResult> {
   const rows = await Obscura.inboxPeek(limit);
-  if (rows.length === 0) return { written: 0, consumed: 0, discarded: 0, touched: [] };
+  if (rows.length === 0) return { ...EMPTY_RESULT };
 
-  const rules = mergeRules();
+  // Authorization needs to know who I am, and there is no safe default: an empty `selfUserId` would
+  // make every conversation check fail closed and discard real mail. Refuse to drain instead — the
+  // rows stay in the inbox and the next trigger retries, which is what `peek` being side-effect free
+  // is for.
+  const selfUserId = (await Obscura.getUserId()) ?? '';
+  if (selfUserId === '') {
+    logError('drain.noIdentity', new Error('inbox drain skipped: the session identity is not loaded'));
+    return { ...EMPTY_RESULT };
+  }
+
+  const rules = modelRules();
   // Only the models this batch mentions need loading. Loading all of them would make every drain
   // proportional to the whole store rather than to the batch.
   const mentioned = new Set(
@@ -101,7 +132,7 @@ async function drainInboxUnlocked(limit: number): Promise<DrainResult> {
   );
   const state = await currentState(mentioned);
 
-  const plan = planDrain(rows.map(toDrainRow), rules, state);
+  const plan = planDrain(rows.map(toDrainRow), rules, state, selfUserId);
 
   // 1. WRITE FIRST. A row is only safe to consume once its entry is durably stored.
   let written = 0;
@@ -125,12 +156,19 @@ async function drainInboxUnlocked(limit: number): Promise<DrainResult> {
 
   // 3. Discard what can never be processed — data loss, chosen out loud, grouped by reason so the
   //    kit's security log says WHY rather than just how many (§3.3 rule 5).
+  //
+  //    Rule 5 also requires it to be **surfaced**, not merely logged by the kit: "it is data loss,
+  //    chosen deliberately, and must never be the quiet path". Passing the reason across the bridge
+  //    and saying nothing app-side left the app's own log — the one the debug screen shows — silent
+  //    about every discard. `unauthorized-sender` in particular is a security event: it means
+  //    somebody sent this device an entry they were not entitled to write.
   const byReason = new Map<string, number[]>();
   for (const { id, reason } of plan.discard) {
     byReason.set(reason, [...(byReason.get(reason) ?? []), id]);
   }
   for (const [reason, ids] of byReason) {
     await Obscura.inboxDiscard(ids, reason);
+    logError('inbox.discard:' + reason, new Error(`discarded ${ids.length} inbox row(s): ${reason}`));
   }
 
   return {
@@ -152,6 +190,7 @@ async function drainInboxUnlocked(limit: number): Promise<DrainResult> {
 export async function drainInboxFully(limit = 50, maxBatches = 100): Promise<DrainResult> {
   const total: DrainResult = { written: 0, consumed: 0, discarded: 0, touched: [] };
   const touched = new Set<string>();
+  let hitTheBound = true;
 
   for (let i = 0; i < maxBatches; i += 1) {
     const result = await drainInbox(limit);
@@ -159,9 +198,23 @@ export async function drainInboxFully(limit = 50, maxBatches = 100): Promise<Dra
     total.consumed += result.consumed;
     total.discarded += result.discarded;
     result.touched.forEach((m) => touched.add(m));
-    if (result.consumed + result.discarded === 0) break;
-    if (i === maxBatches - 1) {
-      logError('drain.maxBatches', new Error(`inbox still draining after ${maxBatches} batches`));
+    if (result.consumed + result.discarded === 0) {
+      hitTheBound = false;
+      break;
+    }
+  }
+
+  // Logged AFTER the loop, and only when the bound was actually reached with rows still waiting.
+  // The old test — `i === maxBatches - 1` inside the loop — fired whenever the last permitted batch
+  // made progress, which includes the batch that *emptied* the inbox: a clean finish reported as a
+  // failure, every time the row count happened to be a multiple of the batch size.
+  if (hitTheBound) {
+    const depth = await Obscura.inboxDepth();
+    if (depth > 0) {
+      logError(
+        'drain.maxBatches',
+        new Error(`${depth} row(s) still in the inbox after ${maxBatches} batches`),
+      );
     }
   }
 

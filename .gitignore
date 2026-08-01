@@ -55,3 +55,6 @@ ios/**/GoogleService-Info.plist
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# Jest coverage output
+/coverage
