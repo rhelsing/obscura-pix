@@ -12,14 +12,16 @@ implements the contract documented in [`docs/BRIDGE.md`](docs/BRIDGE.md).
 
 - Friends via shareable codes
 - Encrypted chat with typing indicators
-- 24-hour stories
-- Ephemeral photos (Pix) — encrypted, self-destructing
+- Stories (posted to all friends; **they do not expire yet** — see `ROADMAP.md`)
+- Ephemeral photos (Pix) — encrypted, view-once
 - Profiles synced to friends
-- Private settings (never leave your device)
 - Auto-reconnect, session persistence, offline delivery
 - Push notifications (FCM)
 
-The app never touches encryption, protobufs, or WebSocket frames. Everything goes through the ObscuraKit ORM.
+The app never touches encryption, protobufs, or WebSocket frames. Those are the kit's, and they are
+the *only* thing the kit does: it is a durable, authenticated inbox and outbox for bytes it cannot
+read. Everything about what those bytes mean — merge, audience, drain, identity, rendering — lives
+in `src/`, in TypeScript, written once. See [`CLAUDE.md`](CLAUDE.md).
 
 ## Architecture
 
@@ -28,7 +30,10 @@ React Native (shared UI, src/)
   └── Android: ObscuraBridgeModule.kt → ObscuraKit-Kotlin
 ```
 
-Schema defined once in `src/models/schema.ts`. Both the Android bridge — and the future iOS bridge — read it, no hardcoded models on either platform. The bridge surface (methods + events) is documented in `docs/BRIDGE.md` and treated as the cross-platform contract.
+Model semantics are defined once in `src/models/schema.ts` and read by the **app alone** — the kit
+no longer parses an application schema (`SPEC.md` §0.4), so nothing about a model crosses the
+bridge. The bridge surface (methods + events) is documented in `docs/BRIDGE.md` and treated as the
+cross-platform contract.
 
 ## Setup
 
@@ -50,11 +55,20 @@ A Firebase `google-services.json` is required for FCM; place it at `android/app/
 
 ```
 src/
-  models/schema.ts        — ORM schema (single source of truth)
+  domain/                 — the app's logic, pure and fully tested
+    merge.ts              — APPEND / REPLACE (SPEC §2.1-2.2, §2.4)
+    audience.ts           — who a write goes to (SPEC §1.2-1.3)
+    drain.ts              — classify, authorize, attribute, merge an inbox batch
+  state/                  — the effects those decisions drive
+    drainInbox.ts         — peek → write → consume | discard
+    writeEntry.ts         — store locally, then send; the durable outbox
+    store.ts              — Zustand store + useSession / useModelEntries hooks
+  models/schema.ts        — model semantics (app-only; never crosses the bridge)
   native/ObscuraModule.ts — TypeScript bridge facade
+    __fixtures__/         — the in-memory kit double the tests run against
+  utils/identity.ts       — userId → display name, from the friend graph only
   navigation/             — React Navigation root + types
   screens/                — UI screens
-  state/store.ts          — Zustand store + useSession / useModelEntries hooks
 android/
   app/src/main/java/com/obscuraapp/
     ObscuraBridgeModule.kt — Bridge: JS ↔ ObscuraKit-Kotlin
@@ -72,6 +86,10 @@ App.tsx                   — Providers + navigator
 Native events push reactively to JS — no polling. Friends, connection state, auth state, typing, and incoming messages all flow through `onObscuraEvent` from `src/native/ObscuraModule.ts`. The Zustand store at `src/state/store.ts` subscribes once and fans out to screens via `useSession()` and `useModelEntries(model)`.
 
 JS changes hot-reload via Metro. Native (Kotlin) changes require a rebuild.
+
+`npm test` runs the Node-side suite — `src/domain`, `src/native` and `src/state` against the
+in-memory kit double — in about a second, and CI runs it on every PR. Anything that RENDERS is out
+of scope for it; `jest.config.js` explains why.
 
 ## Dependencies
 

@@ -1,5 +1,17 @@
 # iOS parity tracker
 
+> **CORRECTION (2026-08-01) — read this before anything below it.** Large parts of this file were
+> written against the ORM that no longer exists. `defineModels`, `createEntry`, `upsertEntry`,
+> `queryEntries`, `allEntries` and `deleteEntry` were deleted from **both** kits on 2026-07-31 and
+> from this repo's bridges on 2026-07-30, together with the `entriesChanged` event. Anything below
+> that names one of them, or the `obscura-client-ios` / `obscura-client-kotlin` checkout names, is
+> **history, not a requirement**. The live contract is [`BRIDGE.md`](BRIDGE.md), rewritten the same
+> day; the three inline notes marked **VOID** are the specific places this file stated an ORM
+> requirement.
+>
+> The Port status and CI sections below are still accurate about the *build*, which is what this
+> file is genuinely for.
+
 Obscura Pix has a **working iOS foundation** committed under `ios/`: a fresh RN
 0.86 scaffold, `ObscuraBridge.swift` implementing [`BRIDGE.md`](BRIDGE.md), and
 the [`ObscuraKit-swift`](https://github.com/rhelsing/ObscuraKit-swift) Swift kit
@@ -64,8 +76,12 @@ The ones with iOS-specific requirements:
   `launchedFrom` and `appStateChanged` events.
 - **`setSecureScreen`** — iOS no-op is acceptable; blur-on-background is the
   suggested future behavior.
-- All ORM mutations (`createEntry`/`upsertEntry`/`deleteEntry`) must emit
-  `entriesChanged`.
+- ~~All ORM mutations (`createEntry`/`upsertEntry`/`deleteEntry`) must emit
+  `entriesChanged`.~~ **VOID.** Those methods and that event are gone from both kits and both
+  bridges. What replaced them: `entryPut` / `entryAll` (a blind upsert plus a read, emitting
+  nothing — the app refreshes explicitly), `inboxPeek` / `inboxConsume` / `inboxDiscard` /
+  `inboxDepth`, and `sendEntry`. All of it is specified in [`BRIDGE.md`](BRIDGE.md), and the Swift
+  bridge already implements every one.
 
 ## ObscuraKit-swift (the Swift kit) is behind the Kotlin kit
 
@@ -77,21 +93,21 @@ The ones with iOS-specific requirements:
 
 API audit (task #1) — the Swift kit (`Package.swift` product `ObscuraKit`) covers
 auth, state reads, friends/codes, device linking, ORM (`defineModelsFromJson`,
-`model(name).create/upsert/delete`), typing (`ModelSignal.typing/observeTyping`),
-push token registration, and ships a purpose-built `observeEvents()` stream "for
-the bridge." But it lags `obscura-client-kotlin` in four ways that block full
-`BRIDGE.md` parity — the iOS port is **not** purely a pix-repo bridge job:
+`model(name).create/upsert/delete` — **all since deleted**), typing
+(`ModelSignal.typing/observeTyping`), push token registration, and ships a purpose-built
+`observeEvents()` stream "for the bridge." But at the time it lagged the Kotlin kit in four ways
+that blocked full `BRIDGE.md` parity — the iOS port is **not** purely a pix-repo bridge job:
 
 1. **deviceId is snapshot-at-schema-time, not a per-create provider.**
    `Model.deviceId` is set once in `ObscuraClient.schema()` (`model.deviceId =
    self.deviceId ?? ""`, ObscuraClient.swift:1157) and read on every
    `create`/`upsert` (Model.swift:136,173). Kotlin fixed this at the source in
-   `4c999b0` (deviceId became `() -> String`). Mitigation: pix calls
-   `defineModels` gated behind `authed` (store.ts:222), so as long as the Swift
-   bridge/session populates `client.deviceId` (via `restorePersistedSession` on
-   cold start, and inside register/login) **before** reporting
-   `authState=authenticated`, entries stamp correctly. Otherwise the C3
-   "own profile under friend profiles" bug reappears on iOS.
+   `4c999b0` (deviceId became `() -> String`).
+   **VOID as written** — `Model`, `create` and `upsert` are all deleted. The underlying concern
+   survives in a different place: the app now supplies `authorDeviceId` to `entryPut` itself, from
+   `getDeviceId()`, so what matters is that the Swift session populates the device id **before**
+   reporting `authState=authenticated`. `saveEntry` refuses to write at all while `myDeviceId` is
+   empty (`store.ts`), which turns the old silent-corruption failure into a loud one.
 2. ✅ **DONE (task #16):** added `ObscuraClient.uploadAttachment(_ plaintext) ->
    (id, contentKey, nonce)` — encrypts via `AttachmentCrypto`, uploads ciphertext
    via `api.uploadAttachment`, returns the reference triple without sending a
@@ -145,8 +161,10 @@ Bridge RPC methods implemented + compiling (each `xcodebuild` green):
   logout/get*) — onlyDevice maps to deviceMismatch (not in the JS union).
 - Friends + device linking (befriend/accept/getFriendCode/addFriendByCode/
   getFriends/getPendingRequests/generateLinkCode/validateAndApproveLink).
-- ORM (defineModels/createEntry/upsertEntry/queryEntries/allEntries/deleteEntry)
-  — mutations emit `entriesChanged`.
+- ~~ORM (defineModels/createEntry/upsertEntry/queryEntries/allEntries/deleteEntry)
+  — mutations emit `entriesChanged`.~~ **VOID** — deleted 2026-07-30. Replaced by, and verified
+  present in `ObscuraBridge.swift` + `ObscuraBridge.m` as of 2026-08-01:
+  `inboxPeek`/`inboxConsume`/`inboxDiscard`/`inboxDepth`, `entryPut`/`entryAll`, `sendEntry`.
 - Typing (sendTyping/stopTyping/observeTyping/stopObservingTyping → typingChanged),
   on the "directMessage" model. Needed kit task #19 (untyped-Model typing).
 - Attachments (uploadAttachment/downloadAttachment) — atomic temp+rename cache,

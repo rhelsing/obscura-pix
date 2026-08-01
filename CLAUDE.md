@@ -15,23 +15,36 @@ and the push path must decrypt with the app closed (on iOS, in a Notification Se
 which cannot run a React Native runtime). Everything that isn't forced native by one of those two
 facts belongs in this repo.
 
-The normative brief is [`obscura-proto/SPEC.md` §0 — The kit boundary](../obscura-proto/SPEC.md).
-Read it before changing anything that crosses the bridge. The sequencing —
-correctness first, deletion third — is [`obscura-proto/PLAN.md`](../obscura-proto/PLAN.md).
+The normative brief is [`obscura-proto/SPEC.md` §0 — The kit boundary](../obscura-proto/SPEC.md),
+plus [`KIT_API.md`](../obscura-proto/KIT_API.md) §3 (the inbox), §4 (message kinds), §5 (send) and
+§8 (what this means for pix). Read them before changing anything that crosses the bridge.
 
-> **Status (2026-07-24): nothing has moved into this repo yet.** The kits' correctness work
-> (PLAN Phases 1–2) has landed in the proto, the server and Kotlin; Swift is outstanding. The
-> deletion (PLAN **Phase 3**) has not started, so the ORM, CRDT engine, query DSL and routing
-> engine are all still in both kits and this app still talks to them through the bridge. When
-> Phase 3 runs, append-with-dedupe / last-writer-wins / TTL move *here* — and this repo still has
-> **no test suite** (CI runs `tsc`, `eslint` and an Android release build), which is the gap to
-> close before the domain arrives, not after. Note PLAN's phase numbers are the kit-reset
-> sequence and have nothing to do with the product phases in [`ROADMAP.md`](ROADMAP.md).
+> **Status (2026-08-01): the move is done.** The ORM, CRDT engine, query DSL and audience-routing
+> engine were deleted from **both** kits on 2026-07-31 (Kotlin #56, Swift #24), and pix's six ORM
+> bridge wrappers went with them on 2026-07-30. Entry merge, audience resolution and inbox draining
+> now exist **once**, here, in TypeScript:
+>
+> | Lives here | File |
+> |---|---|
+> | Merge (`APPEND` / `REPLACE`, SPEC §2.1–2.2, §2.4) | `src/domain/merge.ts` |
+> | Audience resolution (SPEC §1.2–1.3) | `src/domain/audience.ts` |
+> | Inbox drain: classify, authorize, attribute, merge (KIT_API §3, §4.1) | `src/domain/drain.ts` |
+> | The effects those decisions drive | `src/state/{drainInbox,writeEntry,store}.ts` |
+>
+> **This repo has a test suite**: `npm test` runs 158 tests across 10 suites in about a second, with
+> a dedicated `domain-tests` CI job. `src/domain` is at 100% coverage. What it still cannot cover is
+> anything that RENDERS — see `jest.config.js`, which explains the renderer dependency honestly.
+>
+> **TTL did NOT move here.** Nothing expires on either platform: `TTLManager` went with the kits'
+> engine and the `expiresAt` field the app would filter on (KIT_API §8.3) has not been built.
+> `story` used to carry a `ttl: '24h'` that nothing read; it has been removed rather than left
+> standing as a claim.
 
 > **Why the boundary is written down.** An audit found a schema-driven ORM, CRDT engine, query
-> DSL and audience-routing system implemented **twice** — in Kotlin and in Swift — to serve the
-> five flat models in `src/models/schema.ts`. This app uses almost none of it. The deletion
-> inventory is [`obscura-proto/RESET.md`](../obscura-proto/RESET.md).
+> DSL and audience-routing system implemented **twice** — in Kotlin and in Swift — to serve four
+> flat models. This app used almost none of it. The deletion inventory is
+> [`obscura-proto/RESET.md`](../obscura-proto/RESET.md), which is being retired now that it has
+> been executed; cite `KIT_API.md` or `SPEC.md` in new work.
 >
 > The reason nobody noticed for months: the evidence lives *here*, and everyone (human and agent)
 > was working *there*. An agent inside a kit repo cannot see that the engine is unnecessary. This
@@ -46,39 +59,64 @@ If a task seems to need the kit to understand app data — a model name, a field
 that is a boundary violation. Fix the proto or move the logic here. Never reach into the payload
 from native.
 
+## Identity: the second rule, and the one this app kept getting wrong
+
+> **The envelope tells you who really sent this. The payload tells you what they chose to say.**
+
+An inbox row carries `senderUserId` and `senderDeviceId`, both stamped by the server from a
+device-scoped token and unforgeable by the sender (SPEC §0.10). Everything the app decides about
+*who* — attribution, authorization, display names — resolves from those, never from a payload field.
+
+- `src/domain/drain.ts` stamps `_authorUserId` from the envelope and **authorizes** the write:
+  a `profile` may only be written to `profile_<senderUserId>`, and a conversation-scoped entry must
+  name a canonical two-party conversation between this user and the actual sender.
+- `src/utils/identity.ts` is the only place a userId becomes a name, and it reads the kit's friend
+  graph.
+
+This was a live defect until 2026-08-01: the drain did not copy `senderUserId` at all, and every
+screen answered "who is this from" with `senderUsername` / `authorUsername` / `recipientUsername`,
+which the sender picks. **Delivery is not authorization** — any authenticated user can deliver to
+any device (KIT_API §4.1), friendship not required.
+
 ## What the app actually uses from the kit
 
-Worth knowing, because it is much less than the kit provides:
+Worth knowing, because it is much less than the kit provides. The full surface is
+[`docs/BRIDGE.md`](docs/BRIDGE.md); this is the shape of it:
 
-- **ORM: four calls** — `defineModels`, `createEntry`, `upsertEntry`, `allEntries`.
-  Reads are event → refetch-everything (`src/state/store.ts`), filtered client-side in zustand.
-- `queryEntries` and `deleteEntry` are exposed on the bridge and have **zero callers**. The kit's
-  query DSL, relationships, `include()`, tombstones and reactive entry-observation are unreachable.
+- **Inbox** — `inboxPeek` / `inboxConsume` / `inboxDiscard` / `inboxDepth`. How messages arrive.
+- **Entries** — `entryPut` (a BLIND upsert: the app decides who wins) / `entryAll`. The store.
+- **Send** — `sendEntry(recipientUserIds, …)`. The caller names the recipients.
 - Signals: `sendTyping` / `stopTyping` / `observeTyping`. No read receipts.
 - Auth, friends, device linking, attachments, push token registration.
 
+Nothing in either direction parses a payload.
+
 ## The data model — `src/models/schema.ts`
 
-Five models. This is the whole thing:
+Four models. This is the whole thing:
 
-| Model | Written by | Merge actually needed |
-|---|---|---|
-| `directMessage` | `createEntry` | append (dedupe by id) |
-| `story` | `createEntry` | append + expiry |
-| `pix` | `createEntry`, then `upsertEntry` (the **recipient** writes `viewedAt`) | replace (higher timestamp wins) |
-| `profile` | `upsertEntry` | replace |
-| `settings` | **never written** | — (delete it) |
+| Model | Merge | Audience | Authorization on inbound |
+|---|---|---|---|
+| `directMessage` | APPEND (dedupe by id) | conversation | conversation names self + sender |
+| `story` | APPEND | all accepted friends | attribution only — nothing binds a story to an author |
+| `pix` | REPLACE (the **recipient** writes `viewedAt`) | conversation | conversation names self + sender |
+| `profile` | REPLACE | all accepted friends | id must be `profile_<senderUserId>` |
 
 Notes for anyone tempted to reach for a CRDT: only `pix` and `profile` are mutable, and the merge
-they need is a timestamp comparison. `pix.viewedAt` is a viewed-**receipt** wearing a CRDT costume.
+they need is a timestamp comparison with a device-id tie-break. `pix.viewedAt` is a
+viewed-**receipt** wearing a CRDT costume.
 
-## Known issues
+`settings` was deleted 2026-08-01 (zero references in `src/`, per KIT_API §4.3).
 
-- **No test suite.** CI runs `tsc`, `eslint`, and an Android release build. Compile breaks are
-  caught; every semantic regression is not.
-- `senderUsername` / `authorUsername` / `recipientUsername` are **sender-supplied display names**
-  carried in the payload — a peer chooses how they are labelled on your screen. Per SPEC §0.5 a
-  name must be resolved from the local friend graph, keyed on the authenticated envelope.
+## Known gaps
+
+- **No expiry.** See the TTL note above. `story` is permanent on both platforms today.
+- **The outbox is durable but coarse.** A send that reached nobody marks the entry
+  (`_undelivered`) and is retried on reconnect / foreground / cold start. What it does not do is
+  track per-recipient delivery: a send that reached *some* recipients is best-effort and silent by
+  the kit's design, so a partial failure is invisible here too.
+- **No iOS CI job.** The workflow is `typecheck`, `domain-tests`, `lint`, `android`. The Swift
+  bridge and this repo's one shared TypeScript surface can diverge without anything going red.
 - The Android kit is consumed via a **Gradle composite build** (`android/settings.gradle` →
   `../../ObscuraKit-Kotlin`) and the Swift kit via a **local SPM package**. Kit changes land
   immediately — there is no version-bump buffer.
@@ -86,6 +124,7 @@ they need is a timestamp comparison. `pix.viewedAt` is a viewed-**receipt** wear
 ## Build
 
 ```bash
+npm test          # 158 tests, ~1s
 npm run typecheck
 npm run lint
 npm run android

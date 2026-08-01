@@ -8,20 +8,31 @@ What's built, what's next.
 - [x] Friends (codes, add, accept, pending/accepted states)
 - [x] Chat (encrypted messages, conversation-scoped)
 - [x] Typing indicators (animated dots, cross-platform)
-- [x] 24-hour stories (post, feed, TTL expiry)
+- [x] Stories (post, feed) — **but they do not expire**, see below
 - [x] Profiles (display name, bio, synced to friends)
-- [x] Private settings (theme, notifications — never leaves device)
 - [x] Encrypted attachments (upload, download, AES-GCM)
 - [x] Device linking (QR/code approval flow)
 - [x] Auto-reconnect (ping keepalive, exponential backoff)
 - [x] Session persistence (kit-owned, survives app restart)
-- [x] Debug log (in-app, Settings tab)
-- [x] Cross-platform interop (iOS ↔ Android proven)
+- [x] Debug log (in-app, Profile tab)
 - [x] **Camera + send photo** — vision-camera + photo preview + recipient picker
 - [x] **Ephemeral pix viewing** — view-once with display-duration timer + opened/delivered status
 - [x] **Push notifications** — APNS + FCM, heads-up banners, deep-link to chat tab
 - [x] **React Navigation** — native-stack + bottom tabs, real back stack
 - [x] **Zustand state** — single store + useModelEntries hook, no prop-drilling
+- [x] **The domain moves out of the kits** — merge, audience resolution and the inbox drain exist
+      once, here, in TypeScript (`src/domain/`), with a 158-test suite and a CI job
+
+## Corrected (2026-08-01) — these were checked off and were not true
+
+- [ ] **24-hour story expiry.** Nothing expires on either platform. `TTLManager` went with the
+      kits' engine and the `expiresAt` field the app would filter on (`KIT_API.md` §8.3) has not
+      been built. `story`'s `ttl: '24h'` was a schema key nothing read; it has been removed.
+- [ ] **Private settings.** The `settings` model was never written or read by any screen, and was
+      deleted on 2026-08-01 (`KIT_API.md` §4.3).
+- [ ] **Cross-platform interop (iOS ↔ Android).** Retracted in both kits' READMEs and never
+      demonstrated. There is no iOS CI job, so nothing checks that the Swift bridge and this repo's
+      one shared TypeScript surface agree.
 
 ## Phase 2: Ephemeral viewing polish
 

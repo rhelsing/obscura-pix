@@ -72,10 +72,10 @@ jobs:
       # main being green — and, crucially, catches cross-repo toolchain drift
       # (e.g. a kit Kotlin bump past pix's React-Native-pinned Kotlin) as a
       # red build instead of a latent runtime surprise.
-      # ⚠️ UNPINNED — §10 step 4 has landed and pix is fully on the replacement API, which is the
+      # ⚠️ UNPINNED — KIT_API.md §10 step 4 has landed and pix is fully on the replacement API, which is the
       # exact condition the pin's own removal instruction named.
       #
-      # The pin existed because §10 steps 2–4 deliberately land a kit DELETION before pix can switch
+      # The pin existed because KIT_API.md §10 steps 2–4 deliberately land a kit DELETION before pix can switch
       # to the replacement API, so a float would have turned "the kit landed its deletion" into "pix
       # CI is red" for every commit in between, on a repo that could not fix it yet. That window is
       # closed: ObscuraKit-Kotlin#56 deleted the ORM, and every kit call this bridge makes —
@@ -86,7 +86,7 @@ jobs:
       # and re-arms the cross-repo toolchain drift check (e.g. a kit Kotlin bump past pix's
       # React-Native-pinned Kotlin) that the pin had been suppressing for the whole reset.
       #
-      # Note there is still NO iOS job in this workflow. §10's ordering argument — "Kotlin ships
+      # Note there is still NO iOS job in this workflow. KIT_API.md §10's ordering argument — "Kotlin ships
       # first would break iOS for the whole duration" — is therefore invisible to CI: nothing here
       # would go red if the Swift kit and pix's shared TypeScript surface diverged.
       - name: Checkout ObscuraKit-Kotlin
