@@ -17,22 +17,18 @@ What's built, what's next.
 - [x] Debug log (in-app, Profile tab)
 - [x] **Camera + send photo** — vision-camera + photo preview + recipient picker
 - [x] **Ephemeral pix viewing** — view-once with display-duration timer + opened/delivered status
-- [x] **Push notifications** — APNS + FCM, heads-up banners, deep-link to chat tab
+- [x] **Android push notifications** — FCM silent wakes, generic local notifications, and a
+      broad chat-list destination on tap. iOS push remains in Phase 6.
 - [x] **React Navigation** — native-stack + bottom tabs, real back stack
 - [x] **Zustand state** — single store + useModelEntries hook, no prop-drilling
 - [x] **The domain moves out of the kits** — merge, audience resolution and the inbox drain exist
-      once, here, in TypeScript (`src/domain/`), with a 158-test suite and a CI job
+      once, here, in TypeScript (`src/domain/`), with tests and a CI job
 
-## Corrected (2026-08-01) — these were checked off and were not true
+## Current gaps
 
-- [ ] **24-hour story expiry.** Nothing expires on either platform. `TTLManager` went with the
-      kits' engine and the `expiresAt` field the app would filter on (`KIT_API.md` §8.3) has not
-      been built. `story`'s `ttl: '24h'` was a schema key nothing read; it has been removed.
-- [ ] **Private settings.** The `settings` model was never written or read by any screen, and was
-      deleted on 2026-08-01 (`KIT_API.md` §4.3).
-- [ ] **Cross-platform interop (iOS ↔ Android).** Retracted in both kits' READMEs and never
-      demonstrated. There is no iOS CI job, so nothing checks that the Swift bridge and this repo's
-      one shared TypeScript surface agree.
+- [ ] **24-hour story expiry.** Nothing expires on either platform.
+- [ ] **Demonstrated iOS ↔ Android interop.** Wire vectors are shared, but
+      there is no iOS CI job or end-to-end platform test.
 
 ## Phase 2: Ephemeral viewing polish
 
@@ -69,17 +65,15 @@ Swift kit wired as a local SPM package. It builds, launches, and runs the auth
 flow on the simulator. The cross-platform bridge contract (methods, events,
 payload shapes, atomicity / EXIF / OOM requirements) lives in `docs/BRIDGE.md`;
 Android's `ObscuraBridgeModule.kt` is the reference implementation. See
-`docs/IOS_PARITY.md` for detailed status and the reproducible-build gap.
+`docs/IOS_PARITY.md` for detailed status and the iOS CI gap.
 
 - [x] Scaffold `ios/` (RN 0.86, bundle `com.obscuraapp.ios`, deployment 16.0)
 - [x] Implement `ObscuraBridge.swift` against `docs/BRIDGE.md`
 - [x] Wire `ObscuraKit-swift` as a local Swift Package
 - [x] App icons + launch screen assets
 - [x] Simulator-verified auth flow end-to-end
-- [ ] **Make the build reproducible** — repoint the SPM + libsignal paths from
-      the machine-local `obscura-client-ios` to a sibling `ObscuraKit-swift`
-      checkout (mirroring Android's `OBSCURA_KIT_PATH` composite build) and add a
-      `macos-26` iOS CI job that builds the libsignal FFI (see `docs/IOS_PARITY.md`)
+- [ ] Add a `macos-26` iOS CI job that builds the libsignal FFI and app
+      (see `docs/IOS_PARITY.md`)
 - [ ] Push (#11): APNs entitlement + FCM-via-APNs token wiring
 - [ ] On-device test + TestFlight build
 

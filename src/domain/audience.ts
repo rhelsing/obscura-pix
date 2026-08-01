@@ -1,35 +1,13 @@
 /**
  * Who an entry goes to (`obscura-proto/SPEC.md` §0.4, §1.2).
  *
- * This is the third piece of domain logic to move out of the kits, after `merge.ts` and `drain.ts` —
- * and the one that carries the most risk, because getting it wrong sends private content to people
- * who should not have it.
- *
- * ## Why the app owns this now
- *
- * SPEC §0.4: **the caller names the recipients.** The kit's `send` fans out to exactly the userIds
- * it is given and resolves nothing of its own, so the resolution has to live here — the only place
- * that knows what a `conversationId` is, or that `recipientUsername` names a person.
- *
- * ## Fail loud, and fail SAFE
- *
- * Two different rules, and the difference is the whole point:
+ * SPEC §0.4 requires the caller to name recipients. The kit fans out to
+ * exactly those user ids and does not interpret application model fields.
  *
  * - **Fail loud** — an audience that cannot be resolved raises. It never falls back to "everyone".
- *   An unresolvable audience widening into a broadcast is the exact shape of the typing-indicator
- *   leak found on 2026-07-25: a 1:1 payload, an audience nobody resolved, delivered to every friend.
  * - **Fail safe** — naming someone who is not a friend resolves to *self only*, not to an error and
  *   not to everyone. The user asked for a narrow audience; the narrowest honest answer is nobody
  *   else.
- *
- * ## Provenance
- *
- * The five guards below are vendored from `obscura-proto/conformance/routing.json`, which was
- * handed over to this repo and then deleted on 2026-07-31 (SPEC §1, "the five leak guards live in
- * `obscura-pix/src/domain/__tests__/audience.guards.test.ts`"): the kits stopped resolving
- * audiences, so the vectors stopped being a cross-implementation contract and became this file's
- * fixture. `__tests__/audience.guards.test.ts` runs them verbatim. The other five routing cases
- * retired with the engine — they pinned resolution behaviour that no longer exists in two places.
  */
 
 /** A friend, as the audience resolver needs them. */
@@ -42,9 +20,7 @@ export interface AudienceFriend {
 /**
  * How a model's schema declares who its entries reach.
  *
- * There is deliberately no `{ kind: 'friends' }`: "every accepted friend" is what `undefined` means
- * (see `resolveAudience`), so a second spelling of it was a branch no model declared and no test
- * reached.
+ * There is no `{ kind: 'friends' }`: `undefined` means every accepted friend.
  */
 export type AudienceConfig =
   | { kind: 'conversation'; field: string }
@@ -54,8 +30,7 @@ export type AudienceConfig =
 /**
  * Raised when an audience cannot be resolved.
  *
- * The name matches the kits' `ObscuraError.DirectRoutingUnresolved` and `routing.json`'s expected
- * error, deliberately: this rule did not change when it moved, only its address did.
+ * The code is shared with bridge-facing error handling.
  */
 export class DirectRoutingUnresolved extends Error {
   readonly code = 'DIRECT_ROUTING_UNRESOLVED';
@@ -69,10 +44,8 @@ export class DirectRoutingUnresolved extends Error {
 /**
  * The userIds an entry must reach, **excluding** this device's own user.
  *
- * Self is deliberately not in the result. The kit self-syncs to the author's *other* devices as part
- * of `send`, so including the author here would be a second, redundant fan-out — and `routing.json`
- * expresses expectations with self included, which is why the guard tests add it back before
- * comparing rather than this function returning it.
+ * Self is not in the result because the kit self-syncs to the author's other
+ * devices as part of `send`.
  *
  * @throws DirectRoutingUnresolved when the audience cannot be determined.
  */
@@ -108,10 +81,8 @@ export function resolveAudience(
       // in the SAFE direction at least: an id with an extra `_` yields the wrong participant count
       // and refuses, rather than resolving to a wrong or wider audience.
       //
-      // SPEC §1.3 is exact: splitting on `_` MUST yield **exactly two non-empty parts**. So count
-      // first and require non-empty second — filtering the empties out *before* counting (as this
-      // did until 2026-08-01) accepts `uA__uB`, `_uA_uB`, `uA_uB_` and `__uA___uB__` as two-party.
-      // Nothing covered it either way: deleting the filter left the whole suite green.
+      // SPEC §1.3 requires exactly two non-empty parts. Count before
+      // interpreting either participant.
       const participants = raw.split('_');
       if (participants.length !== 2 || participants.some((p) => p.length === 0)) {
         // GUARD: the named failure mode. A canonical conversation id has exactly two participants;

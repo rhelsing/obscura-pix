@@ -4,10 +4,8 @@
  * > The envelope tells you *who really sent this*. The payload tells you *what they chose to say*.
  * > Never confuse the two.
  *
- * Every name the app renders resolves through here, from the **local friend graph**, keyed on the
- * userId the drain took off the authenticated envelope. Until 2026-08-01 the screens read
- * `senderUsername` / `authorUsername` / `recipientUsername` straight out of the payload instead —
- * fields a peer chooses — so a stranger could pick the name their content appeared under.
+ * Every rendered name resolves through the **local friend graph**, keyed by
+ * the userId from the authenticated envelope.
  *
  * Resolving at render time rather than storing a snapshot is deliberate: a friend who changes their
  * username should be relabelled everywhere, and a stored copy of a name is a stored copy of a claim

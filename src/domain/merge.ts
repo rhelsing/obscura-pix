@@ -1,14 +1,7 @@
 /**
  * Merge semantics for synced model entries.
  *
- * This is the first piece of the domain to move out of the kits and into the app
- * (`obscura-proto/PLAN.md` Phase 3, `KIT_API.md` §8.2). It exists here, once, in TypeScript —
- * instead of twice, in Kotlin and Swift, as a CRDT engine serving five flat models.
- *
- * It is written NOW, while the kits' ORM still implements this behaviour, because
- * `obscura-proto/conformance/merge.json` is an executable statement of that behaviour and is the
- * only oracle that will exist once the engine is deleted. `merge.vectors.test.ts` runs those
- * vectors against this file.
+ * The application owns these model rules (KIT_API.md §8.2).
  *
  * Two rules, both idempotent. The idempotence is load-bearing, not incidental: the kit's inbox is
  * drained with `peek → process → consume`, so an app that crashes mid-drain reprocesses those rows.
@@ -51,7 +44,7 @@ export interface Entry {
  *   2. on equal `sentAt`, the lexicographically-higher `authorDeviceId` wins;
  *   3. equal on both is the same logical write — idempotent, keep what we have.
  *
- * Rule 2 is not optional. Without it an equal-timestamp conflict resolves to "whichever arrived
+ * Rule 2 is required. Without it an equal-timestamp conflict resolves to "whichever arrived
  * first", so two devices that receive the two writes in different orders converge to DIFFERENT
  * states and never reconcile — silently, and invisibly to single-device testing (`SPEC.md` §2.2).
  * `pix.viewedAt` is written by the *recipient*, i.e. a second user, so equal timestamps are a real

@@ -73,8 +73,8 @@ export function CameraScreen() {
   // Pinch-to-zoom gesture surface. Deliberately claims ONLY when a second
   // finger is down — a single-finger horizontal drag is left for the tab pager
   // (react-native-pager-view) so the swipe-to-Chats gesture tracks the finger.
-  // (Camera flip is the FLIP button; a 1-finger double-tap would fight the
-  // pager swipe, so it was removed.)
+  // Camera flip uses the FLIP button; a one-finger double-tap would conflict
+  // with the pager swipe.
   const gesture = useRef({ startDist: 0, startZoom: 1 });
   const pan = useRef(
     PanResponder.create({

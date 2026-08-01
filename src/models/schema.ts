@@ -2,17 +2,16 @@
  * The app's model semantics — the single source of truth for what a model *means*.
  *
  * Read by the APP, not by the kit: `drainInbox` takes each model's `sync` strategy as a merge rule
- * plus its authorization rule, and `writeEntry` takes its `audience`. It no longer crosses the
- * bridge — the kit does not parse application schemas (SPEC §0.4).
+ * plus its authorization rule, and `writeEntry` takes its `audience`. The kit
+ * does not parse application schemas (SPEC §0.4).
  *
  * ## Identity is never a payload field
  *
  * There is deliberately no `senderUsername` / `authorUsername` / `recipientUsername` here. A
- * payload-supplied name is attacker-chosen (SPEC §0.5, §0.10 rule 5): a stranger who sent
- * `{ authorUsername: "alice" }` appeared in the feed as Alice. Attribution comes from the
- * **authenticated** envelope instead, stamped into `_authorUserId` by the drain (for entries that
- * arrive) and by `writeEntry` (for entries this device creates), and display names are resolved
- * from the friend graph at render time so a rename is reflected rather than frozen.
+ * payload-supplied name is attacker-chosen (SPEC §0.5, §0.10 rule 5).
+ * Attribution comes from the **authenticated** envelope, stamped into
+ * `_authorUserId` by the drain or `writeEntry`; display names are resolved from
+ * the friend graph at render time.
  *
  * `fields` is documentation now — nothing parses it — but `_authorUserId` is listed on every model
  * because it is the field the screens key on.
@@ -54,16 +53,14 @@ export const obscuraSchema = {
       captionMeta: 'string?',
     },
     sync: 'gset',
-    // NO `ttl`. Stories do not expire on either platform: `TTLManager` went with the kits' engine
-    // and the `expiresAt` field the app would filter on (KIT_API §8.3) has not been built. A `ttl`
-    // key nothing reads was a claim, not a feature.
+    // Stories are permanent until the app implements `expiresAt` storage and
+    // filtering (KIT_API §8.3).
   },
   profile: {
     fields: { displayName: 'string', bio: 'string?', avatarUrl: 'string?', _authorUserId: 'string' },
     sync: 'lww',
-    // The id binds the entry to its owner: only `<userId>` may write `profile_<userId>`. Without
-    // this a stranger's REPLACE write with a higher `sentAt` overwrote the row `ProfileScreen`
-    // reads and re-broadcast, so their text went out to my friends under my name.
+    // The id binds the entry to its owner: only `<userId>` may write
+    // `profile_<userId>`.
     ownerIdPrefix: PROFILE_ID_PREFIX,
   },
   pix: {

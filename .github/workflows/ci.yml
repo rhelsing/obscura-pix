@@ -30,15 +30,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # The merge vectors are read from obscura-proto at proto/conformance/merge.json.
           submodules: recursive
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
       - run: npm ci
-      # Pure-logic suite (src/domain): no React Native, no simulator, ~1s. This is the safety net
-      # for the logic being moved out of the kits — see obscura-proto/KIT_API.md §8.2.
+      # Domain, bridge-facade, and state tests run without a native simulator.
       - run: npm test
 
   lint:
@@ -51,10 +49,7 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm ci
-      # `eslint .` fails on errors but not warnings — this PR establishes the
-      # gate, a follow-up cleans up the ~17 pre-existing warnings before we
-      # tighten to `--max-warnings 0`. Tracking that as a separate todo so
-      # this PR stays small.
+      # ESLint errors fail the job; warnings remain non-fatal.
       - run: npm run lint
 
   android:
@@ -64,31 +59,10 @@ jobs:
       - name: Checkout pix
         uses: actions/checkout@v7
 
-      # The pix Android build consumes the kit via a Gradle composite build
-      # (settings.gradle includeBuild), NOT a published artifact. We check
-      # the kit out next to the pix build so `includeBuild` can find it and
-      # substitute com.obscura:obscura-kit -> the local :lib project, built
-      # from source. This keeps pix CI's green coupled to ObscuraKit-Kotlin's
-      # main being green — and, crucially, catches cross-repo toolchain drift
-      # (e.g. a kit Kotlin bump past pix's React-Native-pinned Kotlin) as a
-      # red build instead of a latent runtime surprise.
-      # ⚠️ UNPINNED — KIT_API.md §10 step 4 has landed and pix is fully on the replacement API, which is the
-      # exact condition the pin's own removal instruction named.
-      #
-      # The pin existed because KIT_API.md §10 steps 2–4 deliberately land a kit DELETION before pix can switch
-      # to the replacement API, so a float would have turned "the kit landed its deletion" into "pix
-      # CI is red" for every commit in between, on a repo that could not fix it yet. That window is
-      # closed: ObscuraKit-Kotlin#56 deleted the ORM, and every kit call this bridge makes —
-      # `client.sendTyping`, `inbox.peek/consume/discard/depth`, `entries.put/all/delete` — is on the
-      # thin surface. The only remaining mention of the old API in this repo is a comment saying so.
-      #
-      # Floating again is the point, not a relaxation: it re-couples pix's green to the kit's main
-      # and re-arms the cross-repo toolchain drift check (e.g. a kit Kotlin bump past pix's
-      # React-Native-pinned Kotlin) that the pin had been suppressing for the whole reset.
-      #
-      # Note there is still NO iOS job in this workflow. KIT_API.md §10's ordering argument — "Kotlin ships
-      # first would break iOS for the whole duration" — is therefore invisible to CI: nothing here
-      # would go red if the Swift kit and pix's shared TypeScript surface diverged.
+      # The Android build consumes the kit through `settings.gradle`'s
+      # composite build. Checkout next to pix so Gradle substitutes the local
+      # `:lib` project and catches API or toolchain drift against kit main.
+      # iOS is not CI-gated; see docs/IOS_PARITY.md.
       - name: Checkout ObscuraKit-Kotlin
         uses: actions/checkout@v7
         with:

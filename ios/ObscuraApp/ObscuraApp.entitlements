@@ -2,8 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- App Group shared by this app and the future Notification Service Extension.
-	     See ios/ObscuraApp/SharedContainer.swift and obscura-proto/KIT_API.md P2.
+	<!-- App Group reserved for the app and its Notification Service Extension.
+	     See ios/ObscuraApp/SharedContainer.swift.
 	     This identifier must also be registered against the team in the Apple Developer
 	     portal — an unregistered group produces a nil container at runtime, not a build
 	     error, so SharedContainer.isAvailable is what actually proves it works.

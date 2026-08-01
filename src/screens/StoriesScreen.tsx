@@ -238,8 +238,7 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
         })()}
       </View>
 
-      {/* Styled caption over media — positioned/rotated from captionMeta.
-          Falls back to the legacy bottom overlay for entries without meta. */}
+      {/* Styled caption over media; entries without metadata use a plain bottom overlay. */}
       {mediaUri && (() => {
         const text = story.data.content || story.data.caption || '';
         if (!text) return null;

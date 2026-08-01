@@ -2,20 +2,13 @@
 
 This is the contract between the JS UI layer and the per-platform native
 bridges (Kotlin on Android, Swift on iOS). It is the **single source of
-truth**: every method here MUST be implemented by both platforms, and every
-event here MUST be emitted with the exact payload shape shown.
+truth** for method and event shapes. Unless a platform exception is stated,
+every method MUST be implemented by both platforms and every event MUST use the
+exact payload shape shown. [`IOS_PARITY.md`](IOS_PARITY.md) records the current
+iOS implementation gaps.
 
 The TS facade lives in [`src/native/ObscuraModule.ts`](../src/native/ObscuraModule.ts);
 keep this document in sync with that file.
-
-> **Rewritten 2026-08-01.** Until then this file documented six ORM methods —
-> `defineModels`, `createEntry`, `upsertEntry`, `queryEntries`, `allEntries`,
-> `deleteEntry` — as mandatory on both platforms, and mentioned none of the
-> surface that actually exists. All six were deleted on 2026-07-30 with the
-> native methods behind them, along with the `entriesChanged` event this file
-> required them to emit. `README.md` and `ROADMAP.md` both name this document
-> as the iOS implementation contract, so a stale copy of it was an instruction
-> to build the wrong thing.
 
 ## Design principles
 
@@ -44,8 +37,9 @@ keep this document in sync with that file.
 ## Rejections
 
 A rejection carries a `code`. Kit-level failures use one of `NOT_AUTHENTICATED`
-`NOT_PROVISIONED` `NOT_FRIENDS` `NO_DEVICES` `SEND_FAILED`; anything else falls
-back to a per-method code (`INBOX_PEEK_ERROR`, `ENTRY_PUT_ERROR`, …).
+`NOT_PROVISIONED` `NOT_FRIENDS` `NO_DEVICES` `NO_MESSENGER` `TIMEOUT`
+`DEVICE_LINK_FAILED` `SEND_FAILED`; anything else falls back to a per-method
+code (`INBOX_PEEK_ERROR`, `ENTRY_PUT_ERROR`, …).
 
 `DIRECT_ROUTING_UNRESOLVED` is **not** a bridge code. No kit throws it any more
 — audience resolution is the app's (SPEC §1.2, §1.4) — and it is raised by
@@ -218,10 +212,8 @@ While an observation is active, the bridge emits
 conversation changes.
 
 Signals are **droppable** (KIT_API §4): ephemeral by design, never inbox rows.
-The `conversationId` is the one audience a kit still derives, so the kit owes
-SPEC §1.2's fail-loud rule for it — implemented as *send nothing*, because
-dropping a typing indicator costs nothing while guessing its audience leaks the
-conversation.
+The typing API derives its audience from a canonical two-party
+`conversationId` and sends nothing when that audience cannot be resolved.
 
 ### Attachments (path-based)
 
@@ -272,17 +264,24 @@ The source file is untouched in both cases.
 
 | Method | Args | Returns | Platforms |
 |---|---|---|---|
-| `requestPushPermission()` | — | `boolean` (granted) | both |
+| `requestPushPermission()` | — | `boolean` (granted) | both; token event Android only |
 | `registerPushToken(token)` | string | `void` | both |
 
-`requestPushPermission` MUST:
+An implementation of `requestPushPermission` is complete only when it can do
+all of the following:
 1. Trigger the platform-native permission UI if not already decided.
 2. Fetch the platform push token (FCM on Android, APNs/FCM-via-APNs on iOS).
 3. Deliver the token via a [`pushTokenReceived`](#pushtokenreceived) event.
 
-Resolve `true` only on an actual OS grant, and register no token for a denied
-device. The JS layer listens for `pushTokenReceived` and calls
-`registerPushToken` to upsert it on the server.
+Android implements all three steps. iOS currently implements permission and
+accepts a caller-supplied token through `registerPushToken`, but token
+acquisition and `pushTokenReceived` delivery are not wired.
+
+Both implementations resolve `true` only on an actual OS grant. Android's
+permission request does not fetch a token after denial, but Firebase
+`onNewToken` can still emit independently of that flow; JS currently registers
+every token event. Neither bridge deletes the server device or token on logout.
+iOS must use the same event flow once token forwarding exists.
 
 ### Deep linking
 
@@ -296,12 +295,11 @@ deep-links (app already running, notification tapped) arrive via the
 [`launchedFrom`](#launchedfrom) event instead — the bridge isn't built yet
 at cold start so the pull API is the only way to learn about that case.
 
-The current schema is a single `screen` string. Implementations:
+The current schema is a single `screen` string. Platform status:
 - Android: read intent extras (`intent.getStringExtra("screen")`) in
   the host activity, hook `onNewIntent` for warm starts.
-- iOS: read launch options / `UNNotificationResponse.userInfo` in
-  `application(_:didFinishLaunchingWithOptions:)` and the notification
-  delegate's `didReceive` callback.
+- iOS: the method and event surface exist, but notification callbacks are not
+  wired; `getLaunchIntent` returns null.
 
 ### Misc
 
@@ -313,9 +311,8 @@ The current schema is a single `screen` string. Implementations:
 | `deleteFile(path)` | string | `void` | both |
 | `setClipboard(text)` | string | `void` | both |
 
-`setSecureScreen` should set `FLAG_SECURE` on Android (prevents app preview
-from appearing in recents / screenshots). A future iOS implementation
-could blur the app when backgrounded.
+`setSecureScreen` sets `FLAG_SECURE` on Android to prevent app previews and
+screenshots. It is a no-op on iOS.
 
 `prewarmAudioSession` warms the audio HAL so video recording starts instantly;
 cold `AVAudioSession` activation on iOS costs ~1.4s. Idempotent, no-op on
@@ -364,9 +361,8 @@ route to AuthScreen."
 `{ type: 'appStateChanged', state: 'active' | 'background' }` — emitted on
 process-wide foreground/background transitions. Replayed once
 to a freshly-bound bridge so JS sees the current state without waiting for
-the next transition. JS drains on `'active'`: on iOS the app may have been
-suspended while a Notification Service Extension acked messages with no JS
-runtime alive to hear about it.
+the next transition. JS drains on `'active'` to process work queued while it
+was suspended. iOS native background wake handling is not implemented yet.
 
 ### `launchedFrom`
 `{ type: 'launchedFrom', screen: string }` — emitted when a warm-start
@@ -393,12 +389,13 @@ reconnect and foreground.
 ### `typingChanged`
 `{ type: 'typingChanged', conversationId: string, typers: string[] }` —
 emitted while an `observeTyping(conversationId)` is active. `typers` is the
-current set of remote device ids that are typing.
+current set of remote display names that are typing.
 
 ### `pushTokenReceived`
 `{ type: 'pushTokenReceived', token: string }` — emitted when a fresh push
 token is available (after `requestPushPermission`, on cold start with a
 cached token, or on rotation). JS calls `registerPushToken` in response.
+Android emits this event. iOS token delivery is not wired.
 
 ### `debugLog`
 `{ type: 'debugLog', message: string }` — kit-level diagnostic line. Surfaced

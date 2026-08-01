@@ -50,10 +50,9 @@ class MainActivity : ReactActivity() {
 
   /**
    * Forward permission decisions to the bridge so it can resolve the in-flight
-   * `requestPushPermission` promise correctly. Without this, the bridge has no
-   * way to know whether the user granted POST_NOTIFICATIONS and falls back to
-   * "always resolve true" — leaking a push-token registration to the server
-   * even when the user said no.
+   * `requestPushPermission` promise correctly. Without this callback, that
+   * explicit permission request remains unresolved. Firebase token rotation is
+   * an independent path.
    */
   override fun onRequestPermissionsResult(
     requestCode: Int,

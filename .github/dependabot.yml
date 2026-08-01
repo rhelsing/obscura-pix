@@ -45,9 +45,7 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@babel/runtime"
         update-types: ["version-update:semver-major"]
-      # TypeScript: we deliberately accept patch/minor bumps. 5.9 → 6 was
-      # tested via CI and accepted. Leave room for future majors to also be
-      # auto-PR'd so we know about them.
+      # Allow TypeScript majors to open PRs so CI exposes compatibility work.
 
   # ─── Android gradle (pix app) ───────────────────────────
   - package-ecosystem: "gradle"

@@ -1,16 +1,15 @@
 import { mergeAll, merge, type Entry } from '../merge';
 
 /**
- * Properties the ported conformance vectors cannot express.
+ * Properties the merge fixtures cannot express.
  *
  * These exist because mutation-testing the vector suite found a hole: changing APPEND from
  * "first write wins" to "last write wins" passed all 13 vector-driven tests. The vectors' GSet
  * idempotence case uses a duplicate id carrying IDENTICAL data — because `SPEC.md` §2.1 argues
  * GSet entries are immutable by construction — so the two behaviours are indistinguishable there.
  *
- * That argument holds for honest peers and stops holding for a hostile one, which is exactly the
- * shape of the friend-graph bug fixed on 2026-07-25 (a peer re-sending an existing id to overwrite
- * what we already stored). So first-wins is pinned here explicitly, with differing content.
+ * A hostile peer can replay an existing id with different content, so
+ * first-wins is pinned here explicitly.
  */
 
 const entry = (over: Partial<Entry> & { id: string }): Entry => ({
@@ -118,8 +117,7 @@ describe('convergence', () => {
     // Only a buggy or hostile peer can produce one id with two contents. Given that, there are two
     // options and no third: first-wins (this) keeps what we already had and may leave two devices
     // disagreeing about the attacker's entry; last-wins would converge, at the cost of letting any
-    // peer overwrite an established entry by replaying its id — the same shape as the friend-graph
-    // self-rename fixed on 2026-07-25.
+    // peer overwrite an established entry by replaying its id.
     //
     // We take non-convergence over silent overwrite. Divergence about a hostile write is visible
     // and recoverable; a rewritten message is neither.

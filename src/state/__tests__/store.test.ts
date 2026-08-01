@@ -8,15 +8,9 @@ import { getFakeBridge } from '../../native/__fixtures__/reactNativeMock';
 /**
  * `store.ts` without a renderer.
  *
- * The region this file covers was 17% covered and 0% branch, and it is the region that decides
- * whether a message is ever seen: `loadEntries`, `drainAndRefresh`, `saveEntry` — the single write
- * path every screen uses — and **every drain trigger**. Two live defects were in here (a refresh
- * skipped when a send threw, and `authStateChanged: 'authenticated'` ignored), and neither could be
- * caught, because the triggers lived inside a hook.
- *
- * They no longer do: `applyObscuraEvent` and `loadSession` are plain functions the `ObscuraBootstrap`
- * hook subscribes and calls. That extraction is what makes this file possible without adding a
- * React renderer dependency, which `jest.config.js` explains is a decision of its own.
+ * Covers entry loading, drain/refresh, the application write path, and every
+ * drain trigger through the plain `applyObscuraEvent` and `loadSession`
+ * functions.
  */
 
 const bridge = getFakeBridge();
@@ -232,10 +226,7 @@ describe('the drain triggers', () => {
     expect(await Obscura.inboxDepth()).toBe(1);
   });
 
-  /**
-   * On iOS the app may have been suspended while a Notification Service Extension decrypted,
-   * persisted and ACKED with no JS runtime alive — so foreground is the first chance to see them.
-   */
+  /** Foreground sync discovers rows persisted while the JS runtime was inactive. */
   it('drains on foreground', async () => {
     await deliverAndTrigger(() => applyObscuraEvent({ type: 'appStateChanged', state: 'active' }));
 

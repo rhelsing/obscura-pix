@@ -6,9 +6,7 @@ import { getFakeBridge } from '../../native/__fixtures__/reactNativeMock';
 /**
  * The write path (`obscura-proto/KIT_API.md` §5, §8.1).
  *
- * `Obscura.createEntry` used to do four things inside the kit: generate an id, store, resolve an
- * audience, fan out. Three of those are application decisions the kit is forbidden to make
- * (SPEC §0.4), so they moved here — and these tests are what makes that move checkable.
+ * Tests application-owned id generation, storage, audience resolution, and fan-out.
  */
 
 const bridge = getFakeBridge();
@@ -41,7 +39,7 @@ describe('storing and sending', () => {
     expect(stored[0].id).toBe(id);
     // `_authorUserId` is stamped by `writeEntry`, not supplied by the caller: this device authored
     // the write, so this user is the author (SPEC §0.5). Every screen reads it instead of the
-    // `senderUsername` the payload used to carry.
+    // payload-supplied identity.
     expect(JSON.parse(stored[0].data))
       .toEqual({ conversationId: convId, content: 'hi', _authorUserId: SELF });
 
@@ -105,10 +103,6 @@ describe('the effect ORDER', () => {
    * design), so this is the case where the user is looking at an entry in their own timeline that
    * got nowhere. It keeps the local row, because their content is theirs whether or not the network
    * cooperated, and it re-throws so a screen can say so.
-   *
-   * This test asserted `.resolves` until 2026-07-28, pinning the swallow as correct — justified by
-   * "the kit queues and retries", which is not true in the sense required: the retry queue is
-   * in-memory, flushed only on the next send, and lost on process death.
    */
   it('keeps the local entry when the send fails, but still reports the failure', async () => {
     bridge.__failNext('sendEntry', 'SEND_FAILED', 'offline');
@@ -144,15 +138,13 @@ describe('audience failures', () => {
 
   /**
    * `pix` resolves by CONVERSATION — `schema.ts` declares
-   * `audience: { kind: 'conversation', field: 'conversationId' }`. It no longer carries a recipient
-   * name at all; the conversation id names both parties by authenticated userId.
+   * `audience: { kind: 'conversation', field: 'conversationId' }`. The
+   * conversation id names both parties by authenticated userId.
    *
    * **A conversation participant who is not an accepted friend gets nothing.** The conversation id
    * is a payload field, so without that intersection this call would mail the entry — `mediaRef`,
    * `contentKey`, `nonce` — to whatever userId a peer wrote into it. `StoriesScreen` writes a
    * viewed-receipt back with `{ ...story.data }`, so the peer-supplied id reaches here directly.
-   *
-   * This test asserted `[STRANGER]` until 2026-07-28 and was pinning the leak as correct.
    */
   it('resolves pix by conversation, and drops a participant who is not a friend', async () => {
     await writeEntry(args('pix', { conversationId: [SELF, STRANGER].sort().join('_') }));
@@ -213,10 +205,8 @@ describe('attribution', () => {
 
 describe('the outbox', () => {
   /**
-   * The gap this closes: `writeEntry` keeps the local row and rethrows when a send reaches nobody,
-   * a screen toasts once, and then **nothing ever retried it**. The receive side has four triggers
-   * (reconnect, foreground, cold start, wake); the send side had none, so an undelivered entry sat
-   * in the user's own timeline looking sent, permanently.
+   * `writeEntry` keeps a local row when a send reaches nobody. The outbox mark
+   * makes later reconnect, foreground, cold-start, and wake syncs retry it.
    */
   it('marks an entry whose send reached nobody, and retries it on the next flush', async () => {
     bridge.__failNext('sendEntry', 'SEND_FAILED', 'offline');
