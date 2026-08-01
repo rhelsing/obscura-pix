@@ -4,9 +4,10 @@ Shared contract between iOS and Android implementations. Both devs work from thi
 
 > **⚠️ As-built note:** This is the original *plan*. The privacy model, server contract, and
 > decisions below are still accurate, but the **client flow** is structured differently than
-> described in [Client Architecture](#client-architecture): each platform now has a single
+> described in [Client Architecture](#client-architecture): Android now has a single
 > process-scoped owner of the kit client and a single consumer of `incomingMessages` that posts
-> the notification — created at process start, so silent pushes work even on a cold start. For
+> the notification — created at process start, so silent pushes work even on a cold start. The
+> `obscura-pix` iOS bridge/notification extension is not implemented yet. For
 > how the system **actually works now**, see
 > [NOTIFICATIONS_HOW_IT_WORKS.md](./NOTIFICATIONS_HOW_IT_WORKS.md).
 
@@ -83,40 +84,25 @@ Exactly two new methods. Signatures match across platforms:
 ```kotlin
 // Kotlin (ObscuraKit-Kotlin)
 suspend fun registerPushToken(token: String)
-suspend fun processPendingMessages(timeout: Duration): ProcessedCounts
-
-data class ProcessedCounts(
-    val pixCount: Int,
-    val messageCount: Int,
-    val otherCount: Int  // debug only; bridge ignores
-)
+suspend fun processPendingMessages(timeoutMs: Long): Int
 ```
 
 ```swift
 // Swift (ObscuraKit-Swift)
 func registerPushToken(_ token: String) async throws
-func processPendingMessages(timeout: Duration) async -> ProcessedCounts
-
-struct ProcessedCounts {
-    let pixCount: Int
-    let messageCount: Int
-    let otherCount: Int  // debug only; bridge ignores
-}
+func processPendingMessages(timeout: TimeInterval) async -> Int
 ```
 
 **Semantics of `processPendingMessages(timeout)`:**
 - Connect if not connected (call `ensureFreshToken()` + `gateway.connect()`)
-- Wait up to `timeout` for the envelope queue to drain
-- Return when either (a) queue is empty and stays empty for ~500ms, or (b) timeout hits
+- Wait up to `timeout` for the receive path to stay idle for ~500ms
+- Return one total of successfully processed envelopes; model keys remain opaque
+- Observe receive activity without consuming `incomingMessages` / Swift's test queue
 - Does NOT disconnect afterwards — OS will freeze the app when it wants
-- Counts categorization (applied to each processed envelope):
-  - `MODEL_SYNC` with `sync.model == "pix"` → `pixCount`
-  - `MODEL_SYNC` with `sync.model == "directMessage"` → `messageCount`
-  - Legacy `TEXT` or `IMAGE` ClientMessage (routed through `messages.add()`) → `messageCount`
-  - Everything else (FRIEND_REQUEST, DEVICE_ANNOUNCE, SYNC_BLOB, MODEL_SIGNAL, SESSION_RESET, etc.) → `otherCount`
-  - Rationale: bridge picks notification text from pix vs message counts; `otherCount` is debug-only
 
-**Invariant:** Kit must NEVER call OS notification APIs (`UNUserNotificationCenter` on iOS, `NotificationManagerCompat` on Android). Notification posting is strictly the bridge layer's responsibility. Kit only returns counts.
+**Invariant:** Kit must NEVER call OS notification APIs (`UNUserNotificationCenter` on iOS,
+`NotificationManagerCompat` on Android) or classify by an application model name. Notification
+policy and copy are strictly app responsibilities; the returned total is only drain telemetry.
 
 That's it. Kit does not:
 - Handle push reception (that's native/bridge)
@@ -133,10 +119,9 @@ That's it. Kit does not:
   - When silent push arrives with `action=check`:
     - Ensure client is connected (call `client.connect()` if needed)
     - Kit processes queued messages via existing envelope loop
-    - After processing, check if any new entries arrived
-    - If yes: create local notification via `NotificationCompat.Builder` with generic text ("New pix" / "New message")
-- **iOS:** `AppDelegate.application(_:didReceiveRemoteNotification:fetchCompletionHandler:)`
-  - Same flow: connect if needed, let kit process, post generic `UNMutableNotificationContent`
+    - `ObscuraSession` remains the sole `incomingMessages` consumer and decides notification copy
+- **iOS:** not implemented in `obscura-pix` yet. The Swift kit exposes the same opaque drain API,
+  but this repo currently has no iOS native bridge or notification extension consuming it.
 
 **Platform-specific token management:**
 - **Android:** Register FCM token refresh callback via `FirebaseMessaging.getInstance().token` listener. On refresh, emit event to JS → JS re-registers.

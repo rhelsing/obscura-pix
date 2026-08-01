@@ -62,11 +62,11 @@ echo
 xcrun simctl push "$BOOTED" "$BUNDLE_ID" "$PAYLOAD_FILE"
 
 echo "push delivered. watching log for bridge output (Ctrl-C to stop)..."
-echo "looking for: ObscuraBridge / processPendingMessages / ProcessedCounts"
+echo "looking for: ObscuraBridge / processPendingMessages / processed="
 echo
 
 # Stream the simulator log, filtered to likely bridge output.
 # Uses the booted sim's unified log system; --predicate limits noise.
 exec xcrun simctl spawn "$BOOTED" log stream \
   --level=debug \
-  --predicate 'subsystem contains "Obscura" OR eventMessage contains "ObscuraBridge" OR eventMessage contains "processPendingMessages" OR eventMessage contains "ProcessedCounts"'
+  --predicate 'subsystem contains "Obscura" OR eventMessage contains "ObscuraBridge" OR eventMessage contains "processPendingMessages" OR eventMessage contains "processed="'
