@@ -25,8 +25,8 @@ in `src/`, in TypeScript, written once. See [`CLAUDE.md`](CLAUDE.md).
 
 ```
 React Native (shared UI, src/)
-  ├── Android: ObscuraBridgeModule.kt → ObscuraKit-Kotlin
-  └── iOS: ObscuraBridge.swift → ObscuraKit-swift
+  ├── Android: ObscuraBridgeModule.kt → obscura-native/kotlin
+  └── iOS: ObscuraBridge.swift → obscura-native/swift
 ```
 
 Model semantics are defined once in `src/models/schema.ts` and read by the **app alone** — the kit
@@ -44,6 +44,8 @@ cross-platform contract.
 ### Install + run
 
 ```bash
+git clone --recurse-submodules \
+  https://github.com/barrelmaker97/obscura-native ../obscura-native
 npm install
 npx react-native run-android
 ```
@@ -70,7 +72,7 @@ src/
   screens/                — UI screens
 android/
   app/src/main/java/com/obscuraapp/
-    ObscuraBridgeModule.kt — Bridge: JS ↔ ObscuraKit-Kotlin
+    ObscuraBridgeModule.kt — Bridge: JS ↔ obscura-native/kotlin
     ObscuraSession.kt      — Process-scoped owner of the kit client
     ObscuraMessagingService.kt — FCM silent-push receiver
     NotificationHelper.kt  — Local notification posting
@@ -92,6 +94,5 @@ of scope for it; `jest.config.js` explains why.
 
 ## Dependencies
 
-- [ObscuraKit-Kotlin](https://github.com/rhelsing/ObscuraKit-Kotlin) — Android E2E encrypted data layer
-- [ObscuraKit-Swift](https://github.com/rhelsing/ObscuraKit-swift) — iOS E2E encrypted data layer
+- [obscura-native](https://github.com/barrelmaker97/obscura-native) — Kotlin and Swift native encrypted data layers
 - [obscura-server](https://github.com/barrelmaker97/obscura-server) — server (dumb relay, never sees contents)

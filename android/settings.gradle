@@ -5,8 +5,8 @@ rootProject.name = 'ObscuraApp'
 include ':app'
 includeBuild('../node_modules/@react-native/gradle-plugin')
 
-// ── ObscuraKit-Kotlin composite build ───────────────────────────────
-// The kit is a sibling repo developed in lockstep with pix. Rather than
+// ── obscura-native Kotlin composite build ───────────────────────────
+// The native repo is a sibling developed in lockstep with pix. Rather than
 // publish it to a registry (or the old publishToMavenLocal hack) and pin
 // a version, we compose its Gradle build directly. Edits to kit source
 // show up in pix on the next build with no publish step.
@@ -17,11 +17,11 @@ includeBuild('../node_modules/@react-native/gradle-plugin')
 // matters if/when we graduate the kit to a real published artifact.
 //
 // Path resolution:
-//   - Local dev: kit is a sibling of obscura-pix, so from android/ it's
-//     ../../ObscuraKit-Kotlin (the default below).
+//   - Local dev: obscura-native is a sibling of obscura-pix, so from
+//     android/ the Kotlin package is ../../obscura-native/kotlin.
 //   - CI: the kit is checked out next to android/, so CI overrides via
 //     the OBSCURA_KIT_PATH env var (see .github/workflows/ci.yml).
-def obscuraKitPath = System.getenv('OBSCURA_KIT_PATH') ?: '../../ObscuraKit-Kotlin'
+def obscuraKitPath = System.getenv('OBSCURA_KIT_PATH') ?: '../../obscura-native/kotlin'
 includeBuild(obscuraKitPath) {
     dependencySubstitution {
         substitute(module('com.obscura:obscura-kit')).using(project(':lib'))

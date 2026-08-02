@@ -51,4 +51,5 @@ Tags filtered: `ObscuraBridge`, `ObscuraMessagingService`, `NotificationHelper`,
 
 - Targets `OBSCURA_API_URL` (default `https://obscura.barrelmaker.dev`).
 - Uses `com.obscura:obscura-kit:0.1.0` from mavenLocal. If you change the kit,
-  re-publish with `./gradlew publishToMavenLocal -x test` in ObscuraKit-Kotlin.
+  re-publish with `./gradlew publishToMavenLocal -x test` in
+  `obscura-native/kotlin`.

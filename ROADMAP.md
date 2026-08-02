@@ -60,8 +60,8 @@ What's built, what's next.
 ## Phase 6: iOS
 
 A working iOS foundation is committed under `ios/`: a RN 0.86 scaffold,
-`ObscuraBridge.swift` implementing `docs/BRIDGE.md`, and the `ObscuraKit-swift`
-Swift kit wired as a local SPM package. It builds, launches, and runs the auth
+`ObscuraBridge.swift` implementing `docs/BRIDGE.md`, and
+`obscura-native/swift` wired as a local SPM package. It builds, launches, and runs the auth
 flow on the simulator. The cross-platform bridge contract (methods, events,
 payload shapes, atomicity / EXIF / OOM requirements) lives in `docs/BRIDGE.md`;
 Android's `ObscuraBridgeModule.kt` is the reference implementation. See
@@ -69,7 +69,7 @@ Android's `ObscuraBridgeModule.kt` is the reference implementation. See
 
 - [x] Scaffold `ios/` (RN 0.86, bundle `com.obscuraapp.ios`, deployment 16.0)
 - [x] Implement `ObscuraBridge.swift` against `docs/BRIDGE.md`
-- [x] Wire `ObscuraKit-swift` as a local Swift Package
+- [x] Wire `obscura-native/swift` as a local Swift Package
 - [x] App icons + launch screen assets
 - [x] Simulator-verified auth flow end-to-end
 - [ ] Add a `macos-26` iOS CI job that builds the libsignal FFI and app

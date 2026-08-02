@@ -63,12 +63,12 @@ jobs:
       # composite build. Checkout next to pix so Gradle substitutes the local
       # `:lib` project and catches API or toolchain drift against kit main.
       # iOS is not CI-gated; see docs/IOS_PARITY.md.
-      - name: Checkout ObscuraKit-Kotlin
+      - name: Checkout obscura-native
         uses: actions/checkout@v7
         with:
-          repository: rhelsing/ObscuraKit-Kotlin
-          path: ObscuraKit-Kotlin
-          # The kit generates protobuf code from its ./proto submodule; without
+          repository: barrelmaker97/obscura-native
+          path: obscura-native
+          # Kotlin generates protobuf code from the root proto submodule; without
           # this the composite build fails codegen (Unresolved reference on
           # generated proto types).
           submodules: recursive
@@ -119,8 +119,8 @@ jobs:
         run: ./gradlew :app:assembleRelease --no-daemon
         working-directory: android
         env:
-          # The kit is checked out at $GITHUB_WORKSPACE/ObscuraKit-Kotlin;
-          # this gradle build runs from android/, so the kit sits at
-          # ../ObscuraKit-Kotlin. Locally the default in settings.gradle
-          # (../../ObscuraKit-Kotlin, kit as a sibling of obscura-pix) applies.
-          OBSCURA_KIT_PATH: ../ObscuraKit-Kotlin
+          # The native repo is checked out at $GITHUB_WORKSPACE/obscura-native;
+          # this build runs from android/, so its Kotlin package is at
+          # ../obscura-native/kotlin. Locally settings.gradle defaults to the
+          # sibling checkout at ../../obscura-native/kotlin.
+          OBSCURA_KIT_PATH: ../obscura-native/kotlin

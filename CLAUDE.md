@@ -2,8 +2,8 @@
 
 ## What this is
 
-The Obscura app: React Native (iOS + Android), with native platform layers underneath
-(`ObscuraKit-Kotlin`, `ObscuraKit-swift`).
+The Obscura app: React Native (iOS + Android), with native platform layers in
+the sibling `obscura-native` repository (`kotlin/` and `swift/`).
 
 **This repo is where the domain lives.** What a message is, what a pix is, who a write goes to,
 what a notification says, how a conversation is rendered — all of it belongs here, in TypeScript,
@@ -14,8 +14,8 @@ reasons: libsignal ships only as `libsignal-java` / `libsignal-swift` (no suppor
 and background push processing cannot rely on a React Native runtime. Everything
 that is not forced native by those constraints belongs in this repo.
 
-The normative brief is [`obscura-proto/SPEC.md` §0 — The kit boundary](../obscura-proto/SPEC.md),
-plus [`KIT_API.md`](../obscura-proto/KIT_API.md) §3 (the inbox), §4 (message kinds), §5 (send) and
+The normative brief is [`SPEC.md` §0 — The kit boundary](../obscura-native/proto/SPEC.md),
+plus [`KIT_API.md`](../obscura-native/proto/KIT_API.md) §3 (the inbox), §4 (message kinds), §5 (send) and
 §8 (what this means for pix). Read them before changing anything that crosses the bridge.
 
 The application-owned implementations are:
@@ -95,9 +95,10 @@ viewed-**receipt** wearing a CRDT costume.
   the kit's design, so a partial failure is invisible here too.
 - **No iOS CI job.** The workflow is `typecheck`, `domain-tests`, `lint`, `android`. The Swift
   bridge and this repo's one shared TypeScript surface can diverge without anything going red.
-- The Android kit is consumed via a **Gradle composite build** (`android/settings.gradle` →
-  `../../ObscuraKit-Kotlin`) and the Swift kit via a **local SPM package**. Kit changes land
-  immediately — there is no version-bump buffer.
+- The Android package is consumed via a **Gradle composite build**
+  (`android/settings.gradle` → `../../obscura-native/kotlin`) and the Swift
+  package via local SPM at `../../obscura-native/swift`. Native changes land
+  immediately—there is no version-bump buffer.
 
 ## Build
 

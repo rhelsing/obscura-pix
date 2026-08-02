@@ -1,7 +1,7 @@
 # iOS status
 
 The repository contains an iOS React Native scaffold and Swift bridge backed by
-`ObscuraKit-swift`. It builds and runs the shared authentication UI on a
+`obscura-native/swift`. It builds and runs the shared authentication UI on a
 simulator when native dependencies are available, but it is not production-ready
 and has no CI job.
 
@@ -11,7 +11,7 @@ only iOS-specific status; it is not a second API specification.
 ## Implemented foundation
 
 - React Native iOS project under `ios/ObscuraApp`.
-- Local Swift Package dependency on a sibling `ObscuraKit-swift` checkout.
+- Local Swift Package dependency on a sibling `obscura-native` checkout.
 - Session ownership and Keychain persistence.
 - Swift `RCTEventEmitter` bridge for the shared event stream.
 - Auth, friends, device linking, current-state reads, inbox, entry storage,
@@ -44,12 +44,15 @@ requirements. Push delivery cannot be validated on the simulator.
 
 There is no iOS build job. A macOS job must:
 
-1. Check out `ObscuraKit-swift` beside this repository.
+1. Check out `barrelmaker97/obscura-native` beside this repository, including
+   its submodules.
 2. Build the vendored libsignal FFI for the simulator.
-3. Run `npm ci` and `pod install`.
-4. Build `ObscuraApp.xcworkspace` for a generic iOS Simulator destination.
+3. Run `obscura-native/swift/dev.sh prepare` to create the uniquely named
+   local libsignal package used by SwiftPM.
+4. Run `npm ci` and `pod install`.
+5. Build `ObscuraApp.xcworkspace` for a generic iOS Simulator destination.
 
-The local SPM path expects `../../ObscuraKit-swift`; CI must reproduce that
+The local SPM path expects `../../obscura-native/swift`; CI must reproduce that
 layout. CocoaPods environments missing `kconv` need the `nkf` gem.
 
 ### Device verification
@@ -62,8 +65,8 @@ transitions, FCM-via-APNs delivery, and notification privacy.
 
 - macOS with Xcode and CocoaPods.
 - Node dependencies installed from the lockfile.
-- `ObscuraKit-swift` checked out beside this repo.
-- libsignal FFI built using the kit's iOS helper.
+- `obscura-native` checked out beside this repo with submodules.
+- libsignal FFI built and the local package prepared using its Swift helpers.
 
 Do not infer production support from a simulator build. Until CI and real-device
 push tests exist, Android remains the only production platform.
