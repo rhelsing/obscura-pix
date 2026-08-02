@@ -65,8 +65,8 @@ updates:
         patterns:
           - "androidx.lifecycle:*"
     ignore:
-      # Owned by ObscuraKit-Kotlin — bumps must happen there first so the
-      # kit re-publishes against the new version, then pix follows.
+      # Owned by obscura-native/kotlin — bumps must happen there first so the
+      # package re-publishes against the new version, then pix follows.
       # Verified: bumping sqldelight in pix alone breaks compileReleaseKotlin
       # because the kit jar references the older API surface.
       - dependency-name: "org.signal:libsignal-android"

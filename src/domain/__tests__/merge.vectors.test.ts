@@ -6,7 +6,7 @@ import { join } from 'path';
 import { mergeAll, type Entry, type MergeRule } from '../merge';
 
 /**
- * `obscura-proto/conformance/merge.json`, run against this app's merge implementation.
+ * The app-owned merge fixtures, run against this app's merge implementation.
  *
  * Four cases cover the current APPEND and REPLACE rules. Two tombstone cases are
  * recognized but unsupported because the app has no delete operation.
