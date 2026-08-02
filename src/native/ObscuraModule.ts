@@ -44,7 +44,7 @@ export interface AttachmentRef {
 }
 
 /**
- * One row from the kit's durable inbox (`obscura-proto/KIT_API.md` §3.1).
+ * One row from the kit's durable inbox (`obscura-native/docs/KIT_API.md` §3.1).
  *
  * The kit stores bytes it cannot read. `payload` is the app's own JSON for kinds the app
  * understands; for an unknown `kind` it is arbitrary bytes rendered as a lossy string, which is safe
@@ -58,11 +58,11 @@ export interface InboxRow {
   /** The payload arm, e.g. `MODEL_SYNC`. `UNKNOWN` for an arm the kit does not know. */
   kind: string;
   receivedAt: number;
-  /** Authenticated (SPEC §0.10). */
+  /** Server-stamped transport identity (NATIVE_CONTRACT §0.10). */
   senderUserId: string;
   /** The device whose Signal session decrypted this — cryptographic attribution, and the merge tie-break. */
   senderDeviceId: string | null;
-  /** Resolved from the kit's friend graph, never from the payload (SPEC §0.5). Null if not a friend. */
+  /** Resolved from the kit's friend graph, never from the payload (NATIVE_CONTRACT §0.5). Null if not a friend. */
   senderDisplayName: string | null;
   /** `ModelSync`-derived, so null for every other kind. */
   modelKey: string | null;
@@ -101,7 +101,7 @@ export type LoginScenario =
  * `ObscuraError.kt` in the kit. Kit-level failures use one of these; anything
  * else falls back to a per-method code (e.g. "ENTRY_PUT_ERROR").
  *
- * `DIRECT_ROUTING_UNRESOLVED` is app-owned (SPEC §1.2, §1.4), raised
+ * `DIRECT_ROUTING_UNRESOLVED` is app-owned (`DOMAIN_CONTRACT.md`), raised
  * by `src/domain/audience.ts`, and therefore excluded from native errors.
  */
 export type ObscuraErrorCode =
@@ -155,7 +155,7 @@ export const Obscura = {
   validateAndApproveLink: (code: string): Promise<void> =>
     Bridge.validateAndApproveLink(code),
 
-  // ─── Kit data surface (obscura-proto/KIT_API.md §3, §5, §8.1) ──────────
+  // ─── Kit data surface (obscura-native/docs/KIT_API.md §3, §5, §8.1) ────
   //
   // `inbox` is how messages arrive, `entries` is where the app keeps what it made of them, and
   // `sendEntry` is how they leave. Nothing here parses a payload on either side of the bridge.
@@ -186,7 +186,7 @@ export const Obscura = {
   // `op: DELETE`, so a delete could only ever remove a row locally and diverge this device from
   // every other one. The kit-side `entries.delete` is the kits' business.
 
-  /** The caller names the recipients (SPEC §0.4). The kit resolves no audience of its own. */
+  /** The caller names recipients (DOMAIN_CONTRACT). The kit resolves no entry audience. */
   sendEntry: (
     recipientUserIds: string[], modelKey: string, entryId: string,
     op: string, sentAt: number, payloadJson: string,

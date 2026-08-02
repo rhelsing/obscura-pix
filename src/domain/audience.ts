@@ -1,7 +1,7 @@
 /**
- * Who an entry goes to (`obscura-proto/SPEC.md` §0.4, §1.2).
+ * Who an entry goes to (`docs/DOMAIN_CONTRACT.md`).
  *
- * SPEC §0.4 requires the caller to name recipients. The kit fans out to
+ * The domain contract requires the caller to name recipients. The kit fans out to
  * exactly those user ids and does not interpret application model fields.
  *
  * - **Fail loud** — an audience that cannot be resolved raises. It never falls back to "everyone".
@@ -81,7 +81,7 @@ export function resolveAudience(
       // in the SAFE direction at least: an id with an extra `_` yields the wrong participant count
       // and refuses, rather than resolving to a wrong or wider audience.
       //
-      // SPEC §1.3 requires exactly two non-empty parts. Count before
+      // DOMAIN_CONTRACT requires exactly two non-empty parts. Count before
       // interpreting either participant.
       const participants = raw.split('_');
       if (participants.length !== 2 || participants.some((p) => p.length === 0)) {
@@ -98,7 +98,7 @@ export function resolveAudience(
       //
       // Reachable end-to-end: `StoriesScreen` echoes a viewed pix back to its own `conversationId`,
       // and that id came from a peer's payload. An id that does not name me is not a conversation I
-      // am in, so SPEC §1.2's fail-loud rule applies — this audience cannot be resolved.
+      // am in, so the fail-loud rule applies — this audience cannot be resolved.
       if (!participants.includes(selfUserId)) {
         throw new DirectRoutingUnresolved(
           `'${raw}' does not name this user, so it is not a conversation this device can address`,

@@ -17,12 +17,12 @@ export interface Entry {
   id: string;
   /**
    * When the author wrote it (ms). Peer-supplied, so it is clamped to `now + 60s` on receipt
-   * (`SPEC.md` §2.4) before it ever reaches this file.
+   * (`NATIVE_CONTRACT.md` §2.4) before it ever reaches this file.
    */
   sentAt: number;
   /**
    * The AUTHENTICATED device that wrote this — for a received entry, the address of the Signal
-   * session that decrypted it; for a local write, this device (`SPEC.md` §0.10 rule 4).
+   * session that decrypted it; for a local write, this device (`NATIVE_CONTRACT.md` §0.10 rule 4).
    *
    * It is the REPLACE tie-break, and it must never be taken from a payload field: a peer-asserted
    * author id would let a peer win every conflict by choosing a high value.
@@ -46,7 +46,7 @@ export interface Entry {
  *
  * Rule 2 is required. Without it an equal-timestamp conflict resolves to "whichever arrived
  * first", so two devices that receive the two writes in different orders converge to DIFFERENT
- * states and never reconcile — silently, and invisibly to single-device testing (`SPEC.md` §2.2).
+ * states and never reconcile — silently, and invisibly to single-device testing (`DOMAIN_CONTRACT.md`).
  * `pix.viewedAt` is written by the *recipient*, i.e. a second user, so equal timestamps are a real
  * collision and not a thought experiment.
  */

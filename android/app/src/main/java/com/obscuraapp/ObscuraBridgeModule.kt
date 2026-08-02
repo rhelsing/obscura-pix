@@ -900,7 +900,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         }
 
     // ─────────────────────────────────────────────────────────────────────────────────────────
-    // Kit data surface (obscura-proto/KIT_API.md §3, §5, §8.1).
+    // Kit data surface (obscura-native/docs/KIT_API.md §3, §5, §8.1).
     //
     // Drain the inbox, store application entries, and send application writes.
     // Payload data crosses as an opaque JSON string and is never re-encoded.
@@ -1000,7 +1000,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         }
     }
 
-    /** The caller names the recipients (SPEC §0.4). The kit resolves no audience of its own. */
+    /** The caller names recipients (DOMAIN_CONTRACT). The kit resolves no entry audience. */
     @ReactMethod
     fun sendEntry(
         recipientUserIds: ReadableArray,

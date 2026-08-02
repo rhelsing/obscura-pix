@@ -18,7 +18,7 @@ keep this document in sync with that file.
   No base64 round-trips, no megabyte-sized strings flying across the bridge.
 - **Nothing parses a payload, on either side.** `data` / `payload` cross as
   opaque JSON **strings**. The kit stores bytes it cannot read
-  ([`SPEC.md` §0.4](https://github.com/barrelmaker97/obscura-proto/blob/main/SPEC.md)); the app parses them once, on
+  ([`NATIVE_CONTRACT.md` §0.4](https://github.com/barrelmaker97/obscura-native/blob/main/docs/NATIVE_CONTRACT.md)); the app parses them once, on
   the way in (`store.ts`'s `loadEntries`). There is no schema on this bridge —
   `src/models/schema.ts` is read by the app alone and never crosses.
 - **The caller names the recipients.** `sendEntry` takes a userId list and the
@@ -27,7 +27,7 @@ keep this document in sync with that file.
   `src/domain/audience.ts`.
 - **Identity comes from the envelope.** `inboxPeek` returns `senderUserId` /
   `senderDeviceId`, stamped by the server and unforgeable by the sender
-  (SPEC §0.10). A bridge MUST NOT synthesize either from payload content.
+  (`NATIVE_CONTRACT.md` §0.10). A bridge MUST NOT synthesize either from payload content.
 - **One event stream, discriminated by `type`.** All native → JS events flow
   through `ObscuraEvent` with `{ type, …fields }`. Adding an event type means
   updating both the TS union and both native implementations.
@@ -42,7 +42,7 @@ A rejection carries a `code`. Kit-level failures use one of `NOT_AUTHENTICATED`
 code (`INBOX_PEEK_ERROR`, `ENTRY_PUT_ERROR`, …).
 
 `DIRECT_ROUTING_UNRESOLVED` is **not** a bridge code. No kit throws it any more
-— audience resolution is the app's (SPEC §1.2, §1.4) — and it is raised by
+— audience resolution is the app's (`DOMAIN_CONTRACT.md`) — and it is raised by
 `src/domain/audience.ts` without crossing this boundary.
 
 ## Methods
@@ -94,7 +94,7 @@ this device is.
 
 `Friend = { userId, username, status: 'pending_sent' \| 'pending_received' \| 'accepted' }`.
 
-The friend graph is the app's **only** source of display names (SPEC §0.5). A
+The friend graph is the app's **only** source of display names (`NATIVE_CONTRACT.md` §0.5). A
 name that did not come from here came from a peer.
 
 ### Device linking
@@ -104,7 +104,7 @@ name that did not come from here came from a peer.
 | `generateLinkCode()` | — | `string` | both |
 | `validateAndApproveLink(code)` | string | `void` | both |
 
-### The inbox ([`KIT_API.md` §3](https://github.com/barrelmaker97/obscura-proto/blob/main/KIT_API.md))
+### The inbox ([`KIT_API.md` §3](https://github.com/barrelmaker97/obscura-native/blob/main/docs/KIT_API.md))
 
 How messages arrive. The kit persists a row, ACKs, and then notifies — and
 **an ACK is a DELETE**, so once a row exists the server's copy is gone and the
@@ -123,13 +123,13 @@ InboxRow = {
   envelopeId: string     // server-assigned. The kit's dedupe key: UNIQUE + INSERT OR IGNORE.
   kind: string           // the client.proto payload arm, e.g. "MODEL_SYNC"
   receivedAt: number
-  senderUserId: string           // AUTHENTICATED (SPEC §0.10)
+  senderUserId: string           // server-stamped (NATIVE_CONTRACT §0.10)
   senderDeviceId: string|null    // the decrypting session's address — the merge tie-break
   senderDisplayName: string|null // from the kit's friend graph; null if not a friend
   modelKey: string|null  // ModelSync-derived, so null for every other kind
   entryId: string|null
   op: string|null
-  sentAt: number|null    // peer-supplied; clamped per SPEC §2.4 BEFORE storage
+  sentAt: number|null    // peer-supplied; clamped per NATIVE_CONTRACT §2.4 before storage
   payload: string        // opaque JSON string
 }
 ```
@@ -152,13 +152,13 @@ Implementations MUST:
   Persist-then-ack *guarantees* redelivery: the ack is best-effort and its
   failure is swallowed, so the same envelope arriving twice is routine.
 - **`senderDeviceId` comes from the address of the session that decrypted the
-  message**, never from a wire field (SPEC §0.10 rule 4).
+  message**, never from a wire field (`NATIVE_CONTRACT.md` §0.10 rule 4).
 
 There is deliberately **no insert**: the inbox is kit-write, app-read-and-delete
 (§3.3 rule 9). The sending device gets no inbox row for its own send and writes
 its own entry directly.
 
-### The entry store ([`KIT_API.md` §8.1](https://github.com/barrelmaker97/obscura-proto/blob/main/KIT_API.md))
+### The entry store ([`KIT_API.md` §8.1](https://github.com/barrelmaker97/obscura-native/blob/main/docs/KIT_API.md))
 
 Where the app keeps what it made of the inbox. The kit owns the table; it has no
 opinion about the contents.
@@ -182,7 +182,7 @@ this device from every other one.
 **No `entriesChanged` event.** `entryPut` is a plain write and emits nothing;
 the app refreshes explicitly, because it is the app that knows what changed.
 
-### Send ([`KIT_API.md` §5](https://github.com/barrelmaker97/obscura-proto/blob/main/KIT_API.md))
+### Send ([`KIT_API.md` §5](https://github.com/barrelmaker97/obscura-native/blob/main/docs/KIT_API.md))
 
 | Method | Args | Returns | Platforms |
 |---|---|---|---|
@@ -382,7 +382,7 @@ the data is in the inbox, and nothing reaches the entry store until the app
 drains it there. Payload is intentionally minimal. **Do not** synthesize a fake
 entry id.
 
-This emit MAY be dropped under backpressure (SPEC §0.9 rule 4) — the row is the
+This emit MAY be dropped under backpressure (`NATIVE_CONTRACT.md` §0.9 rule 4) — the row is the
 delivery path. That is exactly why the app also drains on cold start,
 reconnect and foreground.
 

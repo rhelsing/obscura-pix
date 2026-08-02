@@ -1,7 +1,7 @@
 /**
  * Node-side test suite: the app's domain layer and the bridge boundary.
  *
- * `src/domain` is pure application logic (obscura-proto/KIT_API.md §8.2), with
+ * `src/domain` is pure application logic (`docs/DOMAIN_CONTRACT.md`), with
  * no React Native imports or mocks. `src/native` is the bridge wrapper and `src/state` the
  * effects that drive it, both tested against the in-memory kit double
  * (`src/native/__fixtures__/FakeObscuraBridge.ts`) that `jest.setup.ts` installs in place of the

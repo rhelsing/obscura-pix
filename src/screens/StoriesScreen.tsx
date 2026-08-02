@@ -67,7 +67,7 @@ export function StoryViewer({ route, navigation }: RootStackScreenProps<'StoryVi
     if (viewedIdsRef.current.has(story.id)) return;
     viewedIdsRef.current.add(story.id);
     // The viewed-receipt: the RECIPIENT writes it, so this is the case where an equal-timestamp
-    // merge collision is real rather than theoretical (SPEC §2.2). It goes back to the same
+    // merge collision is real rather than theoretical (DOMAIN_CONTRACT). It goes back to the same
     // conversation audience the pix came from, which is why `conversationId` must stay in the data.
     saveEntry('pix', { ...story.data, viewedAt: Date.now() }, story.id)
       .catch((e) => logError('viewonce.upsert:' + story.id, e));

@@ -6,7 +6,7 @@ import { withEntryLock } from './entryLock';
 import { logError } from '../utils/log';
 
 /**
- * Drain the kit's inbox into the app's own store (`obscura-proto/KIT_API.md` §3).
+ * Drain the kit's inbox into the app's own store (`obscura-native/docs/KIT_API.md` §3).
  *
  * `drain.ts` decides *what* should happen; this performs it. They are separate because the decision
  * is worth testing without a kit, and because the **order of the effects** is the part that can lose
@@ -56,7 +56,7 @@ function toDrainRow(row: InboxRow): DrainRow {
     entryId: row.entryId,
     op: row.op,
     sentAt: row.sentAt,
-    // Authenticated sender identity (SPEC §0.10).
+    // Server-stamped sender identity (NATIVE_CONTRACT §0.10).
     senderUserId: row.senderUserId,
     senderDeviceId: row.senderDeviceId,
     payload: row.payload,

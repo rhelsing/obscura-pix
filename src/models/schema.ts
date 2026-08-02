@@ -3,12 +3,12 @@
  *
  * Read by the APP, not by the kit: `drainInbox` takes each model's `sync` strategy as a merge rule
  * plus its authorization rule, and `writeEntry` takes its `audience`. The kit
- * does not parse application schemas (SPEC §0.4).
+ * does not parse application schemas (NATIVE_CONTRACT §0.4).
  *
  * ## Identity is never a payload field
  *
  * There is deliberately no `senderUsername` / `authorUsername` / `recipientUsername` here. A
- * payload-supplied name is attacker-chosen (SPEC §0.5, §0.10 rule 5).
+ * payload-supplied name is attacker-chosen (NATIVE_CONTRACT §0.5, §0.10 rule 5).
  * Attribution comes from the **authenticated** envelope, stamped into
  * `_authorUserId` by the drain or `writeEntry`; display names are resolved from
  * the friend graph at render time.

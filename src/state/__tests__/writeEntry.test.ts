@@ -4,7 +4,7 @@ import { Obscura } from '../../native/ObscuraModule';
 import { getFakeBridge } from '../../native/__fixtures__/reactNativeMock';
 
 /**
- * The write path (`obscura-proto/KIT_API.md` §5, §8.1).
+ * The write path (`obscura-native/docs/KIT_API.md` §5, §8.1).
  *
  * Tests application-owned id generation, storage, audience resolution, and fan-out.
  */
@@ -38,7 +38,7 @@ describe('storing and sending', () => {
     expect(stored).toHaveLength(1);
     expect(stored[0].id).toBe(id);
     // `_authorUserId` is stamped by `writeEntry`, not supplied by the caller: this device authored
-    // the write, so this user is the author (SPEC §0.5). Every screen reads it instead of the
+    // the write, so this user is the author (NATIVE_CONTRACT §0.5). Every screen reads it instead of the
     // payload-supplied identity.
     expect(JSON.parse(stored[0].data))
       .toEqual({ conversationId: convId, content: 'hi', _authorUserId: SELF });
@@ -157,7 +157,7 @@ describe('audience failures', () => {
   /**
    * The other half of the same guard, on the receive-echo path. A conversation between two people
    * who are not me is not one this device can address at all — the intersection alone would happily
-   * resolve it to both of them (SPEC §1.2).
+   * resolve it to both of them (`DOMAIN_CONTRACT.md`).
    */
   it('refuses a conversation this user is not part of', async () => {
     const theirs = [BOB, '44444444-4444-4444-8444-444444444444'].sort().join('_');

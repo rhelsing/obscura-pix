@@ -13,7 +13,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
  * a consumed pix can't be re-viewed.
  *
  * `sender` is passed in rather than read off `entries[0].data.senderUsername`, which is a name the
- * peer who sent the pix chose (SPEC §0.5). Both call sites already hold the `Friend` whose
+ * peer who sent the pix chose (NATIVE_CONTRACT §0.5). Both call sites already hold the `Friend` whose
  * conversation they are showing — an authenticated identity out of the kit's friend graph — so the
  * name comes from there.
  */

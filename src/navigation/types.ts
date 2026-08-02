@@ -47,7 +47,7 @@ export type RootStackParamList = {
 };
 
 export interface StoryGroup {
-  /** The AUTHENTICATED author (SPEC §0.5). The grouping key, and what `username` is resolved from. */
+  /** The transport-attributed author (NATIVE_CONTRACT §0.5). The grouping key for username resolution. */
   userId: string;
   /** Display only — resolved from the friend graph at build time, never read out of a payload. */
   username: string;
