@@ -14,23 +14,25 @@ reasons: libsignal ships only as `libsignal-java` / `libsignal-swift` (no suppor
 and background push processing cannot rely on a React Native runtime. Everything
 that is not forced native by those constraints belongs in this repo.
 
-The normative brief is [`SPEC.md` §0 — The kit boundary](../obscura-native/proto/SPEC.md),
-plus [`KIT_API.md`](../obscura-native/proto/KIT_API.md) §3 (the inbox), §4 (message kinds), §5 (send) and
-§8 (what this means for pix). Read them before changing anything that crosses the bridge.
+The native boundary is
+[`NATIVE_CONTRACT.md`](../obscura-native/docs/NATIVE_CONTRACT.md) plus
+[`KIT_API.md`](../obscura-native/docs/KIT_API.md). Application-owned behavior is
+normative in [`docs/DOMAIN_CONTRACT.md`](docs/DOMAIN_CONTRACT.md). Read all
+three before changing anything that crosses the bridge.
 
 The application-owned implementations are:
 
 | Responsibility | File |
 |---|---|
-| Merge (`APPEND` / `REPLACE`, SPEC §2.1–2.2, §2.4) | `src/domain/merge.ts` |
-| Audience resolution (SPEC §1.2–1.3) | `src/domain/audience.ts` |
+| Merge (`APPEND` / `REPLACE`) | `src/domain/merge.ts` |
+| Audience resolution | `src/domain/audience.ts` |
 | Inbox classification, authorization, attribution, and merge | `src/domain/drain.ts` |
 | Ordered storage/send/drain effects | `src/state/{drainInbox,writeEntry,store}.ts` |
 
 `npm test` covers the domain, native facade, and state layers. Renderer behavior
 is outside that suite; see `jest.config.js`.
 
-Nothing expires on either platform; `KIT_API.md` §8.3 records that gap.
+Nothing expires on either platform; `DOMAIN_CONTRACT.md` records that gap.
 
 ## The rule
 
@@ -46,7 +48,7 @@ from native.
 > **The envelope tells you who really sent this. The payload tells you what they chose to say.**
 
 An inbox row carries `senderUserId` and `senderDeviceId`, both stamped by the server from a
-device-scoped token and unforgeable by the sender (SPEC §0.10). Everything the app decides about
+device-scoped token and unforgeable by the sender (`NATIVE_CONTRACT.md` §0.10). Everything the app decides about
 *who* — attribution, authorization, display names — resolves from those, never from a payload field.
 
 - `src/domain/drain.ts` stamps `_authorUserId` from the envelope and **authorizes** the write:

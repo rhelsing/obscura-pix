@@ -72,7 +72,7 @@ describe('a local write racing an incoming drain', () => {
   });
 
   /**
-   * A local write must beat a peer row that is ahead of our clock. SPEC §2.4 permits a stored
+   * A local write must beat a peer row that is ahead of our clock. NATIVE_CONTRACT §2.4 permits a stored
    * `sentAt` up to `now + 60s`, so this is reachable with an ordinary skewed clock — and without the
    * step-past the write wins locally and loses on every other device.
    */

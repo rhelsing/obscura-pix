@@ -29,10 +29,10 @@ React Native (shared UI, src/)
   └── iOS: ObscuraBridge.swift → obscura-native/swift
 ```
 
-Model semantics are defined once in `src/models/schema.ts` and read by the **app alone** — the kit
-does not parse an application schema (`SPEC.md` §0.4), so nothing about a model crosses the
-bridge. The bridge surface (methods + events) is documented in `docs/BRIDGE.md` and treated as the
-cross-platform contract.
+Model semantics are defined once in `src/models/schema.ts` and
+[`docs/DOMAIN_CONTRACT.md`](docs/DOMAIN_CONTRACT.md), and read by the **app
+alone**. Nothing about a model crosses the bridge. The bridge surface (methods
++ events) is documented in `docs/BRIDGE.md`.
 
 ## Setup
 
@@ -57,8 +57,8 @@ A Firebase `google-services.json` is required for FCM; place it at `android/app/
 ```
 src/
   domain/                 — the app's logic, pure and fully tested
-    merge.ts              — APPEND / REPLACE (SPEC §2.1-2.2, §2.4)
-    audience.ts           — who a write goes to (SPEC §1.2-1.3)
+    merge.ts              — APPEND / REPLACE (DOMAIN_CONTRACT)
+    audience.ts           — who a write goes to (DOMAIN_CONTRACT)
     drain.ts              — classify, authorize, attribute, merge an inbox batch
   state/                  — the effects those decisions drive
     drainInbox.ts         — peek → write → consume | discard

@@ -6,7 +6,7 @@ import {
 } from '../audience';
 
 /**
- * Audience confidentiality guards required by SPEC §1.
+ * Audience confidentiality guards required by DOMAIN_CONTRACT.
  *
  * The fixture expectations include self; `resolveAudience` excludes it because
  * the kit self-syncs to the author's other devices.
@@ -144,7 +144,7 @@ describe('resolution the app actually uses', () => {
   });
 
   /**
-   * SPEC §1.3: splitting on `_` MUST yield exactly two NON-EMPTY parts. Filtering the empties out
+   * DOMAIN_CONTRACT: splitting on `_` MUST yield exactly two NON-EMPTY parts. Filtering empties out
    * before counting accepts every one of these as two-party.
    */
   it.each(['uMe__uB', '_uMe_uB', 'uMe_uB_', '__uMe___uB__', '_uMe', 'uMe_'])(

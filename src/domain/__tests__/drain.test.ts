@@ -2,7 +2,7 @@ import { planDrain, type DrainRow, type ModelRules } from '../drain';
 import type { Entry } from '../merge';
 
 /**
- * The drain plan (`obscura-proto/KIT_API.md` §3, §4.1, SPEC §0.5, §0.10).
+ * The drain plan (`KIT_API.md` §3, §4.1 and `DOMAIN_CONTRACT.md`).
  *
  * Two subjects, and both are about a message the app cannot undo:
  *
@@ -85,7 +85,7 @@ describe('attribution — who an entry is from', () => {
    * **Attack A.** A stranger sends a `story` claiming to be Alice. Before this, `StoriesRow` grouped
    * on `s.data.authorUsername` and it appeared in the feed under Alice's circle. Now the claim is
    * simply overwritten with the userId the server stamped on the envelope, which the sender cannot
-   * forge (SPEC §0.10).
+   * forge (NATIVE_CONTRACT §0.10).
    */
   it('overwrites a payload-claimed author with the authenticated sender', () => {
     const r = row({
@@ -247,7 +247,7 @@ describe('rows the app cannot process', () => {
   });
 
   /**
-   * `senderDeviceId` is the REPLACE tie-break and must be the AUTHENTICATED device (SPEC §0.10
+   * `senderDeviceId` is the REPLACE tie-break and must be the session-attributed device (NATIVE_CONTRACT §0.10
    * rule 4). Without it two devices receiving the same pair of writes in different orders converge
    * to different states — silently, and invisibly to single-device testing.
    */
@@ -296,7 +296,7 @@ describe('merging within a batch', () => {
   /**
    * Two rows touching one entry must resolve against **each other**, not just against stored state.
    * Otherwise the second silently wins on arrival order rather than on the merge rule — the
-   * divergence `SPEC.md` §2.2 describes, reachable inside a single `peek`.
+   * divergence `DOMAIN_CONTRACT.md` describes, reachable inside a single `peek`.
    */
   it('resolves two rows for the same entry by the rule, not by arrival order', () => {
     const older = row({

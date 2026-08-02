@@ -1,5 +1,5 @@
 /**
- * Draining the kit's inbox (`obscura-proto/KIT_API.md` §3).
+ * Draining the kit's inbox (`obscura-native/docs/KIT_API.md` §3).
  *
  * The kit stores opaque bytes; the application decides what they mean.
  *
@@ -42,7 +42,7 @@ export interface DrainRow {
   op: string | null;
   sentAt: number | null;
   /**
-   * The sending **user**, authenticated by the device-scoped session (SPEC §0.10).
+   * The sending **user**, stamped by transport and accepted after Signal decryption.
    */
   senderUserId: string;
   /** The device whose Signal session decrypted this — cryptographic attribution, and the tie-break. */
@@ -106,7 +106,7 @@ function authorize(
   if (rules.conversationField !== undefined) {
     const raw = data[rules.conversationField];
     if (typeof raw !== 'string') return 'unauthorized-sender';
-    // Same canonical-form rule as the send side (SPEC §1.3, `audience.ts`), applied to the other
+    // Same canonical-form rule as the send side (`DOMAIN_CONTRACT.md`, `audience.ts`), applied to the other
     // direction: exactly two parts, and they must be ME and the person who actually sent this. A
     // conversation between two other people is not mine to store, and a conversation between me and
     // Alice is not something a stranger may write into.
@@ -166,7 +166,7 @@ export function planDrain(
     }
 
     // MODEL_SYNC-derived fields the merge cannot work without. `senderDeviceId` is the REPLACE
-    // tie-break and must be the AUTHENTICATED device (SPEC §0.10 rule 4) — a row without one cannot
+    // tie-break and must be the session-attributed device (NATIVE_CONTRACT §0.10 rule 4) — a row without one cannot
     // be ordered deterministically, so storing it would make two devices converge differently.
     // `senderUserId` is the authorization and attribution input: without it there is nothing to
     // check a claim against and nothing to attribute the entry to.

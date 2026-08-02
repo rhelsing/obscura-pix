@@ -8,12 +8,12 @@ import { withEntryLock } from './entryLock';
 import { logError } from '../utils/log';
 
 /**
- * Writing an entry: store it locally, then send it (`obscura-proto/KIT_API.md` §5, §8.1).
+ * Writing an entry: store it locally, then send it (`obscura-native/docs/KIT_API.md` §5, §8.1).
  *
  * This replaces `Obscura.createEntry` / `Obscura.upsertEntry`, and the difference is not cosmetic —
  * those were one call that did four things inside the kit (generate an id, store, resolve an
  * audience, fan out). Three of the four now happen here, because three of the four are application
- * decisions the kit is forbidden to make (SPEC §0.4).
+ * decisions the kit is forbidden to make (NATIVE_CONTRACT §0.4).
  *
  * ## The order, and why
  *
@@ -70,7 +70,7 @@ export function newEntryId(model: string): string {
  * A timestamp that is guaranteed to win against what is already stored for this entry.
  *
  * Normally just `Date.now()`. When an existing row is somehow ahead of us — a peer's clock skew
- * within SPEC §2.4's 60-second tolerance, or our own clock moving backwards — it steps one
+ * within NATIVE_CONTRACT §2.4's 60-second tolerance, or our own clock moving backwards — it steps one
  * millisecond past it instead. `+1` rather than a larger jump because the goal is only to win this
  * comparison, not to poison every future one.
  */
@@ -128,7 +128,7 @@ export async function writeEntry(args: WriteEntryArgs): Promise<string> {
   //
   // `entryPut` is a BLIND upsert (§8.1) — the app decides who wins — so a lower `sentAt` silently
   // wins LOCALLY while losing everywhere else, which is the worst possible outcome: the user sees
-  // their edit applied and no peer ever does. That is not hypothetical. SPEC §2.4 lets a stored
+  // their edit applied and no peer ever does. That is not hypothetical. NATIVE_CONTRACT §2.4 lets a stored
   // `sentAt` run up to `now + 60s` (the kit clamps to exactly that), so a peer with a fast clock
   // leaves a row 45 seconds in our future; anything we write inside that window has a lower
   // timestamp and loses every REPLACE comparison on every other device. The same happens between
@@ -144,7 +144,7 @@ export async function writeEntry(args: WriteEntryArgs): Promise<string> {
   // lock across it would let one slow recipient stall every write in the app.
   const sentAt = await withEntryLock(async () => {
     const next = await nextSentAt(model, id);
-    // The author's own device, which is what the merge tie-break compares (SPEC §0.10 rule 4). For a
+    // The author's own device, which is what the merge tie-break compares (NATIVE_CONTRACT §0.10 rule 4). For a
     // local write this device IS the authenticated author, so nothing needs authenticating.
     await Obscura.entryPut(model, id, payload, next, myDeviceId);
     return next;

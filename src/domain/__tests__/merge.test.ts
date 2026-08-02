@@ -5,7 +5,7 @@ import { mergeAll, merge, type Entry } from '../merge';
  *
  * These exist because mutation-testing the vector suite found a hole: changing APPEND from
  * "first write wins" to "last write wins" passed all 13 vector-driven tests. The vectors' GSet
- * idempotence case uses a duplicate id carrying IDENTICAL data — because `SPEC.md` §2.1 argues
+ * idempotence case uses a duplicate id carrying IDENTICAL data — because `DOMAIN_CONTRACT.md` requires
  * GSet entries are immutable by construction — so the two behaviours are indistinguishable there.
  *
  * A hostile peer can replay an existing id with different content, so
@@ -78,7 +78,7 @@ describe('REPLACE', () => {
 describe('convergence', () => {
   // The property the whole design rests on: two devices that receive the same writes in different
   // orders must reach the same state. Single-device testing cannot see a violation, which is why
-  // SPEC §2.2 calls the tie-break mandatory.
+  // DOMAIN_CONTRACT calls the tie-break mandatory.
   const ops: Entry[] = [
     entry({ id: 'p', sentAt: 5, authorDeviceId: 'devA', data: { v: 'a' } }),
     entry({ id: 'p', sentAt: 5, authorDeviceId: 'devB', data: { v: 'b' } }),

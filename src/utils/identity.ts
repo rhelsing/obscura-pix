@@ -1,5 +1,5 @@
 /**
- * Turning an authenticated userId into something to put on screen (SPEC §0.5, KIT_API §8.3).
+ * Turning a transport-attributed userId into something to put on screen (NATIVE_CONTRACT §0.5).
  *
  * > The envelope tells you *who really sent this*. The payload tells you *what they chose to say*.
  * > Never confuse the two.

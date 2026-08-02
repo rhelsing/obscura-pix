@@ -224,7 +224,7 @@ export async function saveEntry(
 
   // The session loads asynchronously after `authed` flips, and a write in that window is quietly
   // wrong rather than failing: an empty `authorDeviceId` sorts LOWEST, so it loses every REPLACE
-  // tie-break on every device (SPEC §2.2), and an empty `selfUserId` disables the self-filter in
+  // tie-break on every device (DOMAIN_CONTRACT), and an empty `selfUserId` disables the self-filter in
   // `resolveAudience`. Both are invisible — the entry stores and sends, it just never wins and may
   // name the author as a recipient. Refuse instead.
   if (s.myUserId === '' || s.myDeviceId === '') {
@@ -348,7 +348,7 @@ export function applyObscuraEvent(event: ObscuraEvent): void {
  */
 export async function loadSession(): Promise<void> {
   // `obscuraSchema` stays in the app: `drainInbox` reads its merge and
-  // authorization rules, and `writeEntry` reads its audience (SPEC §0.4).
+  // authorization rules, and `writeEntry` reads its audience (DOMAIN_CONTRACT).
   const store = useStore.getState();
   await Promise.all([
     Obscura.getUserId()
@@ -376,7 +376,7 @@ export async function loadSession(): Promise<void> {
   // `messageReceived` event is emitted for those rows. Cold-start sync discovers
   // them independently of the best-effort event path.
   //
-  // The emit is best-effort by design (SPEC §0.9 rule 4 permits dropping the NOTIFICATION, since
+  // The emit is best-effort by design (NATIVE_CONTRACT §0.9 rule 4 permits dropping the notification, since
   // the row is the delivery path) — which is exactly why the row must have a trigger that does not
   // depend on the notification.
   //
