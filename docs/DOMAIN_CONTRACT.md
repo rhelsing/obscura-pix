@@ -24,7 +24,7 @@ application fields or model names.
 | Model | Merge | Audience | Inbound authorization |
 |---|---|---|---|
 | `directMessage` | APPEND | conversation | conversation names self and sender |
-| `story` | APPEND | all accepted friends | authenticated sender is the author |
+| `story` | APPEND | all accepted friends | transport-attributed sender is the author |
 | `pix` | REPLACE | conversation | conversation names self and sender |
 | `profile` | REPLACE | all accepted friends | ID is `profile_<senderUserId>` |
 
@@ -61,8 +61,9 @@ Delivery is not authorization: any authenticated account may address a device.
 The drain authorizes a write using the inbox row's transport identity, never a
 payload-supplied identity.
 
-- Conversation-scoped entries must name exactly the local user and
-  `senderUserId`.
+- A remote conversation entry must name the local user and `senderUserId`.
+- A self-sync conversation entry (`senderUserId` is the local user) must name
+  the local user; its other participant is the conversation peer.
 - A profile entry ID must equal `profile_<senderUserId>`.
 - Story attribution uses `senderUserId`; story payloads have no separate
   author-binding field.
