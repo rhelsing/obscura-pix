@@ -29,8 +29,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-        with:
-          submodules: recursive
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
@@ -58,19 +56,9 @@ jobs:
     steps:
       - name: Checkout pix
         uses: actions/checkout@v7
-
-      # The Android build consumes the kit through `settings.gradle`'s
-      # composite build. Checkout next to pix so Gradle substitutes the local
-      # `:lib` project and catches API or toolchain drift against kit main.
-      # iOS is not CI-gated; see docs/IOS_PARITY.md.
-      - name: Checkout obscura-native
-        uses: actions/checkout@v7
         with:
-          repository: barrelmaker97/obscura-native
-          path: obscura-native
-          # Kotlin generates protobuf code from the root proto submodule; without
-          # this the composite build fails codegen (Unresolved reference on
-          # generated proto types).
+          # Native is pinned by Pix's gitlink and contains the transport proto
+          # submodule required by Kotlin protobuf codegen.
           submodules: recursive
 
       - uses: actions/setup-node@v7
@@ -118,9 +106,3 @@ jobs:
       - name: Assemble release APK
         run: ./gradlew :app:assembleRelease --no-daemon
         working-directory: android
-        env:
-          # The native repo is checked out at $GITHUB_WORKSPACE/obscura-native;
-          # this build runs from android/, so its Kotlin package is at
-          # ../obscura-native/kotlin. Locally settings.gradle defaults to the
-          # sibling checkout at ../../obscura-native/kotlin.
-          OBSCURA_KIT_PATH: ../obscura-native/kotlin

@@ -44,9 +44,8 @@ alone**. Nothing about a model crosses the bridge. The bridge surface (methods
 ### Install + run
 
 ```bash
-git clone --recurse-submodules \
-  https://github.com/barrelmaker97/obscura-native ../obscura-native
-npm install
+git submodule update --init --recursive
+npm ci
 npx react-native run-android
 ```
 
@@ -76,6 +75,7 @@ android/
     ObscuraSession.kt      — Process-scoped owner of the kit client
     ObscuraMessagingService.kt — FCM silent-push receiver
     NotificationHelper.kt  — Local notification posting
+obscura-native/            — Pinned native source submodule
 docs/
   BRIDGE.md               — Cross-platform bridge contract
 tools/push-sender/        — Kotlin CLI for triggering test pushes
@@ -88,11 +88,23 @@ Native events push reactively to JS — no polling. Friends, connection state, a
 
 JS changes hot-reload via Metro. Native (Kotlin) changes require a rebuild.
 
+Native dependency updates are explicit gitlink changes:
+
+```bash
+git -C obscura-native fetch origin
+git -C obscura-native switch --detach <full-commit-sha>
+git -C obscura-native submodule update --init --recursive
+git add obscura-native
+```
+
+For coordinated development, work on a branch inside `obscura-native/`, land
+that change there first, and then update Pix's gitlink to the resulting commit.
+
 `npm test` runs the Node-side suite — `src/domain`, `src/native` and `src/state` against the
 in-memory kit double — and CI runs it on every PR. Anything that RENDERS is out
 of scope for it; `jest.config.js` explains why.
 
 ## Dependencies
 
-- [obscura-native](https://github.com/barrelmaker97/obscura-native) — Kotlin and Swift native encrypted data layers
+- [obscura-native](https://github.com/barrelmaker97/obscura-native) — pinned Kotlin and Swift native encrypted data layers
 - [obscura-server](https://github.com/barrelmaker97/obscura-server) — server (dumb relay, never sees contents)
