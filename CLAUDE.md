@@ -3,7 +3,7 @@
 ## What this is
 
 The Obscura app: React Native (iOS + Android), with native platform layers in
-the sibling `obscura-native` repository (`kotlin/` and `swift/`).
+the pinned `obscura-native` submodule (`kotlin/` and `swift/`).
 
 **This repo is where the domain lives.** What a message is, what a pix is, who a write goes to,
 what a notification says, how a conversation is rendered — all of it belongs here, in TypeScript,
@@ -15,8 +15,10 @@ and background push processing cannot rely on a React Native runtime. Everything
 that is not forced native by those constraints belongs in this repo.
 
 The native boundary is
-[`NATIVE_CONTRACT.md`](../obscura-native/docs/NATIVE_CONTRACT.md) plus
-[`KIT_API.md`](../obscura-native/docs/KIT_API.md). Application-owned behavior is
+[`NATIVE_CONTRACT.md`](https://github.com/barrelmaker97/obscura-native/blob/a0d412b56e7104f55d788fd5babff844c313c3bb/docs/NATIVE_CONTRACT.md)
+plus
+[`KIT_API.md`](https://github.com/barrelmaker97/obscura-native/blob/a0d412b56e7104f55d788fd5babff844c313c3bb/docs/KIT_API.md).
+Application-owned behavior is
 normative in [`docs/DOMAIN_CONTRACT.md`](docs/DOMAIN_CONTRACT.md). Read all
 three before changing anything that crosses the bridge.
 
@@ -98,9 +100,9 @@ viewed-**receipt** wearing a CRDT costume.
 - **No iOS CI job.** The workflow is `typecheck`, `domain-tests`, `lint`, `android`. The Swift
   bridge and this repo's one shared TypeScript surface can diverge without anything going red.
 - The Android package is consumed via a **Gradle composite build**
-  (`android/settings.gradle` → `../../obscura-native/kotlin`) and the Swift
-  package via local SPM at `../../obscura-native/swift`. Native changes land
-  immediately—there is no version-bump buffer.
+  (`android/settings.gradle` → `../obscura-native/kotlin`) and the Swift
+  package via local SPM at `../obscura-native/swift`. Native revisions are
+  pinned by the submodule gitlink and updated explicitly.
 
 ## Build
 
