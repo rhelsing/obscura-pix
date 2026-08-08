@@ -1,7 +1,7 @@
 # push-sender
 
 End-to-end push notification tester. Registers a throwaway Obscura user,
-befriends your phone account, and sends real encrypted TEXT messages —
+befriends your phone account, and sends real encrypted `directMessage` entries —
 exercising the full server → FCM → device push pipeline.
 
 ## Build
@@ -21,8 +21,10 @@ State (sender identity + Signal session DB) is persisted in
 push-sender init
 #   → prints userId/username; saved to ~/.cache/obscura-push-tester/sender.json
 
-# 2. Send a friend request to your phone account
-#    (find your userId in the Obscura app or postgres)
+# 2. Send a friend request to your phone account.
+#    NOTE: this takes a raw userId, NOT the app's share code. The code shown in
+#    the app is base64 of {"u":"<userId>","n":"<username>"} — decode it first:
+#      echo '<code>' | base64 -d
 push-sender befriend 019ef27a-dd95-782b-b2e5-349bc3486398 <yourUsername>
 
 # 3. Open the app on the phone, accept the friend request.
@@ -50,6 +52,20 @@ Tags filtered: `ObscuraBridge`, `ObscuraMessagingService`, `NotificationHelper`,
 ## Notes
 
 - Targets `OBSCURA_API_URL` (default `https://obscura.barrelmaker.dev`).
-- Uses `com.obscura:obscura-kit:0.1.0` from mavenLocal. If you change the kit,
-  re-publish with `./gradlew publishToMavenLocal -x test` in
-  `obscura-native/kotlin`.
+- The kit is a **Gradle composite build** against the pinned `obscura-native`
+  submodule (`settings.gradle.kts` → `../../obscura-native/kotlin`), matching
+  `android/settings.gradle`. Kit edits show up on the next build — there is no
+  publish step. `OBSCURA_KIT_PATH` overrides the path.
+
+  This replaced a mavenLocal dependency that resolved whatever jar was in
+  `~/.m2`, drifted two months behind the kit, and turned API breaks into
+  runtime surprises. The substitution in `settings.gradle.kts` must stay
+  explicit: the kit declares `groupId` only inside its `publishing` block, so
+  Gradle's automatic coordinate matching does not fire, and a bare
+  `includeBuild` silently falls back to mavenLocal.
+- Messages go through `client.send(recipientUserIds, …)` with a JSON payload of
+  `{ conversationId, content }`, matching `directMessage` in
+  `src/models/schema.ts`. `_authorUserId` is deliberately not sent — the app's
+  drain stamps it from the envelope. `conversationId` must be the canonical
+  sorted `userIdA_userIdB` form or the app's inbound authorization discards the
+  entry.
