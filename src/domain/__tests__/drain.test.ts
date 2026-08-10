@@ -186,6 +186,23 @@ describe('authorization — who may write what', () => {
     ]);
   });
 
+  /**
+   * The other half of the send side's guard. DOMAIN_CONTRACT: a reversed form MUST be rejected
+   * "rather than guessing an audience" — and on this side, guessing files a peer's entry under a
+   * conversation id no participant would ever compute, so the screens never show it and the row is
+   * stored anyway.
+   */
+  it('refuses a conversation-scoped entry whose id is reversed', () => {
+    const r = row({
+      entryId: 'dm_reversed',
+      payload: JSON.stringify({ content: 'x', conversationId: CONV.split('_').reverse().join('_') }),
+    });
+
+    expect(planDrain([r], models, empty, SELF).discard).toEqual([
+      { id: r.id, reason: 'unauthorized-sender' },
+    ]);
+  });
+
   /** Self-sync: my own other device is a legitimate writer for both sides of the conversation. */
   it('accepts an entry synced from this user\'s own other device', () => {
     const r = row({ entryId: 'dm_self', senderUserId: SELF, senderDeviceId: 'device_other' });

@@ -269,11 +269,31 @@ object ObscuraSession {
         }
     }
 
-    private fun classifyForNotification(msg: ReceivedMessage, modelName: String?): String? = when {
-        msg.type == "MODEL_SYNC" && modelName == "pix" -> "New pix"
-        msg.type == "MODEL_SYNC" && modelName == "directMessage" -> "New message"
-        msg.type == "FRIEND_REQUEST" -> "New friend request"
-        else -> null
+    /**
+     * Generic notification copy for an incoming message, or null for anything that must not notify.
+     *
+     * These model names are `src/models/schema.ts`'s, hardcoded here because a notification has to be
+     * postable with no JS runtime. That makes them a copy, so **every declared model is listed** and
+     * an unrecognised one falls through to a generic notification rather than to silence: a model
+     * renamed in `schema.ts` would otherwise stop notifying with nothing to notice it — no type
+     * error, no failing test, just a user who stops hearing about their messages.
+     *
+     * Over-notifying once is recoverable. Silently not notifying is what this shape is guarding.
+     */
+    private fun classifyForNotification(msg: ReceivedMessage, modelName: String?): String? {
+        if (msg.type == "FRIEND_REQUEST") return "New friend request"
+        if (msg.type != "MODEL_SYNC") return null
+
+        return when (modelName) {
+            "pix" -> "New pix"
+            "directMessage" -> "New message"
+            // Declared, and deliberately silent: neither is something the user needs woken for.
+            "story", "profile" -> null
+            else -> {
+                Log.w(TAG, "Notification: unrecognised model '$modelName' — is it renamed in schema.ts?")
+                "New message"
+            }
+        }
     }
 
     // ─── FCM cold-start path ────────────────────────────────────────────────

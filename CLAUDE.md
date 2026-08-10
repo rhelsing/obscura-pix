@@ -27,12 +27,14 @@ The application-owned implementations are:
 | Responsibility | File |
 |---|---|
 | Merge (`APPEND` / `REPLACE`) | `src/domain/merge.ts` |
+| Canonical conversation id — construct and parse | `src/domain/conversation.ts` |
 | Audience resolution | `src/domain/audience.ts` |
 | Inbox classification, authorization, attribution, and merge | `src/domain/drain.ts` |
+| Model declarations and their interpretation | `src/models/schema.ts` |
 | Ordered storage/send/drain effects | `src/state/{drainInbox,writeEntry,store}.ts` |
 
-`npm test` covers the domain, native facade, and state layers. Renderer behavior
-is outside that suite; see `jest.config.js`.
+`npm test` covers the domain, schema, native facade, and state layers. Renderer
+behavior is outside that suite; see `jest.config.js`.
 
 Nothing expires on either platform; `DOMAIN_CONTRACT.md` records that gap.
 

@@ -320,10 +320,3 @@ export function onObscuraEvent(handler: (event: ObscuraEvent) => void): () => vo
   const sub: EmitterSubscription = em.addListener('ObscuraEvent', handler);
   return () => sub.remove();
 }
-
-// ─── Helpers ─────────────────────────────────────────────
-
-/** Canonical conversationId — same from both sides. Matches iOS + Android. */
-export function conversationId(myUserId: string, friendUserId: string): string {
-  return [myUserId, friendUserId].sort().join('_');
-}

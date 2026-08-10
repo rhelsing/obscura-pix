@@ -57,7 +57,7 @@ private suspend fun connect(c: ObscuraClient) {
     }
 }
 
-/** Canonical conversationId — same from both sides. Matches src/native/ObscuraModule.ts. */
+/** Canonical conversationId — same from both sides. Matches src/domain/conversation.ts. */
 private fun conversationId(myUserId: String, friendUserId: String): String =
     listOf(myUserId, friendUserId).sorted().joinToString("_")
 

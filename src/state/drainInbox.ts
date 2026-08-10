@@ -1,7 +1,7 @@
 import { Obscura, type InboxRow } from '../native/ObscuraModule';
-import { planDrain, type DrainRow, type ModelRules } from '../domain/drain';
+import { planDrain, type DrainRow } from '../domain/drain';
 import type { Entry } from '../domain/merge';
-import { obscuraSchema } from '../models/schema';
+import { modelRules } from '../models/schema';
 import { withEntryLock } from './entryLock';
 import { logError } from '../utils/log';
 
@@ -22,31 +22,6 @@ import { logError } from '../utils/log';
  * next drain reprocesses them — which is safe precisely because `peek` is side-effect free and
  * `merge` is idempotent.
  */
-
-/**
- * `schema.ts` translated into what the drain needs per model: the merge rule (`gset` is immutable,
- * `lww` is last-writer-wins) and the authorization rules.
- *
- * The authorization rules are derived from the same declarations the *send* side uses, so the two
- * directions cannot disagree: a model whose audience is a conversation is exactly a model whose
- * inbound entries must name a conversation between this user and the sender.
- */
-function modelRules(): Map<string, ModelRules> {
-  const rules = new Map<string, ModelRules>();
-  for (const [model, config] of Object.entries(obscuraSchema)) {
-    const c = config as {
-      sync?: string;
-      audience?: { kind: string; field?: string };
-      ownerIdPrefix?: string;
-    };
-    rules.set(model, {
-      merge: c.sync === 'gset' ? 'APPEND' : 'REPLACE',
-      conversationField: c.audience?.kind === 'conversation' ? c.audience.field : undefined,
-      ownerIdPrefix: c.ownerIdPrefix,
-    });
-  }
-  return rules;
-}
 
 function toDrainRow(row: InboxRow): DrainRow {
   return {

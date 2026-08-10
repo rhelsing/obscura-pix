@@ -6,7 +6,8 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { useHeaderHeight } from '@react-navigation/elements';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Obscura, onObscuraEvent, conversationId, type ModelEntry } from '../native/ObscuraModule';
+import { Obscura, onObscuraEvent, type ModelEntry } from '../native/ObscuraModule';
+import { conversationId } from '../domain/conversation';
 import { useSession, useModelEntries, saveEntry } from '../state/store';
 import { AUTHOR_USER_ID } from '../models/schema';
 import { authorOf } from '../utils/identity';

@@ -30,6 +30,7 @@
  * and keeps the effects in one place (`inboxDrain.ts`) where their ordering is visible.
  */
 
+import { parseConversationId } from './conversation';
 import { merge, type Entry, type MergeRule } from './merge';
 import { AUTHOR_USER_ID } from '../models/schema';
 
@@ -106,12 +107,13 @@ function authorize(
   if (rules.conversationField !== undefined) {
     const raw = data[rules.conversationField];
     if (typeof raw !== 'string') return 'unauthorized-sender';
-    // Same canonical-form rule as the send side (`DOMAIN_CONTRACT.md`, `audience.ts`), applied to the other
-    // direction: exactly two parts, and they must be ME and the person who actually sent this. A
-    // conversation between two other people is not mine to store, and a conversation between me and
-    // Alice is not something a stranger may write into.
-    const participants = raw.split('_');
-    if (participants.length !== 2) return 'unauthorized-sender';
+    // FORMAT, owned by `conversation.ts` and shared with the send side (`audience.ts`) so the two
+    // directions cannot disagree about what a conversation id is.
+    const participants = parseConversationId(raw);
+    if (participants === null) return 'unauthorized-sender';
+    // MEMBERSHIP, and it is stricter here than on the send side: the two participants must be ME and
+    // the person who actually sent this. A conversation between two other people is not mine to
+    // store, and a conversation between me and Alice is not something a stranger may write into.
     if (!participants.includes(selfUserId)) return 'unauthorized-sender';
     if (!participants.includes(row.senderUserId)) return 'unauthorized-sender';
   }

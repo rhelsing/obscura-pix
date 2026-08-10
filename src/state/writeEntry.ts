@@ -1,9 +1,6 @@
 import { Obscura } from '../native/ObscuraModule';
-import {
-  resolveAudience, DirectRoutingUnresolved,
-  type AudienceConfig, type AudienceFriend,
-} from '../domain/audience';
-import { obscuraSchema, AUTHOR_USER_ID } from '../models/schema';
+import { resolveAudience, type AudienceFriend } from '../domain/audience';
+import { obscuraSchema, audienceFor, AUTHOR_USER_ID } from '../models/schema';
 import { withEntryLock } from './entryLock';
 import { logError } from '../utils/log';
 
@@ -33,25 +30,6 @@ import { logError } from '../utils/log';
  * §5 property 2: `send` produces no inbox row for the sender, by design. So this is the *only* place
  * an outgoing entry gets stored — there is no loopback to rely on, and the drain will never see it.
  */
-
-/**
- * The audience `schema.ts` declares for a model.
- *
- * **Throws on a model the schema does not declare**, and that is the point. Before this check, a
- * lookup miss and a deliberate "no audience declared" were indistinguishable — both produced
- * `undefined`, which `resolveAudience` treats as *broadcast to every friend*. So a single-character
- * typo in a model name turned a 1:1 message into a broadcast, silently. An unknown model is a bug in
- * the app, and a bug must not fail open into a wider audience.
- */
-function audienceFor(model: string): AudienceConfig | undefined {
-  if (!Object.prototype.hasOwnProperty.call(obscuraSchema, model)) {
-    throw new DirectRoutingUnresolved(
-      `'${model}' is not declared in schema.ts, so its audience is unknown`,
-    );
-  }
-  const config = (obscuraSchema as Record<string, { audience?: AudienceConfig }>)[model];
-  return config?.audience;
-}
 
 /**
  * A new entry id.
