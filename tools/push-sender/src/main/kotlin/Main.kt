@@ -2,6 +2,7 @@ import com.obscura.kit.AuthState
 import com.obscura.kit.ConnectionState
 import com.obscura.kit.ObscuraClient
 import com.obscura.kit.ObscuraConfig
+import com.obscura.kit.stores.FriendData
 import com.obscura.kit.stores.FriendStatus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -56,6 +57,52 @@ private suspend fun connect(c: ObscuraClient) {
     }
 }
 
+/** Canonical conversationId — same from both sides. Matches src/native/ObscuraModule.ts. */
+private fun conversationId(myUserId: String, friendUserId: String): String =
+    listOf(myUserId, friendUserId).sorted().joinToString("_")
+
+/**
+ * Send a `directMessage` entry the pix app will actually render.
+ *
+ * Uses the kit's `send(recipientUserIds, …)` — the caller names the recipients and hands over an
+ * opaque payload. `sendModelSync(friendUsername, …)` is the older path where the kit resolves the
+ * audience from an application concept, which SPEC §0.4 forbids.
+ *
+ * The payload is JSON bytes: `sendEntry` copies them straight into the modelSync `data` field,
+ * which is exactly what `sendModelSync` produced via `JSONObject(data).toString().toByteArray()`.
+ *
+ * Fields must match `src/models/schema.ts` → `directMessage`: `conversationId` and `content`.
+ * `_authorUserId` is NOT sent — the app's drain stamps it from the envelope, which is the only
+ * unforgeable source of who sent this.
+ */
+private suspend fun sendDirectMessage(c: ObscuraClient, friend: FriendData, text: String) {
+    val myUserId = c.userId ?: error("No userId — not authenticated")
+    val payload = JSONObject()
+        .put("conversationId", conversationId(myUserId, friend.userId))
+        .put("content", text)
+        .toString()
+        .toByteArray()
+
+    c.send(
+        recipientUserIds = listOf(friend.userId),
+        modelKey = "directMessage",
+        entryId = java.util.UUID.randomUUID().toString(),
+        op = "CREATE",
+        sentAt = System.currentTimeMillis(),
+        payload = payload,
+    )
+}
+
+/** Resolve an ACCEPTED friend by username, or exit with a usable message. */
+private suspend fun requireFriend(c: ObscuraClient, username: String): FriendData =
+    c.friendList.value.find { it.username == username && it.status == FriendStatus.ACCEPTED }
+        ?: run {
+            System.err.println("Not friends with $username (or request not accepted yet).")
+            System.err.println("Run `befriend`, then accept it on the phone, then `friends` to confirm.")
+            c.disconnect()
+            kotlin.system.exitProcess(1)
+        }
+
 private fun usage(): Nothing {
     System.err.println(
         """
@@ -67,6 +114,7 @@ private fun usage(): Nothing {
           befriend <userId> <username>      Send a friend request to the recipient.
           accept-pending                    Accept all pending friend requests (drains for 5s).
           friends                           List friends and their status.
+          devices <recipientUsername>       Show which of the recipient's devices a send would target.
           send <recipientUsername> <text>   Send a TEXT message to a friend.
           ping <recipientUsername> [count]  Send "ping N <ts>" N times (default 1) with 500ms gaps.
         """.trimIndent()
@@ -111,10 +159,14 @@ private suspend fun run(args: Array<String>) {
             val c = client()
             loginOrRegister(c)
             connect(c)
-            // Drain any incoming messages (FRIEND_REQUEST etc.) for 5s
+            // Wait for incoming FRIEND_REQUESTs to land. `pendingRequests` is a SQLDelight query
+            // flow: the connection's own collector processes inbound messages and writes them to
+            // the local DB, and the flow re-emits. Nothing to pump by hand — the old
+            // `waitForMessage(500)` poll was removed from the kit along with the rest of the
+            // app-facing message-inspection surface.
             val deadline = System.currentTimeMillis() + 5_000
-            while (System.currentTimeMillis() < deadline) {
-                try { c.waitForMessage(500) } catch (_: Exception) {}
+            while (c.pendingRequests.value.isEmpty() && System.currentTimeMillis() < deadline) {
+                delay(250)
             }
             val pending = c.pendingRequests.value
             if (pending.isEmpty()) {
@@ -138,6 +190,23 @@ private suspend fun run(args: Array<String>) {
             list.forEach { println("  ${it.username}  ${it.userId}  ${it.status}") }
             c.disconnect()
         }
+        "devices" -> {
+            // Diagnostic for "the send succeeded but nothing arrived". `sendToAllDevices` fans out
+            // to the device ids cached in the friend record (restored by rebuildDeviceMap on
+            // connect) and only re-fetches prekey bundles when that cache is EMPTY — so a stale
+            // record silently addresses a device the recipient no longer has.
+            if (args.size < 2) usage()
+            val recipientUsername = args[1]
+            val c = client()
+            loginOrRegister(c)
+            connect(c)
+            delay(800)
+            val friend = requireFriend(c, recipientUsername)
+            println("friend:  ${friend.username} (${friend.userId})")
+            println("cached devices (what a send targets): ${friend.devices.size}")
+            friend.devices.forEach { println("  - ${it.deviceId}  regId=${it.registrationId}") }
+            c.disconnect()
+        }
         "send" -> {
             if (args.size < 3) usage()
             val recipientUsername = args[1]
@@ -147,15 +216,9 @@ private suspend fun run(args: Array<String>) {
             connect(c)
             // Ensure friend list is hydrated (rebuildDeviceMap runs on connect)
             delay(800)
-            val friend = c.friendList.value.find {
-                it.username == recipientUsername && it.status == FriendStatus.ACCEPTED
-            } ?: run {
-                System.err.println("Not friends with $recipientUsername. Run `befriend` first.")
-                c.disconnect()
-                kotlin.system.exitProcess(1)
-            }
+            val friend = requireFriend(c, recipientUsername)
             println("Sending to ${friend.username} (${friend.userId}): \"$text\"")
-            c.send(recipientUsername, text)
+            sendDirectMessage(c, friend, text)
             delay(1500) // let it flush
             println("Sent.")
             c.disconnect()
@@ -168,27 +231,11 @@ private suspend fun run(args: Array<String>) {
             loginOrRegister(c)
             connect(c)
             delay(800)
+            val friend = requireFriend(c, recipientUsername)
             repeat(count) { i ->
                 val text = "ping ${i + 1}/$count @ ${System.currentTimeMillis()}"
                 println("→ $text")
-                // Send as MODEL_SYNC directMessage (modern wire path) so the receiver's
-                // bridge recognizes it for both UI delivery and notification posting.
-                // The legacy TEXT path (c.send w/o an ORM model defined) is silently dropped
-                // by the pix app — only MODEL_SYNC + MODEL_SIGNAL are wired up there.
-                val friend = c.friendList.value.find { it.username == recipientUsername }
-                    ?: throw IllegalStateException("Not friends with $recipientUsername — run befriend first")
-                val convId = listOf(c.userId ?: "", friend.userId).sorted().joinToString("_")
-                c.sendModelSync(
-                    recipientUsername,
-                    model = "directMessage",
-                    entryId = java.util.UUID.randomUUID().toString(),
-                    op = "CREATE",
-                    data = mapOf(
-                        "conversationId" to convId,
-                        "content" to text,
-                        "senderUsername" to (c.username ?: ""),
-                    ),
-                )
+                sendDirectMessage(c, friend, text)
                 delay(500)
             }
             delay(1500)
