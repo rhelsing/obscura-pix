@@ -4,6 +4,7 @@ import {
   type AudienceConfig,
   type AudienceFriend,
 } from '../audience';
+import { conversationId } from '../conversation';
 
 /**
  * Audience confidentiality guards required by DOMAIN_CONTRACT.
@@ -154,6 +155,19 @@ describe('resolution the app actually uses', () => {
         .toThrow(DirectRoutingUnresolved);
     },
   );
+
+  /**
+   * DOMAIN_CONTRACT: validation MUST reject a reversed form "rather than guessing an audience".
+   * `conversationId` sorts and is the only constructor in the system, so a reversed id was not built
+   * by this app or by a peer running it — its provenance is unknown, and sorting it before use would
+   * be this device deciding on a peer's behalf who the entry is for.
+   */
+  it('LEAK GUARD: a reversed conversation id must fail loud, never resolve', () => {
+    const reversed = conversationId(SELF, 'uB').split('_').reverse().join('_');
+
+    expect(() => resolveAudience(CONVERSATION, { conversationId: reversed }, SELF, FRIENDS))
+      .toThrow(DirectRoutingUnresolved);
+  });
 
   it('resolves a named friend to exactly that friend', () => {
     const entry = { recipientUsername: 'bob' };

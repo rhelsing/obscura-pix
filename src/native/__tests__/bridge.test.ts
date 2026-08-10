@@ -1,4 +1,4 @@
-import { Obscura, onObscuraEvent, conversationId, type ObscuraEvent } from '../ObscuraModule';
+import { Obscura, onObscuraEvent, type ObscuraEvent } from '../ObscuraModule';
 import { getFakeBridge } from '../__fixtures__/reactNativeMock';
 
 /**
@@ -164,16 +164,5 @@ describe('failures', () => {
 
     await expect(Obscura.entryPut('story', 'a', '{}', 1, 'd')).rejects.toThrow();
     await expect(Obscura.entryPut('story', 'b', '{}', 1, 'd')).resolves.toBeUndefined();
-  });
-});
-
-describe('conversationId', () => {
-  /**
-   * Not bridge-mediated, but load-bearing for everything that is: the id must be identical computed
-   * from either side, because it is both the audience key and the REPLACE grouping for `pix`.
-   */
-  it('is the same from both sides', () => {
-    expect(conversationId('bbb', 'aaa')).toBe(conversationId('aaa', 'bbb'));
-    expect(conversationId('aaa', 'bbb')).toBe('aaa_bbb');
   });
 });

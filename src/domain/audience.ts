@@ -10,6 +10,8 @@
  *   else.
  */
 
+import { parseConversationId } from './conversation';
+
 /** A friend, as the audience resolver needs them. */
 export interface AudienceFriend {
   userId: string;
@@ -75,20 +77,16 @@ export function resolveAudience(
           `'${audience.field}' is missing or empty, so the conversation audience cannot be resolved`,
         );
       }
-      // NOTE the constraint this format imposes: **a userId must not contain `_`**. Server-issued
-      // ids are UUIDs (hyphens, no underscores), and both kits split the same way, so this holds
-      // today — but it is an assumption, not a guarantee, and it is silent when violated. It fails
-      // in the SAFE direction at least: an id with an extra `_` yields the wrong participant count
-      // and refuses, rather than resolving to a wrong or wider audience.
-      //
-      // DOMAIN_CONTRACT requires exactly two non-empty parts. Count before
-      // interpreting either participant.
-      const participants = raw.split('_');
-      if (participants.length !== 2 || participants.some((p) => p.length === 0)) {
-        // GUARD: the named failure mode. A canonical conversation id has exactly two participants;
-        // anything else is not a conversation this app knows how to address, and guessing widens it.
+      // FORMAT, owned by `conversation.ts` and shared with the receive side so the two directions
+      // cannot disagree about what a conversation id is.
+      const participants = parseConversationId(raw);
+      if (participants === null) {
+        // GUARD: the named failure mode. A canonical id is exactly two participants in the order the
+        // constructor produces; anything else is not a conversation this app knows how to address,
+        // and guessing widens it.
         throw new DirectRoutingUnresolved(
-          `'${raw}' is not a canonical two-party conversation id (${participants.length} parts)`,
+          `'${raw}' is not a canonical two-party conversation id ` +
+            '(expected two non-empty user ids, sorted, joined by a single underscore)',
         );
       }
       // GUARD: **I must be one of the two participants.** The intersection below cannot widen past

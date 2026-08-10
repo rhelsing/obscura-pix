@@ -28,7 +28,9 @@ application fields or model names.
 | `pix` | REPLACE | conversation | conversation names self and sender |
 | `profile` | REPLACE | all accepted friends | ID is `profile_<senderUserId>` |
 
-`src/models/schema.ts` is the executable source of these declarations.
+`src/models/schema.ts` is the executable source of these declarations and of the
+accessors that interpret them: `audienceFor(model)` for the send side and
+`modelRules()` for the drain.
 
 ## Audience resolution
 
@@ -51,6 +53,9 @@ UUIDs and therefore contain no underscore.
 
 The sender constructs this canonical form. Validation MUST reject a reversed or
 otherwise noncanonical form rather than guessing an audience.
+
+`src/domain/conversation.ts` is the executable source of this format: one
+constructor and one parser, shared by the send and receive validations.
 
 `DIRECT_ROUTING_UNRESOLVED` is the stable application error for a required
 audience that cannot be resolved.
@@ -115,6 +120,5 @@ storage behavior explicitly implements and tests expiry.
 
 ## Current gaps
 
-- Conversation validation does not yet reject every noncanonical ordering.
 - Partial-recipient delivery is not observable to the application.
 - No distributed delete or expiry behavior exists.
