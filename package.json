@@ -6,7 +6,7 @@
     "android": "react-native run-android",
     "lint": "eslint .",
     "start": "react-native start",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "jest"
   },
   "dependencies": {

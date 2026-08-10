@@ -381,15 +381,17 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun getFriendCode(promise: Promise) {
-        val uid = client?.userId
-        val uname = client?.username
-        if (uid != null && uname != null) {
-            val json = JSONObject().apply { put("n", uname); put("u", uid) }
-            val encoded = Base64.encodeToString(json.toString().toByteArray(), Base64.NO_WRAP)
-            Log.d(TAG, "getFriendCode: ${encoded.take(20)}...")
-            promise.resolve(encoded)
-        } else {
-            promise.reject("NOT_AUTHED", "Not logged in")
+        // Delegates rather than re-encoding. The format is the kit's (`FriendCode`), it is what
+        // `addFriendByCode` decodes on the other side, and it is covered by the kit's tests — a
+        // second copy here was one edit away from producing codes this app could not read back.
+        scope.launch {
+            try {
+                val code = requireClient().friendCode()
+                Log.d(TAG, "getFriendCode: ${code.take(20)}...")
+                promise.resolve(code)
+            } catch (e: Exception) {
+                promise.rejectKit("NOT_AUTHED", e)
+            }
         }
     }
 
@@ -398,13 +400,11 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         scope.launch {
             try {
                 Log.d(TAG, "addFriendByCode: ${code.take(20)}...")
-                val cleaned = code.trim().replace("\u00AD", "").replace("\\s".toRegex(), "")
-                val bytes = Base64.decode(cleaned, Base64.DEFAULT)
-                val decoded = String(bytes)
-                val json = JSONObject(decoded)
-                val userId = json.getString("u")
-                val username = json.getString("n")
-                requireClient().befriend(userId, username)
+                // Delegates rather than re-decoding, and this direction was the strictly worse copy:
+                // the kit additionally normalises url-safe base64 and rejects a code whose fields are
+                // present but empty. Both halves of the format now live in `FriendCode`, where the
+                // tests are.
+                requireClient().addFriendByCode(code)
                 promise.resolve(null)
             } catch (e: Exception) {
                 Log.e(TAG, "addFriendByCode failed: ${e.message}")
