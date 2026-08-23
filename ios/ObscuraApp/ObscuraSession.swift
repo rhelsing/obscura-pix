@@ -186,8 +186,9 @@ final class ObscuraSession {
             self.appInForeground = true
             self.onAppStateChanged?(true)
             let c = self.client
-            if c.authState == .authenticated && c.connectionState == .disconnected {
-                Task { do { try await c.connect() } catch { self.logger.log("foreground reconnect failed: \(error)") } }
+            Task {
+                do { try await c.ensureConnected() }
+                catch { self.logger.log("foreground reconnect failed: \(error)") }
             }
         }
         nc.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in

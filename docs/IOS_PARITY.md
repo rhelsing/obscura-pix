@@ -1,9 +1,10 @@
 # iOS status
 
 The repository contains an iOS React Native scaffold and Swift bridge backed by
-`obscura-native/swift`. It builds and runs the shared authentication UI on a
-simulator when native dependencies are available, but it is not production-ready
-and has no CI job.
+`obscura-native/swift`. It builds in CI and has completed a physical
+Android↔iOS interoperability pass for auth, friendship, entries, typing,
+attachments, Pix/view receipts, offline queues, cold starts, and reconnects.
+It is not production-ready.
 
 [`BRIDGE.md`](BRIDGE.md) is the cross-platform native contract. This file tracks
 only iOS-specific status; it is not a second API specification.
@@ -18,6 +19,7 @@ only iOS-specific status; it is not a second API specification.
   explicit-audience send, typing, attachments, image utilities, clipboard,
   launch intent, app state, and debug-log bridge surfaces.
 - Simulator launch through the shared TypeScript authentication flow.
+- Physical Android↔iOS foreground interoperability for the current app models.
 
 The iOS app is expected to use the same TypeScript model, audience, merge, and
 drain code as Android. Native code must not duplicate those semantics.
@@ -42,23 +44,20 @@ requirements. Push delivery cannot be validated on the simulator.
 
 ### CI
 
-There is no iOS build job. A macOS job must:
-
-1. Check out this repository with submodules initialized recursively.
-2. Build the vendored libsignal FFI for the simulator.
-3. Run `obscura-native/swift/dev.sh prepare` to create the uniquely named
-   local libsignal package used by SwiftPM.
-4. Run `npm ci` and `pod install`.
-5. Build `ObscuraApp.xcworkspace` for a generic iOS Simulator destination.
+The macOS CI job checks out recursive submodules, builds and caches the
+libsignal simulator FFI, prepares the local Swift package, installs JS/CocoaPods
+dependencies, and builds `ObscuraApp.xcworkspace` for a generic simulator.
 
 The local SPM path resolves `../obscura-native/swift` from `ios/`. CocoaPods
 environments missing `kconv` need the `nkf` gem.
 
 ### Device verification
 
-A provisioned device must exercise authentication restore, friend/device link
-approval, message round trips, attachments, app foreground/background
-transitions, FCM-via-APNs delivery, and notification privacy.
+A provisioned device has exercised authentication restore, friend acceptance,
+entry round trips, typing, attachments, Pix/view receipts, disconnected queues,
+cold starts, and reconnect idempotence. Remaining device work is Swift link
+approval, real app background/foreground automation, FCM-via-APNs delivery,
+notification privacy, and an old-to-new schema upgrade under one bundle ID.
 
 ## Build prerequisites
 
@@ -67,5 +66,6 @@ transitions, FCM-via-APNs delivery, and notification privacy.
 - Repository submodules initialized recursively.
 - libsignal FFI built and the local package prepared using its Swift helpers.
 
-Do not infer production support from a simulator build. Until CI and real-device
-push tests exist, Android remains the only production platform.
+Do not infer production support from the build gate or foreground interop pass.
+Until real-device push and release-signing tests exist, Android remains the only
+production platform.

@@ -106,3 +106,91 @@ jobs:
       - name: Assemble release APK
         run: ./gradlew :app:assembleRelease --no-daemon
         working-directory: android
+
+  ios:
+    name: iOS Debug Build
+    runs-on: macos-26
+    env:
+      LIBSIGNAL_COMMIT: 7ef4efdb85d8b2ebd77f3cf1e2b542a2115033c5
+    steps:
+      - name: Checkout Pix and native dependencies
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios-sim
+
+      - name: Select latest Xcode
+        run: |
+          sudo xcode-select -s "$(
+            find /Applications -maxdepth 1 -type d -name 'Xcode_*.app' -print |
+              sort -V |
+              tail -n 1
+          )"
+
+      - name: Cache libsignal source and simulator FFI
+        id: libsignal
+        uses: actions/cache@v6
+        with:
+          path: obscura-native/swift/vendored/libsignal
+          key: libsignal-${{ env.LIBSIGNAL_COMMIT }}-ios-sim-macos26
+
+      - name: Fetch and build libsignal FFI
+        if: steps.libsignal.outputs.cache-hit != 'true'
+        working-directory: obscura-native/swift
+        run: |
+          brew list protobuf >/dev/null 2>&1 || brew install protobuf
+          mkdir -p vendored
+          for attempt in 1 2 3; do
+            echo "libsignal clone attempt $attempt"
+            rm -rf vendored/libsignal
+            git init vendored/libsignal
+            git -C vendored/libsignal remote add origin https://github.com/signalapp/libsignal
+            if git -C vendored/libsignal fetch --depth 1 origin "$LIBSIGNAL_COMMIT"; then
+              git -C vendored/libsignal checkout --detach FETCH_HEAD
+              break
+            fi
+            sleep 15
+          done
+          test "$(git -C vendored/libsignal rev-parse HEAD)" = "$LIBSIGNAL_COMMIT"
+          (
+            cd vendored/libsignal
+            RUSTUP_TOOLCHAIN=stable \
+              CARGO_BUILD_TARGET=aarch64-apple-ios-sim \
+              BINDGEN_EXTRA_CLANG_ARGS="--target=arm64-apple-ios16.0-simulator" \
+              ./swift/build_ffi.sh -r
+          )
+
+      - name: Prepare Swift package
+        working-directory: obscura-native/swift
+        run: ./dev.sh prepare
+
+      - run: npm ci
+
+      - name: Install CocoaPods
+        run: sudo gem install cocoapods -v 1.17.0 -N
+
+      - name: Resolve iOS pods
+        working-directory: ios
+        run: pod install
+
+      - name: Build iOS app
+        env:
+          GIT_CONFIG_COUNT: 1
+          GIT_CONFIG_KEY_0: safe.bareRepository
+          GIT_CONFIG_VALUE_0: all
+        run: |
+          xcodebuild \
+            -workspace ios/ObscuraApp.xcworkspace \
+            -scheme ObscuraApp \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            build
