@@ -3,8 +3,9 @@
 End-to-end encrypted photo messaging app. Signal Protocol encryption, disappearing content. Built on ObscuraKit.
 
 React Native app, **Android-only in production**. An iOS foundation and Swift
-bridge are committed under `ios/` and run on the simulator, but are not
-CI-gated or production-ready. See [`docs/IOS_PARITY.md`](docs/IOS_PARITY.md).
+bridge are committed under `ios/`, build in CI, and have completed a physical
+Android↔iOS interoperability pass, but are not production-ready. See
+[`docs/IOS_PARITY.md`](docs/IOS_PARITY.md).
 
 ## What it does
 

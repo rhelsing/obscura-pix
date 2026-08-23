@@ -19,6 +19,7 @@ import UserNotifications
 /// Registered with React via `ObscuraBridge.m` (`RCT_EXTERN_MODULE`).
 @objc(ObscuraBridge)
 final class ObscuraBridge: RCTEventEmitter {
+    private static weak var shared: ObscuraBridge?
 
     private var hasListeners = false
     private var eventTask: Task<Void, Never>?
@@ -31,6 +32,7 @@ final class ObscuraBridge: RCTEventEmitter {
 
     override init() {
         super.init()
+        ObscuraBridge.shared = self
         // Kit diagnostics -> debugLog event.
         ObscuraSession.shared.logger.onLog = { [weak self] msg in
             self?.emit(.debugLog, ["message": msg])
@@ -46,7 +48,12 @@ final class ObscuraBridge: RCTEventEmitter {
         bindEvents(ObscuraSession.shared.client)
     }
 
-    deinit { eventTask?.cancel() }
+    deinit {
+        eventTask?.cancel()
+        if ObscuraBridge.shared === self {
+            ObscuraBridge.shared = nil
+        }
+    }
 
     @objc override static func requiresMainQueueSetup() -> Bool { false }
 

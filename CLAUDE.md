@@ -99,8 +99,9 @@ viewed-**receipt** wearing a CRDT costume.
   (`_undelivered`) and is retried on reconnect / foreground / cold start. What it does not do is
   track per-recipient delivery: a send that reached *some* recipients is best-effort and silent by
   the kit's design, so a partial failure is invisible here too.
-- **No iOS CI job.** The workflow is `typecheck`, `domain-tests`, `lint`, `android`. The Swift
-  bridge and this repo's one shared TypeScript surface can diverge without anything going red.
+- **iOS is build-gated, not production-gated.** CI builds the Swift bridge and React Native app for
+  a simulator. Real APNs/background delivery and release signing still require physical-device
+  validation.
 - The Android package is consumed via a **Gradle composite build**
   (`android/settings.gradle` → `../obscura-native/kotlin`) and the Swift
   package via local SPM at `../obscura-native/swift`. Native revisions are

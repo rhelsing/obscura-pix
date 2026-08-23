@@ -27,8 +27,9 @@ What's built, what's next.
 ## Current gaps
 
 - [ ] **24-hour story expiry.** Nothing expires on either platform.
-- [ ] **Demonstrated iOS ↔ Android interop.** Wire vectors are shared, but
-      there is no iOS CI job or end-to-end platform test.
+- [ ] **Repeatable physical iOS ↔ Android release gate.** Foreground interop has
+      been demonstrated manually; push, link approval, migration, and release
+      signing are not automated.
 
 ## Phase 2: Ephemeral viewing polish
 
@@ -61,21 +62,21 @@ What's built, what's next.
 
 A working iOS foundation is committed under `ios/`: a RN 0.86 scaffold,
 `ObscuraBridge.swift` implementing `docs/BRIDGE.md`, and
-`obscura-native/swift` wired as a local SPM package. It builds, launches, and runs the auth
-flow on the simulator. The cross-platform bridge contract (methods, events,
+`obscura-native/swift` wired as a local SPM package. It builds in CI and has
+completed a physical Android↔iOS foreground interoperability pass. The cross-platform bridge contract (methods, events,
 payload shapes, atomicity / EXIF / OOM requirements) lives in `docs/BRIDGE.md`;
-Android's `ObscuraBridgeModule.kt` is the reference implementation. See
-`docs/IOS_PARITY.md` for detailed status and the iOS CI gap.
+both bridges implement that contract. See `docs/IOS_PARITY.md` for detailed
+status.
 
 - [x] Scaffold `ios/` (RN 0.86, bundle `com.obscuraapp.ios`, deployment 16.0)
 - [x] Implement `ObscuraBridge.swift` against `docs/BRIDGE.md`
 - [x] Wire `obscura-native/swift` as a local Swift Package
 - [x] App icons + launch screen assets
 - [x] Simulator-verified auth flow end-to-end
-- [ ] Add a `macos-26` iOS CI job that builds the libsignal FFI and app
-      (see `docs/IOS_PARITY.md`)
+- [x] Add a `macos-26` iOS CI job that builds the libsignal FFI and app
+- [x] Physical Android↔iOS foreground interoperability pass
 - [ ] Push (#11): APNs entitlement + FCM-via-APNs token wiring
-- [ ] On-device test + TestFlight build
+- [ ] TestFlight/release-signing build
 
 ## Not Planned
 
