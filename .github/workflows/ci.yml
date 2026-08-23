@@ -111,7 +111,7 @@ jobs:
     name: iOS Debug Build
     runs-on: macos-26
     env:
-      LIBSIGNAL_VERSION: v0.40.0
+      LIBSIGNAL_COMMIT: 7ef4efdb85d8b2ebd77f3cf1e2b542a2115033c5
     steps:
       - name: Checkout Pix and native dependencies
         uses: actions/checkout@v7
@@ -140,7 +140,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: obscura-native/swift/vendored/libsignal
-          key: libsignal-${{ env.LIBSIGNAL_VERSION }}-ios-sim-macos26
+          key: libsignal-${{ env.LIBSIGNAL_COMMIT }}-ios-sim-macos26
 
       - name: Fetch and build libsignal FFI
         if: steps.libsignal.outputs.cache-hit != 'true'
@@ -150,12 +150,16 @@ jobs:
           mkdir -p vendored
           for attempt in 1 2 3; do
             echo "libsignal clone attempt $attempt"
-            git clone --depth 1 --branch "$LIBSIGNAL_VERSION" \
-              https://github.com/signalapp/libsignal vendored/libsignal && break
             rm -rf vendored/libsignal
+            git init vendored/libsignal
+            git -C vendored/libsignal remote add origin https://github.com/signalapp/libsignal
+            if git -C vendored/libsignal fetch --depth 1 origin "$LIBSIGNAL_COMMIT"; then
+              git -C vendored/libsignal checkout --detach FETCH_HEAD
+              break
+            fi
             sleep 15
           done
-          test -f vendored/libsignal/Package.swift
+          test "$(git -C vendored/libsignal rev-parse HEAD)" = "$LIBSIGNAL_COMMIT"
           (
             cd vendored/libsignal
             RUSTUP_TOOLCHAIN=stable \
