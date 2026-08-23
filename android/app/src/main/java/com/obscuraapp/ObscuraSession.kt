@@ -13,7 +13,6 @@ import com.obscura.kit.ConnectionState
 import com.obscura.kit.ObscuraClient
 import com.obscura.kit.ObscuraConfig
 import com.obscura.kit.ObscuraLogger
-import com.obscura.kit.ReceivedMessage
 import com.obscura.kit.db.ObscuraDatabase
 import com.obscura.kit.stores.FriendData
 import kotlinx.coroutines.CoroutineScope
@@ -55,7 +54,7 @@ object ObscuraSession {
         fun onConnectionChanged(state: ConnectionState)
         fun onAuthStateChanged(state: AuthState)
         fun onFriendsUpdated(friends: List<FriendData>)
-        fun onMessageReceived(msg: ReceivedMessage, modelName: String?)
+        fun onMessageReceived(type: String, modelName: String?)
         fun onDebugLog(message: String)
         fun onAuthFailed(reason: String)
         fun onPushToken(token: String)
@@ -252,15 +251,13 @@ object ObscuraSession {
         // THE single consumer of incomingMessages. Fans out to sink + notification.
         collectorJobs += scope.launch {
             for (msg in c.incomingMessages) {
-                Log.d(TAG, "Incoming: ${msg.type} from=${msg.sourceUserId.take(8)}")
-                val modelName: String? = if (msg.type == "MODEL_SYNC") {
-                    msg.raw?.modelSync?.model ?: "directMessage"
-                } else null
-                sink?.onMessageReceived(msg, modelName)
-                sink?.onDebugLog("${msg.type}: ${msg.text.take(100)}")
+                Log.d(TAG, "Incoming: ${msg.type}")
+                val modelName = msg.model
+                sink?.onMessageReceived(msg.type, modelName)
+                sink?.onDebugLog(msg.type)
 
                 if (!appInForeground) {
-                    val notifText = classifyForNotification(msg, modelName)
+                    val notifText = classifyForNotification(msg.type, modelName)
                     if (notifText != null) {
                         NotificationHelper.postGeneric(appContext, notifText)
                     }
@@ -280,9 +277,13 @@ object ObscuraSession {
      *
      * Over-notifying once is recoverable. Silently not notifying is what this shape is guarding.
      */
-    private fun classifyForNotification(msg: ReceivedMessage, modelName: String?): String? {
-        if (msg.type == "FRIEND_REQUEST") return "New friend request"
-        if (msg.type != "MODEL_SYNC") return null
+    private fun classifyForNotification(type: String, modelName: String?): String? {
+        if (type == "FRIEND_REQUEST") return "New friend request"
+        if (type != "MODEL_SYNC") return null
+        if (modelName == null) {
+            Log.e(TAG, "Notification suppressed: MODEL_SYNC missing model")
+            return null
+        }
 
         return when (modelName) {
             "pix" -> "New pix"

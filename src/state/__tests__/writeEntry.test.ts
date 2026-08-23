@@ -76,12 +76,6 @@ describe('storing and sending', () => {
     expect(JSON.parse(bridge.__sent[0].payloadJson)).toEqual({ ...data, _authorUserId: SELF });
   });
 
-  it('creates with CREATE and updates with UPDATE', async () => {
-    await writeEntry(args('profile', { displayName: 'a' }));
-    await writeEntry(args('profile', { displayName: 'b' }, 'profile_fixed'));
-
-    expect(bridge.__sent.map((s) => s.op)).toEqual(['CREATE', 'UPDATE']);
-  });
 });
 
 describe('the effect ORDER', () => {
@@ -224,7 +218,7 @@ describe('the outbox', () => {
   it('never puts the mark on the wire, and clears it once delivered', async () => {
     bridge.__failNext('sendEntry', 'SEND_FAILED');
     await expect(writeEntry(args('story', { content: 'x' }))).rejects.toThrow();
-    expect(JSON.parse((await Obscura.entryAll('story'))[0].data)._undelivered).toBe('CREATE');
+    expect(JSON.parse((await Obscura.entryAll('story'))[0].data)._undelivered).toBe(true);
 
     await flushOutbox({ selfUserId: SELF, friends: FRIENDS });
 
@@ -240,7 +234,7 @@ describe('the outbox', () => {
     bridge.__failNext('sendEntry', 'SEND_FAILED');
     expect(await flushOutbox({ selfUserId: SELF, friends: FRIENDS })).toBe(0);
 
-    expect(JSON.parse((await Obscura.entryAll('story'))[0].data)._undelivered).toBe('CREATE');
+    expect(JSON.parse((await Obscura.entryAll('story'))[0].data)._undelivered).toBe(true);
   });
 
   it('does nothing when everything was delivered', async () => {

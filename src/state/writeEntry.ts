@@ -128,9 +128,8 @@ export async function writeEntry(args: WriteEntryArgs): Promise<string> {
     return next;
   });
 
-  const op = args.id === undefined ? 'CREATE' : 'UPDATE';
   try {
-    await Obscura.sendEntry(recipients, model, id, op, sentAt, payload);
+    await Obscura.sendEntry(recipients, model, id, sentAt, payload);
   } catch (e) {
     // The local write already succeeded and STAYS — the user's content is theirs whether or not the
     // network cooperated, and undoing it would be the worse failure.
@@ -146,7 +145,7 @@ export async function writeEntry(args: WriteEntryArgs): Promise<string> {
     // an undelivered entry sitting in their timeline looking sent, forever, with no trigger that
     // would ever retry it — the receive side has four (reconnect, foreground, cold start, wake) and
     // the send side had none. See `flushOutbox`.
-    await markUndelivered(model, id, stored, sentAt, myDeviceId, op);
+    await markUndelivered(model, id, stored, sentAt, myDeviceId);
     logError('writeEntry.send:' + model, e);
     throw e;
   }
@@ -161,7 +160,7 @@ export async function writeEntry(args: WriteEntryArgs): Promise<string> {
 // cannot be orphaned from its content. It is stripped before the payload goes on the wire: it is
 // this device's delivery bookkeeping and means nothing to a peer.
 
-/** Set on a stored entry whose send reached nobody. The value is the `op` to retry with. */
+/** Set on a stored entry whose send reached nobody. */
 const UNDELIVERED = '_undelivered';
 
 /**
@@ -174,13 +173,13 @@ const UNDELIVERED = '_undelivered';
  */
 async function markUndelivered(
   model: string, id: string, data: Record<string, unknown>,
-  sentAt: number, myDeviceId: string, op: string,
+  sentAt: number, myDeviceId: string,
 ): Promise<void> {
   try {
     await withEntryLock(async () => {
       const existing = (await Obscura.entryAll(model)).find((e) => e.id === id);
       if (existing === undefined || existing.sentAt !== sentAt) return;
-      const marked = JSON.stringify({ ...data, [UNDELIVERED]: op });
+      const marked = JSON.stringify({ ...data, [UNDELIVERED]: true });
       await Obscura.entryPut(model, id, marked, sentAt, myDeviceId);
     });
   } catch (e) {
@@ -224,8 +223,7 @@ export async function flushOutbox(args: FlushOutboxArgs): Promise<number> {
       } catch {
         continue; // `loadEntries` already logs unreadable rows; do not log the same row twice.
       }
-      const op = data[UNDELIVERED];
-      if (typeof op !== 'string') continue;
+      if (data[UNDELIVERED] !== true) continue;
 
       // Strip the mark before it goes anywhere. What the peer receives must be the entry, not this
       // device's opinion about its delivery.
@@ -233,7 +231,7 @@ export async function flushOutbox(args: FlushOutboxArgs): Promise<number> {
       delete payload[UNDELIVERED];
       try {
         const recipients = resolveAudience(audienceFor(model), payload, selfUserId, friends);
-        await Obscura.sendEntry(recipients, model, row.id, op, row.sentAt, JSON.stringify(payload));
+        await Obscura.sendEntry(recipients, model, row.id, row.sentAt, JSON.stringify(payload));
       } catch (e) {
         // Still undelivered, or now unroutable (a friend removed since). Either way the mark stays
         // and the next trigger tries again — dropping it silently is the behaviour being fixed.

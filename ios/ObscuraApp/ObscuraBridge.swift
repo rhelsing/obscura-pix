@@ -107,7 +107,7 @@ final class ObscuraBridge: RCTEventEmitter {
                     self.emit(.authFailed, ["reason": reason])
                 case .friendsUpdated(let friends):
                     self.emit(.friendsUpdated, ["friends": friends.map { ObscuraBridge.friendDict($0) }])
-                case .messageReceived(let model, _):
+                case .messageReceived(let model):
                     // Minimal payload — JS re-queries the ORM. Don't synthesize an id.
                     self.emit(.messageReceived, ["model": model])
                 case .typingChanged(let conversationId, let typers):
@@ -442,15 +442,15 @@ extension ObscuraBridge {
     }
 
     /// The caller names recipients (DOMAIN_CONTRACT). The kit resolves no entry audience.
-    @objc(sendEntry:modelKey:entryId:op:sentAt:payloadJson:resolver:rejecter:)
-    func sendEntry(_ recipientUserIds: [String], modelKey: String, entryId: String, op: String,
+    @objc(sendEntry:modelKey:entryId:sentAt:payloadJson:resolver:rejecter:)
+    func sendEntry(_ recipientUserIds: [String], modelKey: String, entryId: String,
                    sentAt: NSNumber, payloadJson: String,
                    resolver resolve: @escaping RCTPromiseResolveBlock,
                    rejecter reject: @escaping RCTPromiseRejectBlock) {
         Task {
             do {
                 try await client.send(
-                    to: recipientUserIds, modelKey: modelKey, entryId: entryId, op: op,
+                    to: recipientUserIds, modelKey: modelKey, entryId: entryId,
                     sentAt: sentAt.uint64Value, payload: Data(payloadJson.utf8)
                 )
                 resolve(nil)
@@ -476,7 +476,6 @@ extension ObscuraBridge {
             "senderDisplayName": r.senderDisplayName as Any,
             "modelKey": r.modelKey as Any,
             "entryId": r.entryId as Any,
-            "op": r.op as Any,
             "sentAt": r.sentAt.map { Double($0) } as Any,
             "payload": String(decoding: r.payload, as: UTF8.self),
         ]
@@ -488,42 +487,34 @@ extension ObscuraBridge {
 
 extension ObscuraBridge {
 
-    /// The conversation namespace typing indicators are scoped to.
-    ///
-    /// Opaque to the kit — it neither parses nor validates it — and it needs no schema. It matches
-    /// the app's `directMessage` model only so signals and messages share a namespace.
-    ///
-    /// These reach the kit through `client.sendTyping(modelKey:conversationId:)`.
-    private static let typingModel = "directMessage"
-
-    @objc(sendTyping:resolver:rejecter:)
-    func sendTyping(_ conversationId: String,
+    @objc(sendTyping:conversationId:resolver:rejecter:)
+    func sendTyping(_ modelKey: String, conversationId: String,
                     resolver resolve: @escaping RCTPromiseResolveBlock,
                     rejecter reject: @escaping RCTPromiseRejectBlock) {
         Task {
-            await client.sendTyping(modelKey: ObscuraBridge.typingModel, conversationId: conversationId)
+            await client.sendTyping(modelKey: modelKey, conversationId: conversationId)
             resolve(nil)
         }
     }
 
-    @objc(stopTyping:resolver:rejecter:)
-    func stopTyping(_ conversationId: String,
+    @objc(stopTyping:conversationId:resolver:rejecter:)
+    func stopTyping(_ modelKey: String, conversationId: String,
                     resolver resolve: @escaping RCTPromiseResolveBlock,
                     rejecter reject: @escaping RCTPromiseRejectBlock) {
         Task {
-            await client.stopTyping(modelKey: ObscuraBridge.typingModel, conversationId: conversationId)
+            await client.stopTyping(modelKey: modelKey, conversationId: conversationId)
             resolve(nil)
         }
     }
 
-    @objc(observeTyping:resolver:rejecter:)
-    func observeTyping(_ conversationId: String,
+    @objc(observeTyping:conversationId:resolver:rejecter:)
+    func observeTyping(_ modelKey: String, conversationId: String,
                        resolver resolve: @escaping RCTPromiseResolveBlock,
                        rejecter reject: @escaping RCTPromiseRejectBlock) {
-        typingTasks[conversationId]?.cancel()
-        let observation = client.observeTyping(modelKey: ObscuraBridge.typingModel,
-                                               conversationId: conversationId)
-        typingTasks[conversationId] = Task { [weak self] in
+        let key = "\(modelKey):\(conversationId)"
+        typingTasks[key]?.cancel()
+        let observation = client.observeTyping(modelKey: modelKey, conversationId: conversationId)
+        typingTasks[key] = Task { [weak self] in
             for await typers in observation.values {
                 self?.emit(.typingChanged, ["conversationId": conversationId, "typers": typers])
             }
@@ -531,12 +522,13 @@ extension ObscuraBridge {
         resolve(nil)
     }
 
-    @objc(stopObservingTyping:resolver:rejecter:)
-    func stopObservingTyping(_ conversationId: String,
+    @objc(stopObservingTyping:conversationId:resolver:rejecter:)
+    func stopObservingTyping(_ modelKey: String, conversationId: String,
                              resolver resolve: RCTPromiseResolveBlock,
                              rejecter reject: RCTPromiseRejectBlock) {
-        typingTasks[conversationId]?.cancel()
-        typingTasks[conversationId] = nil
+        let key = "\(modelKey):\(conversationId)"
+        typingTasks[key]?.cancel()
+        typingTasks[key] = nil
         resolve(nil)
     }
 }

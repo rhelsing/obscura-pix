@@ -3,7 +3,7 @@
 This document defines the application-owned behavior implemented once in
 `src/domain/`, `src/models/`, and `src/state/`. Native transport and storage APIs
 are defined by
-[`obscura-native/docs/KIT_API.md`](https://github.com/barrelmaker97/obscura-native/blob/a0d412b56e7104f55d788fd5babff844c313c3bb/docs/KIT_API.md).
+[`obscura-native/docs/KIT_API.md`](https://github.com/barrelmaker97/obscura-native/blob/a6151b3/docs/KIT_API.md).
 
 ## Ownership
 
@@ -97,9 +97,6 @@ The highest total-order tuple `(sentAt, authorDeviceId)` wins:
 `authorDeviceId` is supplied by the native layer from the decrypting Signal
 session. Incoming timestamps are clamped by the native receive path before
 merge.
-
-`OP_DELETE` remains a client-wire compatibility value, but the app neither
-sends nor applies distributed deletes. No tombstone engine exists.
 
 ## Drain ordering
 

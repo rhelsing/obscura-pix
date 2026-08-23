@@ -29,7 +29,6 @@ function toDrainRow(row: InboxRow): DrainRow {
     kind: row.kind,
     modelKey: row.modelKey,
     entryId: row.entryId,
-    op: row.op,
     sentAt: row.sentAt,
     // Server-stamped sender identity (NATIVE_CONTRACT §0.10).
     senderUserId: row.senderUserId,

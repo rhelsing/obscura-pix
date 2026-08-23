@@ -9,7 +9,6 @@ import com.obscura.kit.AuthState
 import com.obscura.kit.ConnectionState
 import com.obscura.kit.ObscuraClient
 import com.obscura.kit.ObscuraError
-import com.obscura.kit.ReceivedMessage
 import com.obscura.kit.network.LoginScenario
 import com.obscura.kit.stores.FriendData
 import kotlinx.coroutines.*
@@ -17,14 +16,6 @@ import kotlinx.coroutines.flow.collectLatest
 import org.json.JSONObject
 
 private const val TAG = "ObscuraBridge"
-
-/**
- * The conversation namespace typing indicators are scoped to.
- *
- * Opaque to the kit — it neither parses nor validates it — and it needs no schema. It matches the
- * app's `directMessage` model only so that signals and messages share a namespace.
- */
-private const val TYPING_MODEL = "directMessage"
 
 /**
  * The single source of truth for the event *types* the native side may emit on
@@ -113,13 +104,17 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
             for (f in friends) arr.pushMap(friendToMap(f, f.status.value))
             putArray("friends", arr)
         }
-        override fun onMessageReceived(msg: ReceivedMessage, modelName: String?) {
-            if (msg.type == "MODEL_SYNC") {
+        override fun onMessageReceived(type: String, modelName: String?) {
+            if (type == "MODEL_SYNC") {
                 // Payload is intentionally minimal — consumers re-query the ORM for the
                 // authoritative entries. Don't synthesize a fake id here.
-                emit(BridgeEvent.MESSAGE_RECEIVED) { putString("model", modelName ?: "directMessage") }
-            } else if (msg.type == "FRIEND_REQUEST" || msg.type == "FRIEND_RESPONSE") {
-                Log.d(TAG, "Friend event: ${msg.type} accepted=${msg.accepted}")
+                if (modelName == null) {
+                    Log.e(TAG, "MODEL_SYNC missing model; event suppressed")
+                    return
+                }
+                emit(BridgeEvent.MESSAGE_RECEIVED) { putString("model", modelName) }
+            } else if (type == "FRIEND_REQUEST" || type == "FRIEND_RESPONSE") {
+                Log.d(TAG, "Friend event: $type")
             }
         }
         override fun onDebugLog(message: String) = emit(BridgeEvent.DEBUG_LOG) { putString("message", message) }
@@ -441,14 +436,11 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
 
     // ─── Signals ────────────────────────────────────────────────────────────
     //
-    // `TYPING_MODEL` is an opaque namespace string, like `modelKey` on the
-    // inbox and entry store. The kit does not parse or validate it.
-
     @ReactMethod
-    fun sendTyping(conversationId: String, promise: Promise) {
+    fun sendTyping(modelKey: String, conversationId: String, promise: Promise) {
         scope.launch {
             try {
-                requireClient().sendTyping(TYPING_MODEL, conversationId)
+                requireClient().sendTyping(modelKey, conversationId)
                 promise.resolve(null)
             } catch (e: Exception) {
                 promise.rejectKit("TYPING_ERROR", e)
@@ -457,10 +449,10 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun stopTyping(conversationId: String, promise: Promise) {
+    fun stopTyping(modelKey: String, conversationId: String, promise: Promise) {
         scope.launch {
             try {
-                requireClient().stopTyping(TYPING_MODEL, conversationId)
+                requireClient().stopTyping(modelKey, conversationId)
                 promise.resolve(null)
             } catch (e: Exception) {
                 promise.rejectKit("STOP_TYPING_ERROR", e)
@@ -469,13 +461,18 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun observeTyping(conversationId: String, promise: Promise) {
-        if (typingJobs.containsKey(conversationId)) { promise.resolve(null); return }
-        val c = client
-        if (c == null) { promise.resolve(null); return }
+    fun observeTyping(modelKey: String, conversationId: String, promise: Promise) {
+        val key = "$modelKey:$conversationId"
+        if (typingJobs.containsKey(key)) { promise.resolve(null); return }
+        val c = try {
+            requireClient()
+        } catch (e: Exception) {
+            promise.rejectKit("OBSERVE_TYPING_ERROR", e)
+            return
+        }
 
-        typingJobs[conversationId] = scope.launch {
-            c.observeTyping(TYPING_MODEL, conversationId).collectLatest { typers ->
+        typingJobs[key] = scope.launch {
+            c.observeTyping(modelKey, conversationId).collectLatest { typers ->
                 emit(BridgeEvent.TYPING_CHANGED) {
                     putString("conversationId", conversationId)
                     val arr = Arguments.createArray()
@@ -488,8 +485,8 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun stopObservingTyping(conversationId: String, promise: Promise) {
-        typingJobs.remove(conversationId)?.cancel()
+    fun stopObservingTyping(modelKey: String, conversationId: String, promise: Promise) {
+        typingJobs.remove("$modelKey:$conversationId")?.cancel()
         promise.resolve(null)
     }
 
@@ -1006,7 +1003,6 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         recipientUserIds: ReadableArray,
         modelKey: String,
         entryId: String,
-        op: String,
         sentAt: Double,
         payloadJson: String,
         promise: Promise,
@@ -1017,7 +1013,6 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                     recipientUserIds = recipientUserIds.toStringList(),
                     modelKey = modelKey,
                     entryId = entryId,
-                    op = op,
                     sentAt = sentAt.toLong(),
                     payload = payloadJson.toByteArray(),
                 )
@@ -1048,7 +1043,6 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
             putString("senderDisplayName", r.senderDisplayName)
             putString("modelKey", r.modelKey)
             putString("entryId", r.entryId)
-            putString("op", r.op)
             // Bound to a local first: `sentAt` is a nullable property from ANOTHER module, so
             // Kotlin refuses to smart-cast it — the kit could, in principle, change it between the
             // null check and the read.
