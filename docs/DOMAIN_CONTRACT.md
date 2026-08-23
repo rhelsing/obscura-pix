@@ -3,7 +3,7 @@
 This document defines the application-owned behavior implemented once in
 `src/domain/`, `src/models/`, and `src/state/`. Native transport and storage APIs
 are defined by
-[`obscura-native/docs/KIT_API.md`](https://github.com/barrelmaker97/obscura-native/blob/091bbca/docs/KIT_API.md).
+[`obscura-native/docs/KIT_API.md`](https://github.com/barrelmaker97/obscura-native/blob/240f526/docs/KIT_API.md).
 
 ## Ownership
 
