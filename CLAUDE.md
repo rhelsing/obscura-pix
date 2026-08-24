@@ -15,9 +15,9 @@ and background push processing cannot rely on a React Native runtime. Everything
 that is not forced native by those constraints belongs in this repo.
 
 The native boundary is
-[`NATIVE_CONTRACT.md`](https://github.com/barrelmaker97/obscura-native/blob/b776161/docs/NATIVE_CONTRACT.md)
+[`NATIVE_CONTRACT.md`](https://github.com/barrelmaker97/obscura-native/blob/591a659/docs/NATIVE_CONTRACT.md)
 plus
-[`KIT_API.md`](https://github.com/barrelmaker97/obscura-native/blob/b776161/docs/KIT_API.md).
+[`KIT_API.md`](https://github.com/barrelmaker97/obscura-native/blob/591a659/docs/KIT_API.md).
 Application-owned behavior is
 normative in [`docs/DOMAIN_CONTRACT.md`](docs/DOMAIN_CONTRACT.md). Read all
 three before changing anything that crosses the bridge.
@@ -55,7 +55,7 @@ An inbox row carries `senderUserId` and `senderDeviceId`, both stamped by the se
 device-scoped token and unforgeable by the sender (`NATIVE_CONTRACT.md` §0.10). Everything the app decides about
 *who* — attribution, authorization, display names — resolves from those, never from a payload field.
 
-- `src/domain/drain.ts` stamps `_authorUserId` from the envelope and **authorizes** the write:
+- `src/domain/drain.ts` stamps local-only `_authorUserId` from the envelope and **authorizes** the write:
   a `profile` may only be written to `profile_<senderUserId>`, and a conversation-scoped entry must
   name a canonical two-party conversation between this user and the actual sender.
 - `src/utils/identity.ts` is the only place a userId becomes a name, and it reads the kit's friend
@@ -72,7 +72,8 @@ Worth knowing, because it is much less than the kit provides. The full surface i
 - **Inbox** — `inboxPeek` / `inboxConsume` / `inboxDiscard` / `inboxDepth`. How messages arrive.
 - **Entries** — `entryPut` (a BLIND upsert: the app decides who wins) / `entryAll`. The store.
 - **Send** — `sendEntry(recipientUserIds, …)`. The caller names the recipients.
-- Signals: `sendTyping` / `stopTyping` / `observeTyping`. No read receipts.
+- Signals: `sendTyping(recipientUserIds, contextId)` / `stopTyping` / `observeTyping`. No read
+  receipts and no native audience inference.
 - Auth, friends, device linking, attachments, push token registration.
 
 Nothing in either direction parses a payload.
@@ -94,10 +95,9 @@ tie-break. `pix.viewedAt` is a viewed receipt; do not introduce a generic merge 
 ## Known gaps
 
 - **No expiry.** See the TTL note above. `story` is permanent on both platforms.
-- **The outbox is durable but coarse.** A send that reached nobody marks the entry
-  (`_undelivered`) and is retried on reconnect / foreground / cold start. What it does not do is
-  track per-recipient delivery: a send that reached *some* recipients is best-effort and silent by
-  the kit's design, so a partial failure is invisible here too.
+- **The outbox is durable but coarse.** A send that reached nobody sets an opaque local-metadata
+  sidecar and is retried on reconnect / foreground / cold start. It does not track per-recipient
+  delivery, so a partial failure remains invisible.
 - **iOS is build-gated, not production-gated.** CI builds the Swift bridge and React Native app for
   a simulator. Real APNs/background delivery and release signing still require physical-device
   validation.

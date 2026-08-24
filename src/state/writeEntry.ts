@@ -92,14 +92,16 @@ export async function writeEntry(args: WriteEntryArgs): Promise<string> {
   // writes `viewedAt` onto a `pix` the sender created, and stamping self there would relabel the
   // sender's pix as one of mine.
   //
-  // A peer never gets to decide this. On the way in, `drain.ts` overwrites the field with the
-  // authenticated sender; the copy that goes out on the wire is only ever a carrier.
+  // A peer never gets to decide this. The field is local-only and omitted from the wire; on the
+  // receive side `drain.ts` reconstructs it from authenticated transport identity.
   const priorAuthor = data[AUTHOR_USER_ID];
   const stored: Record<string, unknown> = {
     ...data,
     [AUTHOR_USER_ID]: typeof priorAuthor === 'string' ? priorAuthor : selfUserId,
   };
-  const payload = JSON.stringify(stored);
+  const wireData = { ...stored };
+  delete wireData[AUTHOR_USER_ID];
+  const payload = JSON.stringify(wireData);
 
   // `sentAt` must beat whatever is already stored, or a local write can lose to it.
   //
@@ -123,7 +125,7 @@ export async function writeEntry(args: WriteEntryArgs): Promise<string> {
     const next = await nextSentAt(model, id);
     // The author's own device, which is what the merge tie-break compares (NATIVE_CONTRACT §0.10 rule 4). For a
     // local write this device IS the authenticated author, so nothing needs authenticating.
-    await Obscura.entryPut(model, id, payload, next, myDeviceId);
+    await Obscura.entryPut(model, id, JSON.stringify(stored), next, myDeviceId);
     return next;
   });
 
@@ -144,7 +146,7 @@ export async function writeEntry(args: WriteEntryArgs): Promise<string> {
     // an undelivered entry sitting in their timeline looking sent, forever, with no trigger that
     // would ever retry it — the receive side has four (reconnect, foreground, cold start, wake) and
     // the send side had none. See `flushOutbox`.
-    await markUndelivered(model, id, stored, sentAt, myDeviceId);
+    await markUndelivered(model, id, sentAt);
     logError('writeEntry.send:' + model, e);
     throw e;
   }
@@ -154,13 +156,16 @@ export async function writeEntry(args: WriteEntryArgs): Promise<string> {
 
 // ─── The outbox ──────────────────────────────────────────
 //
-// There is no separate outbox table. The mark lives on the entry itself, which makes it durable for
-// free — the entry store is SQLite in the kit's own database (§8.1) — and means an undelivered entry
-// cannot be orphaned from its content. It is stripped before the payload goes on the wire: it is
-// this device's delivery bookkeeping and means nothing to a peer.
+const UNDELIVERED_METADATA = JSON.stringify({ undelivered: true });
 
-/** Set on a stored entry whose send reached nobody. */
-const UNDELIVERED = '_undelivered';
+function isUndelivered(localMetadata: string | null): boolean {
+  if (localMetadata === null) return false;
+  try {
+    return (JSON.parse(localMetadata) as { undelivered?: unknown }).undelivered === true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Record that this entry did not reach anybody, without disturbing a newer write.
@@ -171,15 +176,20 @@ const UNDELIVERED = '_undelivered';
  * peers should get, and it has its own delivery outcome.
  */
 async function markUndelivered(
-  model: string, id: string, data: Record<string, unknown>,
-  sentAt: number, myDeviceId: string,
+  model: string, id: string, sentAt: number,
 ): Promise<void> {
   try {
     await withEntryLock(async () => {
       const existing = (await Obscura.entryAll(model)).find((e) => e.id === id);
       if (existing === undefined || existing.sentAt !== sentAt) return;
-      const marked = JSON.stringify({ ...data, [UNDELIVERED]: true });
-      await Obscura.entryPut(model, id, marked, sentAt, myDeviceId);
+      await Obscura.entryPut(
+        model,
+        id,
+        existing.data,
+        sentAt,
+        existing.authorDeviceId,
+        UNDELIVERED_METADATA,
+      );
     });
   } catch (e) {
     // Best effort. The caller is already throwing about the send; failing to record the retry must
@@ -222,12 +232,10 @@ export async function flushOutbox(args: FlushOutboxArgs): Promise<number> {
       } catch {
         continue; // `loadEntries` already logs unreadable rows; do not log the same row twice.
       }
-      if (data[UNDELIVERED] !== true) continue;
+      if (!isUndelivered(row.localMetadata)) continue;
 
-      // Strip the mark before it goes anywhere. What the peer receives must be the entry, not this
-      // device's opinion about its delivery.
       const payload = { ...data };
-      delete payload[UNDELIVERED];
+      delete payload[AUTHOR_USER_ID];
       try {
         const recipients = resolveAudience(audienceFor(model), payload, selfUserId, friends);
         await Obscura.sendEntry(recipients, model, row.id, row.sentAt, JSON.stringify(payload));
@@ -243,7 +251,14 @@ export async function flushOutbox(args: FlushOutboxArgs): Promise<number> {
       await withEntryLock(async () => {
         const current = (await Obscura.entryAll(model)).find((e) => e.id === row.id);
         if (current === undefined || current.sentAt !== row.sentAt) return; // superseded
-        await Obscura.entryPut(model, row.id, JSON.stringify(payload), row.sentAt, current.authorDeviceId);
+        await Obscura.entryPut(
+          model,
+          row.id,
+          current.data,
+          row.sentAt,
+          current.authorDeviceId,
+          null,
+        );
       });
       delivered += 1;
     }

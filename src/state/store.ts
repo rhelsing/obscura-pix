@@ -7,6 +7,7 @@ import {
 } from '../native/ObscuraModule';
 import { drainInboxFully } from './drainInbox';
 import { writeEntry, flushOutbox } from './writeEntry';
+import { requestStartupPermissions } from '../application/requestStartupPermissions';
 import { logError } from '../utils/log';
 
 /**
@@ -292,12 +293,8 @@ function syncBothWays(label: string, alsoRefresh?: string): void {
 export function applyObscuraEvent(event: ObscuraEvent): void {
   const s = useStore.getState();
   switch (event.type) {
-    case 'friendsUpdated': {
-      const all = event.friends || [];
-      s._setFriendsAndPending(
-        all.filter((f) => f.status === 'accepted'),
-        all.filter((f) => f.status !== 'accepted'),
-      );
+    case 'friendsChanged': {
+      refreshFriendGraph().catch((e) => logError('friends.refresh', e));
       return;
     }
     case 'connectionChanged':
@@ -421,16 +418,17 @@ export function ObscuraBootstrap(): null {
     loadSession().catch((e) => logError('bootstrap.session', e));
   }, [authed]);
 
-  // Push permission — request once per session after first connect.
+  // Permission prompts must be serialized. Android drops concurrent requests, which previously
+  // left the camera at "not determined" when microphone/push prompts raced it after login.
   const connState = useStore((s) => s.connState);
-  const pushRequestedRef = useRef(false);
+  const permissionsRequestedRef = useRef(false);
   useEffect(() => {
-    if (!authed) { pushRequestedRef.current = false; return; }
+    if (!authed) { permissionsRequestedRef.current = false; return; }
     if (connState !== 'connected') return;
-    if (pushRequestedRef.current) return;
-    pushRequestedRef.current = true;
-    Obscura.requestPushPermission().catch((e: unknown) => {
-      console.warn('[push] permission request failed:', e);
+    if (permissionsRequestedRef.current) return;
+    permissionsRequestedRef.current = true;
+    requestStartupPermissions().catch((e: unknown) => {
+      console.warn('[permissions] startup request failed:', e);
     });
   }, [authed, connState]);
 

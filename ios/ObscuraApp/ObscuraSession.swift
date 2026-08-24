@@ -2,29 +2,10 @@ import Foundation
 import UIKit
 import ObscuraKit
 
-/// Logger that forwards kit diagnostics to a sink (the RN `debugLog` event) and
-/// surfaces hard auth failures. The bridge sets `onLog`. `@unchecked Sendable`
-/// because the sink is only assigned once at bind time.
+/// Host logger for Xcode/device diagnostics. The kit owns its pullable debug buffer.
 final class BridgeLogger: ObscuraLogger, @unchecked Sendable {
-    var onLog: ((String) -> Void)?
-
-    private let lock = NSLock()
-    private var buffer: [String] = []
-    private let maxLines = 200
-
-    /// Snapshot of recent diagnostic lines (for the in-app Settings debug log).
-    func recentLines() -> [String] {
-        lock.lock(); defer { lock.unlock() }
-        return buffer
-    }
-
     func log(_ message: String) {
         NSLog("[ObscuraKit] %@", message)
-        lock.lock()
-        buffer.append(message)
-        if buffer.count > maxLines { buffer.removeFirst(buffer.count - maxLines) }
-        lock.unlock()
-        onLog?(message)
     }
     func decryptFailed(sourceUserId: String, error: String) { log("decrypt failed from \(sourceUserId.prefix(8)): \(error)") }
     func ackFailed(envelopeId: String, error: String) { log("ack failed \(envelopeId): \(error)") }

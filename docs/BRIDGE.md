@@ -18,7 +18,7 @@ keep this document in sync with that file.
   No base64 round-trips, no megabyte-sized strings flying across the bridge.
 - **Nothing parses a payload, on either side.** `data` / `payload` cross as
   opaque JSON **strings**. The kit stores bytes it cannot read
-  ([`NATIVE_CONTRACT.md` §0.4](https://github.com/barrelmaker97/obscura-native/blob/b776161/docs/NATIVE_CONTRACT.md)); the app parses them once, on
+  ([`NATIVE_CONTRACT.md` §0.4](https://github.com/barrelmaker97/obscura-native/blob/591a659/docs/NATIVE_CONTRACT.md)); the app parses them once, on
   the way in (`store.ts`'s `loadEntries`). There is no schema on this bridge —
   `src/models/schema.ts` is read by the app alone and never crosses.
 - **The caller names the recipients.** `sendEntry` takes a userId list and the
@@ -84,7 +84,7 @@ this device is.
 
 | Method | Args | Returns | Platforms |
 |---|---|---|---|
-| `acceptFriend(userId, username)` | strings | `void` | both |
+| `acceptFriend(userId)` | string | `void` | both |
 | `getFriendCode()` | — | `string` (base64-wrapped JSON `{n,u}`) | both |
 | `addFriendByCode(code)` | string | `void` | both |
 | `getFriends()` | — | `Friend[]` | both |
@@ -101,7 +101,7 @@ name that did not come from here came from a peer.
 | `generateLinkCode()` | — | `string` | both |
 | `validateAndApproveLink(code)` | string | `void` | both |
 
-### The inbox ([`KIT_API.md` §3](https://github.com/barrelmaker97/obscura-native/blob/b776161/docs/KIT_API.md))
+### The inbox ([`KIT_API.md` §3](https://github.com/barrelmaker97/obscura-native/blob/591a659/docs/KIT_API.md))
 
 How messages arrive. The kit persists a row, ACKs, and then notifies — and
 **an ACK is a DELETE**, so once a row exists the server's copy is gone and the
@@ -117,12 +117,9 @@ row is the only copy of that message anywhere.
 ```ts
 InboxRow = {
   id: number             // monotonic per install; drain order. NOT a message id.
-  envelopeId: string     // server-assigned. The kit's dedupe key: UNIQUE + INSERT OR IGNORE.
   kind: string           // the client.proto payload arm, e.g. "APP_ENTRY"
-  receivedAt: number
   senderUserId: string           // server-stamped (NATIVE_CONTRACT §0.10)
   senderDeviceId: string|null    // the decrypting session's address — the merge tie-break
-  senderDisplayName: string|null // from the kit's friend graph; null if not a friend
   modelKey: string|null  // AppEntry-derived, so null for every other kind
   entryId: string|null
   sentAt: number|null    // peer-supplied; clamped per NATIVE_CONTRACT §2.4 before storage
@@ -144,7 +141,7 @@ Implementations MUST:
 - **`inboxDiscard` requires a non-empty `reason`** and MUST log it as a
   security-relevant event (§3.3 rule 5). It is data loss chosen deliberately.
   The app logs it too — a discard must never be the quiet path.
-- **Dedupe on `envelopeId`** (`UNIQUE` + `INSERT OR IGNORE`, §3.3 rule 8).
+- **Dedupe internally on the server envelope id** (`UNIQUE` + `INSERT OR IGNORE`, §3.3 rule 8).
   Persist-then-ack *guarantees* redelivery: the ack is best-effort and its
   failure is swallowed, so the same envelope arriving twice is routine.
 - **`senderDeviceId` comes from the address of the session that decrypted the
@@ -154,18 +151,18 @@ There is deliberately **no insert**: the inbox is kit-write, app-read-and-delete
 (§3.3 rule 9). The sending device gets no inbox row for its own send and writes
 its own entry directly.
 
-### The entry store ([`KIT_API.md` §8.1](https://github.com/barrelmaker97/obscura-native/blob/b776161/docs/KIT_API.md))
+### The entry store ([`KIT_API.md` §8.1](https://github.com/barrelmaker97/obscura-native/blob/591a659/docs/KIT_API.md))
 
 Where the app keeps what it made of the inbox. The kit owns the table; it has no
 opinion about the contents.
 
 | Method | Args | Returns | Platforms |
 |---|---|---|---|
-| `entryPut(model, id, dataJson, sentAt, authorDeviceId)` | string, string, string, number, string | `void` | both |
+| `entryPut(model, id, dataJson, sentAt, authorDeviceId, localMetadataJson?)` | string, string, string, number, string, string? | `void` | both |
 | `entryAll(model)` | string | `StoredEntry[]` | both |
 
-`StoredEntry = { id, data: string, sentAt, authorDeviceId }` — `data` is the
-app's JSON, stored verbatim.
+`StoredEntry = { id, data: string, sentAt, authorDeviceId, localMetadata }`. `data` is application
+JSON; `localMetadata` is opaque device-local bookkeeping and is never sent.
 
 `entryPut` is a **BLIND upsert**: an older write overwrites a newer one, because
 by the time a write reaches the bridge the app has already decided who wins
@@ -174,7 +171,7 @@ by the time a write reaches the bridge the app has already decided who wins
 **No `entriesChanged` event.** `entryPut` is a plain write and emits nothing;
 the app refreshes explicitly, because it is the app that knows what changed.
 
-### Send ([`KIT_API.md` §5](https://github.com/barrelmaker97/obscura-native/blob/b776161/docs/KIT_API.md))
+### Send ([`KIT_API.md` §5](https://github.com/barrelmaker97/obscura-native/blob/591a659/docs/KIT_API.md))
 
 | Method | Args | Returns | Platforms |
 |---|---|---|---|
@@ -194,18 +191,17 @@ Implementations MUST:
 
 | Method | Args | Returns | Platforms |
 |---|---|---|---|
-| `sendTyping(modelKey, conversationId)` | string, string | `void` | both |
-| `stopTyping(modelKey, conversationId)` | string, string | `void` | both |
-| `observeTyping(modelKey, conversationId)` | string, string | `void` | both |
-| `stopObservingTyping(modelKey, conversationId)` | string, string | `void` | both |
+| `sendTyping(recipientUserIds, conversationId)` | string[], string | `void` | both |
+| `stopTyping(recipientUserIds, conversationId)` | string[], string | `void` | both |
+| `observeTyping(conversationId)` | string | `void` | both |
+| `stopObservingTyping(conversationId)` | string | `void` | both |
 
 While an observation is active, the bridge emits
 [`typingChanged`](#typingchanged) whenever the typer set for that
 conversation changes.
 
-Signals are **droppable** (KIT_API §4): ephemeral by design, never inbox rows.
-The typing API derives its audience from a canonical two-party
-`conversationId` and sends nothing when that audience cannot be resolved.
+Signals are **droppable** (KIT_API §4): ephemeral by design, never inbox rows. The caller names
+recipients explicitly; `conversationId` is an opaque UI context.
 
 ### Attachments (path-based)
 
@@ -357,11 +353,9 @@ was suspended. iOS native background wake handling is not implemented yet.
 deep-link arrives (app already running, notification tapped). For cold
 starts use [`getLaunchIntent`](#deep-linking) instead.
 
-### `friendsUpdated`
-`{ type: 'friendsUpdated', friends: Friend[] }` — emitted whenever the
-friend list (accepted + pending) changes. Payload is the full list — JS
-splits it by status. Without this an inbound friend request would be invisible
-until something polled.
+### `friendsChanged`
+`{ type: 'friendsChanged' }` — a wake-up emitted whenever the friend graph changes. JS calls
+`getFriends()` for the canonical snapshot.
 
 ### `messageReceived`
 `{ type: 'messageReceived', model: string }` — emitted after an inbox row for
@@ -376,7 +370,7 @@ reconnect and foreground.
 
 ### `typingChanged`
 `{ type: 'typingChanged', conversationId: string, typers: string[] }` —
-emitted while an `observeTyping(modelKey, conversationId)` is active. `typers` is the
+emitted while an `observeTyping(conversationId)` is active. `typers` is the
 current set of remote display names that are typing.
 
 ### `pushTokenReceived`
@@ -385,15 +379,10 @@ token is available (after `requestPushPermission`, on cold start with a
 cached token, or on rotation). JS calls `registerPushToken` in response.
 Android emits this event. iOS token delivery is not wired.
 
-### `debugLog`
-`{ type: 'debugLog', message: string }` — kit-level diagnostic line. Surfaced
-in the in-app Profile debug log.
-
 ## Naming / shape rules
 
 - `type` is the discriminator, always a kebab-free camelCase string.
-- Event fields are flat scalars or simple arrays. No nested objects unless
-  truly necessary (`friendsUpdated.friends` is the only nested array today).
+- Event fields are flat scalars or simple arrays. No nested objects unless truly necessary.
 - Method args are scalars (`string`/`number`/`boolean`) or JSON strings for
   free-form objects (`entryPut(…, dataJson, …)`). This keeps the marshalling
   story identical on both platforms — and it is what keeps nested objects and

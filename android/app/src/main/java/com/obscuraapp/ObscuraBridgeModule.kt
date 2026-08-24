@@ -9,6 +9,7 @@ import com.obscura.kit.AuthState
 import com.obscura.kit.ConnectionState
 import com.obscura.kit.ObscuraClient
 import com.obscura.kit.ObscuraError
+import com.obscura.kit.TypingState
 import com.obscura.kit.network.LoginScenario
 import com.obscura.kit.stores.FriendData
 import kotlinx.coroutines.*
@@ -31,11 +32,10 @@ private enum class BridgeEvent(val type: String) {
     AUTH_FAILED("authFailed"),
     APP_STATE_CHANGED("appStateChanged"),
     LAUNCHED_FROM("launchedFrom"),
-    FRIENDS_UPDATED("friendsUpdated"),
+    FRIENDS_CHANGED("friendsChanged"),
     MESSAGE_RECEIVED("messageReceived"),
     TYPING_CHANGED("typingChanged"),
     PUSH_TOKEN_RECEIVED("pushTokenReceived"),
-    DEBUG_LOG("debugLog"),
 }
 
 /**
@@ -99,11 +99,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                 AuthState.AUTHENTICATED -> "authenticated"
             })
         }
-        override fun onFriendsUpdated(friends: List<FriendData>) = emit(BridgeEvent.FRIENDS_UPDATED) {
-            val arr = Arguments.createArray()
-            for (f in friends) arr.pushMap(friendToMap(f, f.status.value))
-            putArray("friends", arr)
-        }
+        override fun onFriendsChanged() = emit(BridgeEvent.FRIENDS_CHANGED)
         override fun onMessageReceived(type: String, modelName: String?) {
             if (type == "APP_ENTRY") {
                 // Payload is intentionally minimal — consumers re-query the entry store for the
@@ -113,11 +109,10 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                     return
                 }
                 emit(BridgeEvent.MESSAGE_RECEIVED) { putString("model", modelName) }
-            } else if (type == "FRIEND_REQUEST" || type == "FRIEND_RESPONSE") {
+            } else if (type == "FRIEND_REQUEST" || type == "FRIEND_ACCEPT") {
                 Log.d(TAG, "Friend event: $type")
             }
         }
-        override fun onDebugLog(message: String) = emit(BridgeEvent.DEBUG_LOG) { putString("message", message) }
         override fun onAuthFailed(reason: String) = emit(BridgeEvent.AUTH_FAILED) { putString("reason", reason) }
         override fun onPushToken(token: String) = emit(BridgeEvent.PUSH_TOKEN_RECEIVED) { putString("token", token) }
         override fun onAppStateChanged(state: ObscuraSession.AppState) = emit(BridgeEvent.APP_STATE_CHANGED) {
@@ -305,7 +300,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         val c = client
         if (c == null) { promise.resolve(Arguments.createArray()); return }
         val arr = Arguments.createArray()
-        for (f in c.friendList.value) arr.pushMap(friendToMap(f, f.status.value))
+        for (f in c.getFriends()) arr.pushMap(friendToMap(f, f.status.value))
         promise.resolve(arr)
     }
 
@@ -326,11 +321,11 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     // ─── Friends ────────────────────────────────────────────────────────────
 
     @ReactMethod
-    fun acceptFriend(userId: String, username: String, promise: Promise) {
+    fun acceptFriend(userId: String, promise: Promise) {
         scope.launch {
             try {
-                Log.d(TAG, "acceptFriend: $username ($userId)")
-                requireClient().acceptFriend(userId, username)
+                Log.d(TAG, "acceptFriend: $userId")
+                requireClient().acceptFriend(userId)
                 promise.resolve(null)
             } catch (e: Exception) {
                 Log.e(TAG, "acceptFriend failed: ${e.message}")
@@ -402,10 +397,14 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     // ─── Signals ────────────────────────────────────────────────────────────
     //
     @ReactMethod
-    fun sendTyping(modelKey: String, conversationId: String, promise: Promise) {
+    fun sendTyping(recipientUserIds: ReadableArray, conversationId: String, promise: Promise) {
         scope.launch {
             try {
-                requireClient().sendTyping(modelKey, conversationId)
+                requireClient().sendTyping(
+                    recipientUserIds.toStringList(),
+                    conversationId,
+                    TypingState.STARTED,
+                )
                 promise.resolve(null)
             } catch (e: Exception) {
                 promise.rejectKit("TYPING_ERROR", e)
@@ -414,10 +413,14 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun stopTyping(modelKey: String, conversationId: String, promise: Promise) {
+    fun stopTyping(recipientUserIds: ReadableArray, conversationId: String, promise: Promise) {
         scope.launch {
             try {
-                requireClient().stopTyping(modelKey, conversationId)
+                requireClient().sendTyping(
+                    recipientUserIds.toStringList(),
+                    conversationId,
+                    TypingState.STOPPED,
+                )
                 promise.resolve(null)
             } catch (e: Exception) {
                 promise.rejectKit("STOP_TYPING_ERROR", e)
@@ -426,9 +429,8 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun observeTyping(modelKey: String, conversationId: String, promise: Promise) {
-        val key = "$modelKey:$conversationId"
-        if (typingJobs.containsKey(key)) { promise.resolve(null); return }
+    fun observeTyping(conversationId: String, promise: Promise) {
+        if (typingJobs.containsKey(conversationId)) { promise.resolve(null); return }
         val c = try {
             requireClient()
         } catch (e: Exception) {
@@ -436,8 +438,8 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
             return
         }
 
-        typingJobs[key] = scope.launch {
-            c.observeTyping(modelKey, conversationId).collectLatest { typers ->
+        typingJobs[conversationId] = scope.launch {
+            c.observeTyping(conversationId).collectLatest { typers ->
                 emit(BridgeEvent.TYPING_CHANGED) {
                     putString("conversationId", conversationId)
                     val arr = Arguments.createArray()
@@ -450,8 +452,8 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun stopObservingTyping(modelKey: String, conversationId: String, promise: Promise) {
-        typingJobs.remove("$modelKey:$conversationId")?.cancel()
+    fun stopObservingTyping(conversationId: String, promise: Promise) {
+        typingJobs.remove(conversationId)?.cancel()
         promise.resolve(null)
     }
 
@@ -466,7 +468,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
             try {
                 val bytes = java.io.File(filePath).readBytes()
                 val encrypted = com.obscura.kit.crypto.AttachmentCrypto.encrypt(bytes)
-                val (id, _) = requireClient().uploadAttachment(encrypted.ciphertext)
+                val id = requireClient().uploadAttachment(encrypted.ciphertext)
                 promise.resolve(Arguments.createMap().apply {
                     putString("id", id)
                     putString("contentKey", Base64.encodeToString(encrypted.contentKey, Base64.NO_WRAP))
@@ -660,7 +662,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun getDebugLog(promise: Promise) {
-        val log = client?.debugLog ?: java.util.concurrent.ConcurrentLinkedDeque()
+        val log = client?.getDebugLog().orEmpty()
         val arr = Arguments.createArray()
         for (line in log) arr.pushString(line)
         promise.resolve(arr)
@@ -900,7 +902,15 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun entryPut(model: String, id: String, dataJson: String, sentAt: Double, authorDeviceId: String, promise: Promise) {
+    fun entryPut(
+        model: String,
+        id: String,
+        dataJson: String,
+        sentAt: Double,
+        authorDeviceId: String,
+        localMetadataJson: String?,
+        promise: Promise,
+    ) {
         scope.launch {
             try {
                 requireClient().entries.put(
@@ -910,6 +920,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                         data = dataJson,
                         sentAt = sentAt.toLong(),
                         authorDeviceId = authorDeviceId,
+                        localMetadata = localMetadataJson,
                     )
                 )
                 promise.resolve(null)
@@ -930,6 +941,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
                         putString("data", e.data)
                         putDouble("sentAt", e.sentAt.toDouble())
                         putString("authorDeviceId", e.authorDeviceId)
+                        putString("localMetadata", e.localMetadata)
                     })
                 }
                 promise.resolve(arr)
@@ -977,12 +989,9 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     private fun inboxRowToMap(r: com.obscura.kit.stores.InboxRecord): WritableMap =
         Arguments.createMap().apply {
             putDouble("id", r.id.toDouble())
-            putString("envelopeId", r.envelopeId)
             putString("kind", r.kind)
-            putDouble("receivedAt", r.receivedAt.toDouble())
             putString("senderUserId", r.senderUserId)
             putString("senderDeviceId", r.senderDeviceId)
-            putString("senderDisplayName", r.senderDisplayName)
             putString("modelKey", r.modelKey)
             putString("entryId", r.entryId)
             // Bound to a local first: `sentAt` is a nullable property from ANOTHER module, so

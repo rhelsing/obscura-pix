@@ -26,7 +26,7 @@ const TAB_BAR_CLEARANCE = Platform.OS === 'ios' ? 96 : 80;
 
 export function CameraScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { hasPermission: hasMic, requestPermission: requestMic } = useMicrophonePermission();
+  const { hasPermission: hasMic } = useMicrophonePermission();
   const insets = useSafeAreaInsets();
   const [facing, setFacing] = useState<'front' | 'back'>('back');
   const [flash, setFlash] = useState<'off' | 'on'>('off');
@@ -53,9 +53,6 @@ export function CameraScreen() {
     { videoResolution: { width: 1920, height: 1080 } },
     { photoResolution: { width: 1920, height: 1080 } },
   ]);
-
-  // Mic for video audio — request once. Recording still works (silent) if denied.
-  useEffect(() => { if (!hasMic) requestMic(); }, [hasMic, requestMic]);
 
   // Warm the audio HAL so hold-to-record starts instantly (cold AVAudioSession
   // activation is ~1.4s on iOS). Warm on mount + re-warm after each recording,

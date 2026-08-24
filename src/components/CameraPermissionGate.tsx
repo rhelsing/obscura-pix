@@ -1,6 +1,6 @@
 import React, { type ReactNode, useCallback, useEffect, useState } from 'react';
 import {
-  AppState, Linking, StyleSheet, Text, TouchableOpacity, View,
+  AppState, Linking, Platform, StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import {
   Camera, type CameraPermissionStatus, useCameraPermission,
@@ -33,13 +33,10 @@ export function CameraPermissionGate({ children, message }: CameraPermissionGate
     await refresh();
   }, [refresh, requestPermission]);
 
-  useEffect(() => {
-    if (status === 'not-determined') request();
-  }, [request, status]);
-
   if (hasPermission || status === 'granted') return children;
 
-  const canRequest = status === 'not-determined';
+  const canRequest = status === 'not-determined'
+    || (Platform.OS === 'android' && status === 'denied');
   return (
     <View style={s.container}>
       <Text style={s.message}>{message}</Text>
@@ -53,7 +50,7 @@ export function CameraPermissionGate({ children, message }: CameraPermissionGate
         </Text>
       </TouchableOpacity>
       {!canRequest && status !== null && (
-        <Text style={s.hint}>Enable Camera for Obscura in iOS Settings.</Text>
+        <Text style={s.hint}>Enable camera access in Settings.</Text>
       )}
     </View>
   );

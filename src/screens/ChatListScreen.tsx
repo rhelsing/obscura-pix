@@ -43,7 +43,7 @@ export function ChatListScreen() {
     if (acceptingUserId !== null) return;
     setAcceptingUserId(friend.userId);
     try {
-      await Obscura.acceptFriend(friend.userId, friend.username);
+      await Obscura.acceptFriend(friend.userId);
       await refreshFriendGraph();
       toast.success(`You and ${friend.username} are now friends`);
     } catch (e: any) {
@@ -166,7 +166,9 @@ export function ChatListScreen() {
                     {item.pixCount > 1 && <Text style={cl.iconCount}>{item.pixCount}</Text>}
                   </View>
                 ) : item.pixState === 'received_viewed' ? (
-                  <View style={cl.iconCircleOutline} />
+                  <View style={cl.iconCircleOutline}>
+                    <View style={cl.iconCircleOutlineInner} />
+                  </View>
                 ) : item.pixState === 'sent_pending' ? (
                   <View style={cl.iconArrowFilled} />
                 ) : item.pixState === 'sent_opened' ? (
@@ -207,11 +209,17 @@ const cl = StyleSheet.create({
   addBtn: { backgroundColor: colors.accent, borderRadius: 10, paddingHorizontal: 16, justifyContent: 'center' },
   addBtnText: { color: '#000', fontWeight: '700', fontSize: 14 },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
-  iconZone: { width: 64, alignItems: 'center', justifyContent: 'center', paddingLeft: 16 },
+  iconZone: { width: 64, alignItems: 'center', justifyContent: 'center', paddingLeft: 8 },
   chatZone: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 4 },
   // Pix state icons
   iconCircleFilled: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.accent, justifyContent: 'center', alignItems: 'center' },
-  iconCircleOutline: { width: 44, height: 44, borderRadius: 22, borderWidth: 3, borderColor: colors.accent },
+  iconCircleOutline: {
+    width: 44, height: 44, borderRadius: 22, backgroundColor: colors.accent,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  iconCircleOutlineInner: {
+    width: 38, height: 38, borderRadius: 19, backgroundColor: colors.bg,
+  },
   iconArrowFilled: { width: 0, height: 0, borderLeftWidth: 24, borderTopWidth: 16, borderBottomWidth: 16, borderLeftColor: colors.accent, borderTopColor: 'transparent', borderBottomColor: 'transparent' },
   iconArrowOutline: { width: 0, height: 0, borderLeftWidth: 24, borderTopWidth: 16, borderBottomWidth: 16, borderLeftColor: colors.accent, borderTopColor: 'transparent', borderBottomColor: 'transparent', opacity: 0.4 },
   iconCount: { color: colors.onAccent, fontWeight: '700', fontSize: 16 },

@@ -14,7 +14,6 @@ import com.obscura.kit.ObscuraClient
 import com.obscura.kit.ObscuraConfig
 import com.obscura.kit.ObscuraLogger
 import com.obscura.kit.db.ObscuraDatabase
-import com.obscura.kit.stores.FriendData
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -53,9 +52,8 @@ object ObscuraSession {
     interface EventSink {
         fun onConnectionChanged(state: ConnectionState)
         fun onAuthStateChanged(state: AuthState)
-        fun onFriendsUpdated(friends: List<FriendData>)
+        fun onFriendsChanged()
         fun onMessageReceived(type: String, modelName: String?)
-        fun onDebugLog(message: String)
         fun onAuthFailed(reason: String)
         fun onPushToken(token: String)
         fun onAppStateChanged(state: AppState)
@@ -93,7 +91,6 @@ object ObscuraSession {
         override fun preKeyReplenishFailed(reason: String) { Log.w(TAG, "prekey replenish failed: $reason") }
         override fun identityChanged(address: String) { Log.w(TAG, "identity changed: $address") }
         override fun sessionEstablishFailed(userId: String, reason: String) { Log.e(TAG, "session establish failed $userId: $reason") }
-        override fun signatureVerificationFailed(sourceUserId: String, messageType: String) { Log.w(TAG, "sig verify failed from $sourceUserId type=$messageType") }
         override fun databaseError(store: String, operation: String, reason: String) { Log.e(TAG, "db error $store.$operation: $reason") }
     }
 
@@ -145,7 +142,7 @@ object ObscuraSession {
         val c = client ?: return
         s.onAuthStateChanged(c.authState.value)
         s.onConnectionChanged(c.connectionState.value)
-        s.onFriendsUpdated(c.friendList.value)
+        s.onFriendsChanged()
     }
 
     fun unbindEventSink(s: EventSink) {
@@ -244,8 +241,8 @@ object ObscuraSession {
             }
         }
         collectorJobs += scope.launch {
-            c.friendList.collectLatest { friends ->
-                sink?.onFriendsUpdated(friends)
+            c.friendsChanged.collectLatest {
+                sink?.onFriendsChanged()
             }
         }
         // THE single consumer of incomingMessages. Fans out to sink + notification.
@@ -254,7 +251,6 @@ object ObscuraSession {
                 Log.d(TAG, "Incoming: ${msg.type}")
                 val modelName = msg.model
                 sink?.onMessageReceived(msg.type, modelName)
-                sink?.onDebugLog(msg.type)
 
                 if (!appInForeground) {
                     val notifText = classifyForNotification(msg.type, modelName)
