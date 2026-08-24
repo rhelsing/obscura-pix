@@ -18,7 +18,7 @@ keep this document in sync with that file.
   No base64 round-trips, no megabyte-sized strings flying across the bridge.
 - **Nothing parses a payload, on either side.** `data` / `payload` cross as
   opaque JSON **strings**. The kit stores bytes it cannot read
-  ([`NATIVE_CONTRACT.md` §0.4](https://github.com/barrelmaker97/obscura-native/blob/a0d412b56e7104f55d788fd5babff844c313c3bb/docs/NATIVE_CONTRACT.md)); the app parses them once, on
+  ([`NATIVE_CONTRACT.md` §0.4](https://github.com/barrelmaker97/obscura-native/blob/a13531b/docs/NATIVE_CONTRACT.md)); the app parses them once, on
   the way in (`store.ts`'s `loadEntries`). There is no schema on this bridge —
   `src/models/schema.ts` is read by the app alone and never crosses.
 - **The caller names the recipients.** `sendEntry` takes a userId list and the
@@ -104,7 +104,7 @@ name that did not come from here came from a peer.
 | `generateLinkCode()` | — | `string` | both |
 | `validateAndApproveLink(code)` | string | `void` | both |
 
-### The inbox ([`KIT_API.md` §3](https://github.com/barrelmaker97/obscura-native/blob/a0d412b56e7104f55d788fd5babff844c313c3bb/docs/KIT_API.md))
+### The inbox ([`KIT_API.md` §3](https://github.com/barrelmaker97/obscura-native/blob/a13531b/docs/KIT_API.md))
 
 How messages arrive. The kit persists a row, ACKs, and then notifies — and
 **an ACK is a DELETE**, so once a row exists the server's copy is gone and the
@@ -128,7 +128,6 @@ InboxRow = {
   senderDisplayName: string|null // from the kit's friend graph; null if not a friend
   modelKey: string|null  // ModelSync-derived, so null for every other kind
   entryId: string|null
-  op: string|null
   sentAt: number|null    // peer-supplied; clamped per NATIVE_CONTRACT §2.4 before storage
   payload: string        // opaque JSON string
 }
@@ -158,7 +157,7 @@ There is deliberately **no insert**: the inbox is kit-write, app-read-and-delete
 (§3.3 rule 9). The sending device gets no inbox row for its own send and writes
 its own entry directly.
 
-### The entry store ([`KIT_API.md` §8.1](https://github.com/barrelmaker97/obscura-native/blob/a0d412b56e7104f55d788fd5babff844c313c3bb/docs/KIT_API.md))
+### The entry store ([`KIT_API.md` §8.1](https://github.com/barrelmaker97/obscura-native/blob/a13531b/docs/KIT_API.md))
 
 Where the app keeps what it made of the inbox. The kit owns the table; it has no
 opinion about the contents.
@@ -175,18 +174,14 @@ app's JSON, stored verbatim.
 by the time a write reaches the bridge the app has already decided who wins
 (`src/domain/merge.ts`). A bridge that merged would hide an app that forgot to.
 
-There is no `entryDelete`. It had zero callers, and nothing in the app or either
-kit produces `op: DELETE` — a delete could only remove a row locally and diverge
-this device from every other one.
-
 **No `entriesChanged` event.** `entryPut` is a plain write and emits nothing;
 the app refreshes explicitly, because it is the app that knows what changed.
 
-### Send ([`KIT_API.md` §5](https://github.com/barrelmaker97/obscura-native/blob/a0d412b56e7104f55d788fd5babff844c313c3bb/docs/KIT_API.md))
+### Send ([`KIT_API.md` §5](https://github.com/barrelmaker97/obscura-native/blob/a13531b/docs/KIT_API.md))
 
 | Method | Args | Returns | Platforms |
 |---|---|---|---|
-| `sendEntry(recipientUserIds, modelKey, entryId, op, sentAt, payloadJson)` | string[], string, string, string, number, string | `void` | both |
+| `sendEntry(recipientUserIds, modelKey, entryId, sentAt, payloadJson)` | string[], string, string, number, string | `void` | both |
 
 Implementations MUST:
 
@@ -202,10 +197,10 @@ Implementations MUST:
 
 | Method | Args | Returns | Platforms |
 |---|---|---|---|
-| `sendTyping(conversationId)` | string | `void` | both |
-| `stopTyping(conversationId)` | string | `void` | both |
-| `observeTyping(conversationId)` | string | `void` | both |
-| `stopObservingTyping(conversationId)` | string | `void` | both |
+| `sendTyping(modelKey, conversationId)` | string, string | `void` | both |
+| `stopTyping(modelKey, conversationId)` | string, string | `void` | both |
+| `observeTyping(modelKey, conversationId)` | string, string | `void` | both |
+| `stopObservingTyping(modelKey, conversationId)` | string, string | `void` | both |
 
 While an observation is active, the bridge emits
 [`typingChanged`](#typingchanged) whenever the typer set for that
@@ -388,7 +383,7 @@ reconnect and foreground.
 
 ### `typingChanged`
 `{ type: 'typingChanged', conversationId: string, typers: string[] }` —
-emitted while an `observeTyping(conversationId)` is active. `typers` is the
+emitted while an `observeTyping(modelKey, conversationId)` is active. `typers` is the
 current set of remote display names that are typing.
 
 ### `pushTokenReceived`

@@ -9,6 +9,7 @@ const ObscuraBridge =
 // Stub for when native module isn't available (e.g. under jest).
 const noop = (..._args: any[]): Promise<any> => Promise.resolve(null);
 const Bridge = ObscuraBridge || new Proxy({}, { get: (_t, _prop) => noop });
+const TYPING_MODEL = 'directMessage';
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -67,7 +68,6 @@ export interface InboxRow {
   /** `ModelSync`-derived, so null for every other kind. */
   modelKey: string | null;
   entryId: string | null;
-  op: string | null;
   sentAt: number | null;
   payload: string;
 }
@@ -182,29 +182,25 @@ export const Obscura = {
 
   entryAll: (model: string): Promise<StoredEntry[]> => Bridge.entryAll(model),
 
-  // No `entryDelete`. It had zero callers here and nothing in the app or either kit produces
-  // `op: DELETE`, so a delete could only ever remove a row locally and diverge this device from
-  // every other one. The kit-side `entries.delete` is the kits' business.
-
   /** The caller names recipients (DOMAIN_CONTRACT). The kit resolves no entry audience. */
   sendEntry: (
     recipientUserIds: string[], modelKey: string, entryId: string,
-    op: string, sentAt: number, payloadJson: string,
+    sentAt: number, payloadJson: string,
   ): Promise<void> =>
-    Bridge.sendEntry(recipientUserIds, modelKey, entryId, op, sentAt, payloadJson),
+    Bridge.sendEntry(recipientUserIds, modelKey, entryId, sentAt, payloadJson),
 
   // Signals (typing)
   sendTyping: (conversationId: string): Promise<void> =>
-    Bridge.sendTyping(conversationId),
+    Bridge.sendTyping(TYPING_MODEL, conversationId),
 
   stopTyping: (conversationId: string): Promise<void> =>
-    Bridge.stopTyping(conversationId),
+    Bridge.stopTyping(TYPING_MODEL, conversationId),
 
   observeTyping: (conversationId: string): Promise<void> =>
-    Bridge.observeTyping(conversationId),
+    Bridge.observeTyping(TYPING_MODEL, conversationId),
 
   stopObservingTyping: (conversationId: string): Promise<void> =>
-    Bridge.stopObservingTyping(conversationId),
+    Bridge.stopObservingTyping(TYPING_MODEL, conversationId),
 
   // Attachments — path-based. JS never holds the bytes.
   // upload reads from `filePath`, encrypts, uploads. The source file is left

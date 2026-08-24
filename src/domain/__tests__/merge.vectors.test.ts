@@ -8,8 +8,7 @@ import { mergeAll, type Entry, type MergeRule } from '../merge';
 /**
  * The app-owned merge fixtures, run against this app's merge implementation.
  *
- * Four cases cover the current APPEND and REPLACE rules. Two tombstone cases are
- * recognized but unsupported because the app has no delete operation.
+ * Four cases cover the current APPEND and REPLACE rules.
  */
 
 const VECTORS = join(__dirname, '../__fixtures__/merge.json');
@@ -36,29 +35,21 @@ const suite: { cases: VectorCase[] } = JSON.parse(readFileSync(VECTORS, 'utf8'))
 /** Fixture vocabulary mapped to the app's merge rules. */
 const RULE: Record<string, MergeRule> = { gset: 'APPEND', lww: 'REPLACE' };
 
-const toEntry = (op: VectorOp): Entry => ({
-  id: op.id,
-  sentAt: op.ts,
-  authorDeviceId: op.authorDeviceId,
-  data: op.data,
+const toEntry = (vector: VectorOp): Entry => ({
+  id: vector.id,
+  sentAt: vector.ts,
+  authorDeviceId: vector.authorDeviceId,
+  data: vector.data,
 });
-
-const isTombstoneCase = (c: VectorCase) =>
-  c.ops.some((op) => Object.prototype.hasOwnProperty.call(op.data, '_deleted'));
-
-const supported = suite.cases.filter((c) => !isTombstoneCase(c));
-const tombstones = suite.cases.filter(isTombstoneCase);
 
 describe('merge.json conformance', () => {
   it('the vector file is present and was not silently emptied', () => {
     // Guards the port itself: a wrong path or a renamed file would otherwise make every
     // vector-driven test below vacuously pass by iterating an empty list.
-    expect(suite.cases.length).toBe(6);
-    expect(supported.length).toBe(4);
-    expect(tombstones.length).toBe(2);
+    expect(suite.cases.length).toBe(4);
   });
 
-  describe.each(supported.map((c) => [c.name, c] as const))('%s', (_name, testCase) => {
+  describe.each(suite.cases.map((c) => [c.name, c] as const))('%s', (_name, testCase) => {
     const rule = RULE[testCase.sync];
 
     it.each(testCase.applyOrders)('applied in %s order', (order) => {
@@ -100,10 +91,4 @@ describe('merge.json conformance', () => {
     });
   });
 
-  it('recognizes the unsupported tombstone cases', () => {
-    expect(tombstones.map((c) => c.name)).toEqual([
-      'LWW newer tombstone wins: a later delete removes the entry, order-independent',
-      'LWW stale write does not resurrect a newer tombstone, order-independent',
-    ]);
-  });
 });

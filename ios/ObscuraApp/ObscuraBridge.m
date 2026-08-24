@@ -37,13 +37,13 @@ RCT_EXTERN_METHOD(validateAndApproveLink:(NSString *)code
                   resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
 // ── Typing signals ────────────────────────────────────────────────────────
-RCT_EXTERN_METHOD(sendTyping:(NSString *)conversationId
+RCT_EXTERN_METHOD(sendTyping:(NSString *)modelKey conversationId:(NSString *)conversationId
                   resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
-RCT_EXTERN_METHOD(stopTyping:(NSString *)conversationId
+RCT_EXTERN_METHOD(stopTyping:(NSString *)modelKey conversationId:(NSString *)conversationId
                   resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
-RCT_EXTERN_METHOD(observeTyping:(NSString *)conversationId
+RCT_EXTERN_METHOD(observeTyping:(NSString *)modelKey conversationId:(NSString *)conversationId
                   resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
-RCT_EXTERN_METHOD(stopObservingTyping:(NSString *)conversationId
+RCT_EXTERN_METHOD(stopObservingTyping:(NSString *)modelKey conversationId:(NSString *)conversationId
                   resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
 // ── Attachments ───────────────────────────────────────────────────────────
@@ -96,7 +96,7 @@ RCT_EXTERN_METHOD(entryAll:(NSString *)model
                   resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
 RCT_EXTERN_METHOD(sendEntry:(NSArray *)recipientUserIds modelKey:(NSString *)modelKey
-                  entryId:(NSString *)entryId op:(NSString *)op sentAt:(nonnull NSNumber *)sentAt
+                  entryId:(NSString *)entryId sentAt:(nonnull NSNumber *)sentAt
                   payloadJson:(NSString *)payloadJson
                   resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 

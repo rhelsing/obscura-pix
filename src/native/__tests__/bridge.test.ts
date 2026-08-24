@@ -110,9 +110,6 @@ describe('the entry store', () => {
     expect(stored.sentAt).toBe(1_000);
   });
 
-  // No delete test, because there is no `entryDelete` on the bridge any more: it had zero callers
-  // and nothing in the app or either kit produces `op: DELETE`, so the only thing it could do was
-  // remove a row here and diverge this device from every other one.
 });
 
 describe('the inbox', () => {
@@ -155,7 +152,7 @@ describe('failures', () => {
   it('rejects with a code the app can branch on', async () => {
     bridge.__failNext('sendEntry', 'SEND_FAILED', 'reached nobody');
 
-    await expect(Obscura.sendEntry([], 'directMessage', 'x', 'CREATE', 1, '{}'))
+    await expect(Obscura.sendEntry([], 'directMessage', 'x', 1, '{}'))
       .rejects.toMatchObject({ code: 'SEND_FAILED' });
   });
 

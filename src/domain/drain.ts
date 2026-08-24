@@ -40,7 +40,6 @@ export interface DrainRow {
   kind: string;
   modelKey: string | null;
   entryId: string | null;
-  op: string | null;
   sentAt: number | null;
   /**
    * The sending **user**, stamped by transport and accepted after Signal decryption.

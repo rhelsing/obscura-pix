@@ -80,7 +80,7 @@ export class FakeObscuraBridge {
   /** What `sendEntry` put on the wire, in order. The app's outgoing audience decisions, observable. */
   readonly __sent: Array<{
     recipientUserIds: string[]; modelKey: string; entryId: string;
-    op: string; sentAt: number; payloadJson: string;
+    sentAt: number; payloadJson: string;
   }> = [];
 
   /** Rows the app discarded, with the reason. Data loss must be visible in a test, not silent. */
@@ -149,13 +149,13 @@ export class FakeObscuraBridge {
 
   async sendEntry(
     recipientUserIds: string[], modelKey: string, entryId: string,
-    op: string, sentAt: number, payloadJson: string,
+    sentAt: number, payloadJson: string,
   ): Promise<void> {
     this.record('sendEntry');
     this.checkFailure('sendEntry');
     // No local row and no inbox row — §5 property 2. The sender writes its own copy, so a test that
     // forgets to will see an empty store rather than a silently-correct one.
-    this.__sent.push({ recipientUserIds, modelKey, entryId, op, sentAt, payloadJson });
+    this.__sent.push({ recipientUserIds, modelKey, entryId, sentAt, payloadJson });
   }
 
   // ─── Test controls (`__` prefix — NOT part of the native surface) ───
@@ -189,7 +189,6 @@ export class FakeObscuraBridge {
       senderDisplayName: 'peer',
       modelKey: 'directMessage',
       entryId: `entry_${id}`,
-      op: 'CREATE',
       sentAt: this.nextTimestamp(),
       ...row,
     };
@@ -423,16 +422,16 @@ export class FakeObscuraBridge {
 
   // ─── Signals ───────────────────────────────────────────
 
-  async sendTyping(_conversationId: string): Promise<void> {
+  async sendTyping(_modelKey: string, _conversationId: string): Promise<void> {
     this.record('sendTyping');
   }
-  async stopTyping(_conversationId: string): Promise<void> {
+  async stopTyping(_modelKey: string, _conversationId: string): Promise<void> {
     this.record('stopTyping');
   }
-  async observeTyping(_conversationId: string): Promise<void> {
+  async observeTyping(_modelKey: string, _conversationId: string): Promise<void> {
     this.record('observeTyping');
   }
-  async stopObservingTyping(_conversationId: string): Promise<void> {
+  async stopObservingTyping(_modelKey: string, _conversationId: string): Promise<void> {
     this.record('stopObservingTyping');
   }
 

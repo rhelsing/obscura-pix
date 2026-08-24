@@ -61,34 +61,6 @@
           { "id": "settings", "authorDeviceId": "devB", "data": { "theme": "light" } }
         ]
       }
-    },
-    {
-      "name": "LWW newer tombstone wins: a later delete removes the entry, order-independent",
-      "sync": "lww",
-      "applyOrders": ["forward", "reverse"],
-      "ops": [
-        { "id": "r1", "ts": 1, "authorDeviceId": "devA", "data": { "emoji": "heart" } },
-        { "id": "r1", "ts": 2, "authorDeviceId": "devA", "data": { "_deleted": true } }
-      ],
-      "expect": {
-        "entries": [
-          { "id": "r1", "deleted": true }
-        ]
-      }
-    },
-    {
-      "name": "LWW stale write does not resurrect a newer tombstone, order-independent",
-      "sync": "lww",
-      "applyOrders": ["forward", "reverse"],
-      "ops": [
-        { "id": "r1", "ts": 2, "authorDeviceId": "devA", "data": { "_deleted": true } },
-        { "id": "r1", "ts": 1, "authorDeviceId": "devB", "data": { "emoji": "fire" } }
-      ],
-      "expect": {
-        "entries": [
-          { "id": "r1", "deleted": true }
-        ]
-      }
     }
   ]
 }

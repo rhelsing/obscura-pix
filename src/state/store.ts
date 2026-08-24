@@ -340,6 +340,15 @@ export function applyObscuraEvent(event: ObscuraEvent): void {
   }
 }
 
+export async function refreshFriendGraph(): Promise<void> {
+  const all = await Obscura.getFriends();
+  const list = all || [];
+  useStore.getState()._setFriendsAndPending(
+    list.filter((f) => f.status === 'accepted'),
+    list.filter((f) => f.status !== 'accepted'),
+  );
+}
+
 /**
  * Pull the session identity and graph, then run the cold-start sync.
  *
@@ -360,13 +369,7 @@ export async function loadSession(): Promise<void> {
     Obscura.getDeviceId()
       .then((id) => store._setDeviceId(id || ''))
       .catch((e) => logError('bootstrap.deviceId', e)),
-    Obscura.getFriends().then((all) => {
-      const list = all || [];
-      store._setFriendsAndPending(
-        list.filter((f) => f.status === 'accepted'),
-        list.filter((f) => f.status !== 'accepted'),
-      );
-    }).catch((e) => logError('bootstrap.friends', e)),
+    refreshFriendGraph().catch((e) => logError('bootstrap.friends', e)),
     Obscura.getConnectionState()
       .then((cs) => store._setConnState(cs || 'disconnected'))
       .catch((e) => logError('bootstrap.conn', e)),

@@ -33,7 +33,6 @@ function row(over: Partial<DrainRow> = {}): DrainRow {
     kind: 'MODEL_SYNC',
     modelKey: 'directMessage',
     entryId: `entry_${nextId}`,
-    op: 'CREATE',
     sentAt: 1_000,
     senderUserId: PEER,
     senderDeviceId: 'device_peer',

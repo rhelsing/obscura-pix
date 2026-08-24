@@ -1,7 +1,7 @@
 import React, { useCallback, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Linking } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import {
-  Camera, useCameraDevice, useCameraPermission, useCodeScanner,
+  Camera, useCameraDevice, useCodeScanner,
 } from 'react-native-vision-camera';
 import type { Code } from 'react-native-vision-camera';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
@@ -9,9 +9,9 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Obscura } from '../native/ObscuraModule';
 import { toast } from '../components/Toast';
 import { CloseIcon } from '../components/icons';
+import { CameraPermissionGate } from '../components/CameraPermissionGate';
 import { parseFriendQR } from '../friendQR';
 import type { RootStackParamList } from '../navigation/types';
-import { colors } from '../styles';
 
 /**
  * Dedicated QR scan mode. Per the vision-camera constraint, the code scanner
@@ -23,7 +23,6 @@ import { colors } from '../styles';
 export function ScanFriendScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const isFocused = useIsFocused();
-  const { hasPermission, requestPermission } = useCameraPermission();
   const device = useCameraDevice('back');
   const handled = useRef(false); // onCodeScanned fires repeatedly — only act once
 
@@ -42,40 +41,29 @@ export function ScanFriendScreen() {
 
   const codeScanner = useCodeScanner({ codeTypes: ['qr'], onCodeScanned });
 
-  if (!hasPermission) {
-    return (
-      <View style={ss.center}>
-        <Text style={ss.msg}>Camera access needed to scan</Text>
-        <TouchableOpacity style={ss.btn} onPress={requestPermission}>
-          <Text style={ss.btnText}>Grant access</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => Linking.openSettings()}>
-          <Text style={ss.link}>Open settings</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-  if (!device) {
-    return <View style={ss.center}><Text style={ss.msg}>No camera available</Text></View>;
-  }
-
   return (
-    <View style={ss.container}>
-      <Camera
-        style={StyleSheet.absoluteFill}
-        device={device}
-        isActive={isFocused}
-        codeScanner={codeScanner}
-        photo={true}
-      />
-      <View style={ss.overlay} pointerEvents="box-none">
-        <View style={ss.frame} />
-        <Text style={ss.hint}>Point at a friend's QR code</Text>
-      </View>
-      <TouchableOpacity style={ss.close} onPress={() => nav.goBack()}>
-        <CloseIcon size={22} color="#fff" />
-      </TouchableOpacity>
-    </View>
+    <CameraPermissionGate message="Camera access needed to scan">
+      {!device ? (
+        <View style={ss.center}><Text style={ss.msg}>No camera available</Text></View>
+      ) : (
+        <View style={ss.container}>
+          <Camera
+            style={StyleSheet.absoluteFill}
+            device={device}
+            isActive={isFocused}
+            codeScanner={codeScanner}
+            photo={true}
+          />
+          <View style={ss.overlay} pointerEvents="box-none">
+            <View style={ss.frame} />
+            <Text style={ss.hint}>Point at a friend's QR code</Text>
+          </View>
+          <TouchableOpacity style={ss.close} onPress={() => nav.goBack()}>
+            <CloseIcon size={22} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      )}
+    </CameraPermissionGate>
   );
 }
 
@@ -83,9 +71,6 @@ const ss = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   center: { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center', padding: 32 },
   msg: { color: '#fff', fontSize: 16, fontWeight: '600', marginBottom: 16, textAlign: 'center' },
-  btn: { backgroundColor: colors.accent, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12, marginBottom: 12 },
-  btnText: { color: '#000', fontWeight: '700', fontSize: 16 },
-  link: { color: colors.accent, fontSize: 14 },
   overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center' },
   frame: {
     width: 240, height: 240, borderRadius: 24,
