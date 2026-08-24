@@ -276,9 +276,16 @@ extension ObscuraBridge {
     func acceptFriend(_ userId: String, username: String,
                       resolver resolve: @escaping RCTPromiseResolveBlock,
                       rejecter reject: @escaping RCTPromiseRejectBlock) {
+        NSLog("[ObscuraBridge] acceptFriend started user=%@", userId)
         Task {
-            do { try await client.acceptFriend(userId, username: username); resolve(nil) }
-            catch { rejectKit(reject, "ACCEPT_ERROR", error) }
+            do {
+                try await client.acceptFriend(userId, username: username)
+                NSLog("[ObscuraBridge] acceptFriend succeeded user=%@", userId)
+                resolve(nil)
+            } catch {
+                NSLog("[ObscuraBridge] acceptFriend failed user=%@ error=%@", userId, "\(error)")
+                rejectKit(reject, "ACCEPT_ERROR", error)
+            }
         }
     }
 

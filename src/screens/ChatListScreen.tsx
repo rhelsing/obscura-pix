@@ -1,11 +1,10 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, FlatList, StyleSheet,
+  View, Text, TouchableOpacity, FlatList, Pressable, StyleSheet,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useHeaderHeight } from '@react-navigation/elements';
 import { Obscura, type Friend, type ModelEntry } from '../native/ObscuraModule';
 import { conversationId } from '../domain/conversation';
 import { useSession, useModelEntries, refreshFriendGraph } from '../state/store';
@@ -14,6 +13,7 @@ import { authorOf } from '../utils/identity';
 import { StoriesRow } from './StoriesScreen';
 import { Avatar } from '../components/Avatar';
 import { toast } from '../components/Toast';
+import { MAIN_HEADER_CONTENT_HEIGHT, MainHeaderOverlay } from '../components/MainHeaderOverlay';
 import type { RootStackParamList } from '../navigation/types';
 import { openPixViewer } from '../navigation/openPixViewer';
 import { timeAgo } from '../utils/format';
@@ -33,7 +33,6 @@ interface FriendActivity {
 export function ChatListScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
-  const headerHeight = useHeaderHeight();
   const { friends, pending, myUserId } = useSession();
   const messages = useModelEntries('directMessage');
   const pixEntries = useModelEntries('pix');
@@ -98,33 +97,48 @@ export function ChatListScreen() {
   return (
     // Full-screen page under the floating transparent header (pad content clear
     // of it). Horizontal swipe is owned by the tab pager, not this screen.
-    <View style={[cl.page, { paddingTop: headerHeight + 8 }]}>
+    <View style={[cl.page, { paddingTop: insets.top + MAIN_HEADER_CONTENT_HEIGHT + 8 }]}>
+      <MainHeaderOverlay camera={false} />
       {/* Stories row */}
       <StoriesRow />
 
       {/* Pending requests */}
-      {pending.length > 0 && pending.map(f => (
-        <View key={f.userId} style={cl.row}>
-          <Avatar name={f.username} size={44} background={colors.surfaceMuted} color={colors.text} />
-          <View style={cl.info}>
-            <Text style={cl.username}>{f.username}</Text>
-            <Text style={cl.preview}>
-              {f.status === 'pending_received' ? 'Wants to be friends' : 'Request sent'}
-            </Text>
-          </View>
-          {f.status === 'pending_received' && (
-            <TouchableOpacity
-              style={cl.acceptBtn}
-              onPress={() => onAcceptFriend(f)}
-              disabled={acceptingUserId !== null}
-            >
-              <Text style={cl.acceptBtnText}>
-                {acceptingUserId === f.userId ? 'Accepting…' : 'Accept'}
+      {pending.length > 0 && pending.map(f => {
+        const content = (
+          <>
+            <Avatar name={f.username} size={44} background={colors.surfaceMuted} color={colors.text} />
+            <View style={cl.info}>
+              <Text style={cl.username}>{f.username}</Text>
+              <Text style={cl.preview}>
+                {f.status === 'pending_received' ? 'Wants to be friends' : 'Request sent'}
               </Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      ))}
+            </View>
+            {f.status === 'pending_received' && (
+              <View style={cl.acceptBtn}>
+                <Text style={cl.acceptBtnText}>
+                  {acceptingUserId === f.userId ? 'Accepting…' : 'Accept'}
+                </Text>
+              </View>
+            )}
+          </>
+        );
+
+        return f.status === 'pending_received' ? (
+          <Pressable
+            key={f.userId}
+            style={cl.row}
+            onPress={() => onAcceptFriend(f)}
+            disabled={acceptingUserId !== null}
+            accessibilityRole="button"
+            accessibilityLabel={`Accept friend request from ${f.username}`}
+            hitSlop={8}
+          >
+            {content}
+          </Pressable>
+        ) : (
+          <View key={f.userId} style={cl.row}>{content}</View>
+        );
+      })}
 
       {/* Unified friend list */}
       <FlatList

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createMaterialTopTabNavigator, type MaterialTopTabBarProps } from '@react-navigation/material-top-tabs';
 import { View, TouchableOpacity, StyleSheet, AppState } from 'react-native';
-import { useNavigation, useIsFocused, getFocusedRouteNameFromRoute, type RouteProp } from '@react-navigation/native';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -22,37 +22,12 @@ import { StoryViewer } from '../screens/StoriesScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
 import { AddFriendScreen } from '../screens/AddFriendScreen';
 import { ScanFriendScreen } from '../screens/ScanFriendScreen';
-import { AddFriendIcon } from '../components/AddFriendIcon';
 import { CameraIcon, ChatIcon } from '../components/icons';
-import { Avatar } from '../components/Avatar';
 
 import type { RootStackParamList, MainTabParamList } from './types';
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const MainTab = createMaterialTopTabNavigator<MainTabParamList>();
-
-// ─── Tab Bar ─────────────────────────────────────────────
-
-// Profile avatar — top-left header button on both tabs.
-function ProfileAvatarButton() {
-  const { myUsername } = useSession();
-  const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  return (
-    <TouchableOpacity onPress={() => nav.navigate('Profile')} style={headerStyles.btn}>
-      <Avatar name={myUsername} size={32} />
-    </TouchableOpacity>
-  );
-}
-
-// Add-friend button — top-right on the Chats tab. Opens the AddFriend modal.
-function AddFriendHeaderButton() {
-  const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  return (
-    <TouchableOpacity onPress={() => nav.navigate('AddFriend')} style={headerStyles.btn}>
-      <AddFriendIcon size={24} color={colors.accent} />
-    </TouchableOpacity>
-  );
-}
 
 // Bottom tab bar for the swipe pager. Floats absolutely over the pager so the
 // full-bleed camera preview extends underneath it; background is solid on the
@@ -115,28 +90,6 @@ function MainTabs() {
   );
 }
 
-// Header options for MainTabs, driven by which tab is focused. Header floats
-// (transparent) so the pager keeps a constant full-screen height — no layout
-// jump mid-swipe. On the camera tab it gets a subtle dark scrim instead of the
-// solid Chats background, so the white wordmark/icons stay readable when the
-// camera points at something bright.
-function mainTabsHeaderOptions({ route }: { route: RouteProp<RootStackParamList, 'MainTabs'> }) {
-  const tab = getFocusedRouteNameFromRoute(route) ?? 'Camera';
-  const isCamera = tab === 'Camera';
-  return {
-    headerShown: true,
-    headerTransparent: true,
-    headerStyle: { backgroundColor: isCamera ? 'rgba(0,0,0,0.32)' : colors.bg },
-    headerShadowVisible: false,
-    headerTitle: 'obscura',
-    headerTitleAlign: 'center' as const,
-    headerTintColor: colors.text,
-    headerTitleStyle: { color: colors.text, fontWeight: '700' as const },
-    headerLeft: () => <ProfileAvatarButton />,
-    headerRight: () => <AddFriendHeaderButton />,
-  };
-}
-
 // ─── Splash (during initial auth check) ──────────────────
 
 function SplashScreen() {
@@ -175,7 +128,7 @@ export function RootNavigator() {
         <RootStack.Screen name="Auth" component={AuthScreen} />
       ) : (
         <>
-          <RootStack.Screen name="MainTabs" component={MainTabs} options={mainTabsHeaderOptions} />
+          <RootStack.Screen name="MainTabs" component={MainTabs} />
           <RootStack.Screen
             name="Chat"
             component={ChatScreen}
@@ -241,6 +194,11 @@ export function RootNavigator() {
 
 const tabStyles = StyleSheet.create({
   bar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 10,
     flexDirection: 'row',
     paddingTop: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -249,6 +207,5 @@ const tabStyles = StyleSheet.create({
 });
 
 const headerStyles = StyleSheet.create({
-  btn: { paddingHorizontal: 16 },
   splash: { flex: 1, backgroundColor: colors.bg },
 });

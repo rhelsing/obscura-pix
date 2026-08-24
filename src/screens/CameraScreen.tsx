@@ -1,5 +1,5 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Pressable, StyleSheet, PanResponder, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, Pressable, StyleSheet, PanResponder, Animated, Platform } from 'react-native';
 import {
   Camera, useCameraDevice, useCameraFormat, useMicrophonePermission,
 } from 'react-native-vision-camera';
@@ -12,6 +12,7 @@ import { logError } from '../utils/log';
 import { clamp, touchDist } from '../utils/gesture';
 import { FlashIcon, FlipCameraIcon } from '../components/icons';
 import { CameraPermissionGate } from '../components/CameraPermissionGate';
+import { MainHeaderOverlay } from '../components/MainHeaderOverlay';
 import type { RootStackParamList } from '../navigation/types';
 import { colors } from '../styles';
 
@@ -21,7 +22,7 @@ const HOLD_TO_RECORD_MS = 220;
 // Space the bottom controls clear of the floating tab bar. Small — enough to
 // clear the tab bar but keep the shutter grounded near the bottom (a large gap
 // made it look like it floated in dead space).
-const TAB_BAR_CLEARANCE = 24;
+const TAB_BAR_CLEARANCE = Platform.OS === 'ios' ? 96 : 80;
 
 export function CameraScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -210,6 +211,7 @@ export function CameraScreen() {
           photoQualityBalance="speed"
           zoom={zoom}
         />
+        <MainHeaderOverlay camera={true} />
 
       {/* Pinch-zoom gesture surface. Claims only on a 2-finger move, so a
           single-finger horizontal drag falls through to the tab pager for the
