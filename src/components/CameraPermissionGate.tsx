@@ -1,5 +1,7 @@
 import React, { type ReactNode, useCallback, useEffect, useState } from 'react';
-import { AppState, Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  AppState, Linking, Platform, StyleSheet, Text, TouchableOpacity, View,
+} from 'react-native';
 import {
   Camera, type CameraPermissionStatus, useCameraPermission,
 } from 'react-native-vision-camera';
@@ -33,7 +35,8 @@ export function CameraPermissionGate({ children, message }: CameraPermissionGate
 
   if (hasPermission || status === 'granted') return children;
 
-  const canRequest = status === 'not-determined';
+  const canRequest = status === 'not-determined'
+    || (Platform.OS === 'android' && status === 'denied');
   return (
     <View style={s.container}>
       <Text style={s.message}>{message}</Text>
