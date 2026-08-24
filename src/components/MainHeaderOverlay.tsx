@@ -58,7 +58,6 @@ const s = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 20,
-    elevation: 20,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

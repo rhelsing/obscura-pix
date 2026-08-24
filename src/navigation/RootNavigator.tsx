@@ -37,7 +37,7 @@ function BottomTabBar({ state, navigation }: MaterialTopTabBarProps) {
   const onCamera = state.routes[state.index]?.name === 'Camera';
   const barDynamic = {
     paddingBottom: insets.bottom + 10,
-    backgroundColor: onCamera ? 'transparent' : colors.bg,
+    backgroundColor: onCamera ? 'rgba(0,0,0,0.58)' : colors.bg,
     borderTopColor: onCamera ? 'transparent' : colors.border,
   };
   return (
