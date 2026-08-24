@@ -110,7 +110,7 @@ export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
     const msg = text;
     setText('');
     try {
-      await Obscura.stopTyping(convId);
+      await Obscura.stopTyping([friend.userId], convId);
       // No `senderUsername`: `saveEntry` stamps the authenticated author, and every reader resolves
       // the name from the friend graph rather than believing what the payload says.
       await saveEntry('directMessage', { conversationId: convId, content: msg });
@@ -121,7 +121,7 @@ export function ChatScreen({ route }: RootStackScreenProps<'Chat'>) {
 
   const onChangeText = (t: string) => {
     setText(t);
-    if (t.length > 0) Obscura.sendTyping(convId);
+    if (t.length > 0) Obscura.sendTyping([friend.userId], convId);
   };
 
   const renderItem = ({ item }: { item: TimelineItem }) => {

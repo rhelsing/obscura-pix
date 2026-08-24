@@ -43,7 +43,7 @@ export function ChatListScreen() {
     if (acceptingUserId !== null) return;
     setAcceptingUserId(friend.userId);
     try {
-      await Obscura.acceptFriend(friend.userId, friend.username);
+      await Obscura.acceptFriend(friend.userId);
       await refreshFriendGraph();
       toast.success(`You and ${friend.username} are now friends`);
     } catch (e: any) {

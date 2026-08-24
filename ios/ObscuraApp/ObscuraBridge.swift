@@ -33,10 +33,6 @@ final class ObscuraBridge: RCTEventEmitter {
     override init() {
         super.init()
         ObscuraBridge.shared = self
-        // Kit diagnostics -> debugLog event.
-        ObscuraSession.shared.logger.onLog = { [weak self] msg in
-            self?.emit(.debugLog, ["message": msg])
-        }
         // Process foreground/background -> appStateChanged event.
         ObscuraSession.shared.onAppStateChanged = { [weak self] active in
             self?.emit(.appStateChanged, ["state": active ? "active" : "background"])
@@ -70,8 +66,8 @@ final class ObscuraBridge: RCTEventEmitter {
     /// and `OBSCURA_EVENT_TYPES` in src/native/ObscuraModule.ts — the raw values MUST match.
     private enum BridgeEvent: String {
         case connectionChanged, authStateChanged, authFailed, appStateChanged
-        case launchedFrom, friendsUpdated, messageReceived
-        case typingChanged, pushTokenReceived, debugLog
+        case launchedFrom, friendsChanged, messageReceived
+        case typingChanged, pushTokenReceived
     }
 
     /// Emit one `ObscuraEvent`. Folds `type` into the payload, matching Android's
@@ -105,15 +101,13 @@ final class ObscuraBridge: RCTEventEmitter {
                     self.emit(.authStateChanged, ["state": state.rawValue])
                 case .authFailed(let reason):
                     self.emit(.authFailed, ["reason": reason])
-                case .friendsUpdated(let friends):
-                    self.emit(.friendsUpdated, ["friends": friends.map { ObscuraBridge.friendDict($0) }])
+                case .friendsChanged:
+                    self.emit(.friendsChanged)
                 case .messageReceived(let model):
                     // Minimal payload — JS re-queries the entry store. Don't synthesize an id.
                     self.emit(.messageReceived, ["model": model])
                 case .typingChanged(let conversationId, let typers):
                     self.emit(.typingChanged, ["conversationId": conversationId, "typers": typers])
-                case .debugLog(let message):
-                    self.emit(.debugLog, ["message": message])
                 }
             }
         }
@@ -255,14 +249,14 @@ extension ObscuraBridge {
 
 extension ObscuraBridge {
 
-    @objc(acceptFriend:username:resolver:rejecter:)
-    func acceptFriend(_ userId: String, username: String,
+    @objc(acceptFriend:resolver:rejecter:)
+    func acceptFriend(_ userId: String,
                       resolver resolve: @escaping RCTPromiseResolveBlock,
                       rejecter reject: @escaping RCTPromiseRejectBlock) {
         NSLog("[ObscuraBridge] acceptFriend started user=%@", userId)
         Task {
             do {
-                try await client.acceptFriend(userId, username: username)
+                try await client.acceptFriend(userId)
                 NSLog("[ObscuraBridge] acceptFriend succeeded user=%@", userId)
                 resolve(nil)
             } catch {
@@ -294,7 +288,7 @@ extension ObscuraBridge {
     func getFriends(_ resolve: @escaping RCTPromiseResolveBlock,
                     rejecter reject: @escaping RCTPromiseRejectBlock) {
         Task {
-            let all = await client.friends.getAll()
+            let all = await client.getFriends()
             resolve(all.map { ObscuraBridge.friendDict($0) })
         }
     }
@@ -388,15 +382,17 @@ extension ObscuraBridge {
         }
     }
 
-    @objc(entryPut:id:dataJson:sentAt:authorDeviceId:resolver:rejecter:)
-    func entryPut(_ model: String, id: String, dataJson: String, sentAt: NSNumber, authorDeviceId: String,
+    @objc(entryPut:id:dataJson:sentAt:authorDeviceId:localMetadataJson:resolver:rejecter:)
+    func entryPut(_ model: String, id: String, dataJson: String, sentAt: NSNumber,
+                  authorDeviceId: String, localMetadataJson: String?,
                   resolver resolve: @escaping RCTPromiseResolveBlock,
                   rejecter reject: @escaping RCTPromiseRejectBlock) {
         Task {
             do {
                 try await client.entries.put(model: model, entry: StoredEntry(
                     id: id, data: dataJson,
-                    sentAt: sentAt.uint64Value, authorDeviceId: authorDeviceId
+                    sentAt: sentAt.uint64Value, authorDeviceId: authorDeviceId,
+                    localMetadata: localMetadataJson
                 ))
                 resolve(nil)
             } catch {
@@ -414,7 +410,8 @@ extension ObscuraBridge {
                 let entries = try await client.entries.all(model: model)
                 resolve(entries.map {
                     ["id": $0.id, "data": $0.data,
-                     "sentAt": Double($0.sentAt), "authorDeviceId": $0.authorDeviceId]
+                     "sentAt": Double($0.sentAt), "authorDeviceId": $0.authorDeviceId,
+                     "localMetadata": $0.localMetadata as Any]
                 })
             } catch {
                 rejectKit(reject, "ENTRY_ALL_ERROR", error)
@@ -449,12 +446,9 @@ extension ObscuraBridge {
     static func inboxRowDict(_ r: InboxRecord) -> [String: Any] {
         [
             "id": Double(r.id),
-            "envelopeId": r.envelopeId,
             "kind": r.kind,
-            "receivedAt": Double(r.receivedAt),
             "senderUserId": r.senderUserId,
             "senderDeviceId": r.senderDeviceId as Any,
-            "senderDisplayName": r.senderDisplayName as Any,
             "modelKey": r.modelKey as Any,
             "entryId": r.entryId as Any,
             "sentAt": r.sentAt.map { Double($0) } as Any,
@@ -469,33 +463,32 @@ extension ObscuraBridge {
 extension ObscuraBridge {
 
     @objc(sendTyping:conversationId:resolver:rejecter:)
-    func sendTyping(_ modelKey: String, conversationId: String,
+    func sendTyping(_ recipientUserIds: [String], conversationId: String,
                     resolver resolve: @escaping RCTPromiseResolveBlock,
                     rejecter reject: @escaping RCTPromiseRejectBlock) {
         Task {
-            await client.sendTyping(modelKey: modelKey, conversationId: conversationId)
+            await client.sendTyping(to: recipientUserIds, contextId: conversationId, state: .started)
             resolve(nil)
         }
     }
 
     @objc(stopTyping:conversationId:resolver:rejecter:)
-    func stopTyping(_ modelKey: String, conversationId: String,
+    func stopTyping(_ recipientUserIds: [String], conversationId: String,
                     resolver resolve: @escaping RCTPromiseResolveBlock,
                     rejecter reject: @escaping RCTPromiseRejectBlock) {
         Task {
-            await client.stopTyping(modelKey: modelKey, conversationId: conversationId)
+            await client.sendTyping(to: recipientUserIds, contextId: conversationId, state: .stopped)
             resolve(nil)
         }
     }
 
-    @objc(observeTyping:conversationId:resolver:rejecter:)
-    func observeTyping(_ modelKey: String, conversationId: String,
+    @objc(observeTyping:resolver:rejecter:)
+    func observeTyping(_ conversationId: String,
                        resolver resolve: @escaping RCTPromiseResolveBlock,
                        rejecter reject: @escaping RCTPromiseRejectBlock) {
-        let key = "\(modelKey):\(conversationId)"
-        typingTasks[key]?.cancel()
-        let observation = client.observeTyping(modelKey: modelKey, conversationId: conversationId)
-        typingTasks[key] = Task { [weak self] in
+        typingTasks[conversationId]?.cancel()
+        let observation = client.observeTyping(contextId: conversationId)
+        typingTasks[conversationId] = Task { [weak self] in
             for await typers in observation.values {
                 self?.emit(.typingChanged, ["conversationId": conversationId, "typers": typers])
             }
@@ -503,13 +496,12 @@ extension ObscuraBridge {
         resolve(nil)
     }
 
-    @objc(stopObservingTyping:conversationId:resolver:rejecter:)
-    func stopObservingTyping(_ modelKey: String, conversationId: String,
+    @objc(stopObservingTyping:resolver:rejecter:)
+    func stopObservingTyping(_ conversationId: String,
                              resolver resolve: RCTPromiseResolveBlock,
                              rejecter reject: RCTPromiseRejectBlock) {
-        let key = "\(modelKey):\(conversationId)"
-        typingTasks[key]?.cancel()
-        typingTasks[key] = nil
+        typingTasks[conversationId]?.cancel()
+        typingTasks[conversationId] = nil
         resolve(nil)
     }
 }
@@ -774,7 +766,7 @@ extension ObscuraBridge {
 
     @objc(getDebugLog:rejecter:)
     func getDebugLog(_ resolve: RCTPromiseResolveBlock, rejecter reject: RCTPromiseRejectBlock) {
-        resolve(ObscuraSession.shared.logger.recentLines())
+        resolve(client.getDebugLog())
     }
 
     /// Called from AppDelegate when a warm-start deep link arrives (notification

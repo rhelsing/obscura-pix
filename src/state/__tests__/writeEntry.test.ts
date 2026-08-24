@@ -66,14 +66,14 @@ describe('storing and sending', () => {
     expect((await Obscura.entryAll('profile'))[0].authorDeviceId).toBe(DEVICE);
   });
 
-  it('sends the payload as the same JSON it stored', async () => {
+  it('keeps local attribution out of the wire payload', async () => {
     const data = { content: 'sunset 🌅', meta: { x: 0.5, tags: ['a', 'b'] } };
 
     await writeEntry(args('story', data));
 
     const stored = await Obscura.entryAll('story');
-    expect(bridge.__sent[0].payloadJson).toBe(stored[0].data);
-    expect(JSON.parse(bridge.__sent[0].payloadJson)).toEqual({ ...data, _authorUserId: SELF });
+    expect(JSON.parse(stored[0].data)).toEqual({ ...data, _authorUserId: SELF });
+    expect(JSON.parse(bridge.__sent[0].payloadJson)).toEqual(data);
   });
 
 });
@@ -214,16 +214,16 @@ describe('the outbox', () => {
     expect(JSON.parse(bridge.__sent[0].payloadJson).content).toBe('stranded');
   });
 
-  /** The mark is delivery bookkeeping. A peer must never see it, and it must not survive success. */
+  /** Delivery bookkeeping is a local sidecar. A peer never sees it, and success clears it. */
   it('never puts the mark on the wire, and clears it once delivered', async () => {
     bridge.__failNext('sendEntry', 'SEND_FAILED');
     await expect(writeEntry(args('story', { content: 'x' }))).rejects.toThrow();
-    expect(JSON.parse((await Obscura.entryAll('story'))[0].data)._undelivered).toBe(true);
+    expect(JSON.parse((await Obscura.entryAll('story'))[0].localMetadata ?? '{}').undelivered).toBe(true);
 
     await flushOutbox({ selfUserId: SELF, friends: FRIENDS });
 
-    expect(JSON.parse(bridge.__sent[0].payloadJson)._undelivered).toBeUndefined();
-    expect(JSON.parse((await Obscura.entryAll('story'))[0].data)._undelivered).toBeUndefined();
+    expect(JSON.parse(bridge.__sent[0].payloadJson)._authorUserId).toBeUndefined();
+    expect((await Obscura.entryAll('story'))[0].localMetadata).toBeNull();
   });
 
   /** Still offline: the mark stays, so the trigger after this one tries again. */
@@ -234,7 +234,7 @@ describe('the outbox', () => {
     bridge.__failNext('sendEntry', 'SEND_FAILED');
     expect(await flushOutbox({ selfUserId: SELF, friends: FRIENDS })).toBe(0);
 
-    expect(JSON.parse((await Obscura.entryAll('story'))[0].data)._undelivered).toBe(true);
+    expect(JSON.parse((await Obscura.entryAll('story'))[0].localMetadata ?? '{}').undelivered).toBe(true);
   });
 
   it('does nothing when everything was delivered', async () => {
@@ -258,7 +258,7 @@ describe('the outbox', () => {
     await writeEntry(args('profile', { displayName: 'new' }, id));
 
     expect(JSON.parse((await Obscura.entryAll('profile'))[0].data).displayName).toBe('new');
-    expect(JSON.parse((await Obscura.entryAll('profile'))[0].data)._undelivered).toBeUndefined();
+    expect((await Obscura.entryAll('profile'))[0].localMetadata).toBeNull();
   });
 });
 

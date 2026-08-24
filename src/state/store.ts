@@ -292,12 +292,8 @@ function syncBothWays(label: string, alsoRefresh?: string): void {
 export function applyObscuraEvent(event: ObscuraEvent): void {
   const s = useStore.getState();
   switch (event.type) {
-    case 'friendsUpdated': {
-      const all = event.friends || [];
-      s._setFriendsAndPending(
-        all.filter((f) => f.status === 'accepted'),
-        all.filter((f) => f.status !== 'accepted'),
-      );
+    case 'friendsChanged': {
+      refreshFriendGraph().catch((e) => logError('friends.refresh', e));
       return;
     }
     case 'connectionChanged':

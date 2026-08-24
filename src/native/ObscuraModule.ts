@@ -11,7 +11,7 @@ interface NativeObscuraBridge {
   getUserId(): Promise<string | null>;
   getUsername(): Promise<string | null>;
   getDeviceId(): Promise<string | null>;
-  acceptFriend(userId: string, username: string): Promise<void>;
+  acceptFriend(userId: string): Promise<void>;
   getFriendCode(): Promise<string>;
   addFriendByCode(code: string): Promise<void>;
   getFriends(): Promise<Friend[]>;
@@ -23,16 +23,17 @@ interface NativeObscuraBridge {
   inboxDepth(): Promise<number>;
   entryPut(
     model: string, id: string, dataJson: string, sentAt: number, authorDeviceId: string,
+    localMetadataJson: string | null,
   ): Promise<void>;
   entryAll(model: string): Promise<StoredEntry[]>;
   sendEntry(
     recipientUserIds: string[], modelKey: string, entryId: string,
     sentAt: number, payloadJson: string,
   ): Promise<void>;
-  sendTyping(modelKey: string, conversationId: string): Promise<void>;
-  stopTyping(modelKey: string, conversationId: string): Promise<void>;
-  observeTyping(modelKey: string, conversationId: string): Promise<void>;
-  stopObservingTyping(modelKey: string, conversationId: string): Promise<void>;
+  sendTyping(recipientUserIds: string[], conversationId: string): Promise<void>;
+  stopTyping(recipientUserIds: string[], conversationId: string): Promise<void>;
+  observeTyping(conversationId: string): Promise<void>;
+  stopObservingTyping(conversationId: string): Promise<void>;
   uploadAttachment(filePath: string): Promise<AttachmentRef>;
   downloadAttachment(id: string, contentKey: string, nonce: string): Promise<string>;
   resizeImage(srcPath: string, maxDim: number, quality: number): Promise<ResizedImage>;
@@ -57,8 +58,6 @@ const Bridge: NativeObscuraBridge = ObscuraBridge ?? new Proxy({} as NativeObscu
     new Error(`ObscuraBridge.${String(property)} is unavailable`),
   ),
 });
-const TYPING_MODEL = 'directMessage';
-
 // ─── Types ───────────────────────────────────────────────
 
 export interface Friend {
@@ -102,17 +101,12 @@ export interface AttachmentRef {
 export interface InboxRow {
   /** Monotonic per install. Drain order. Not a message id. */
   id: number;
-  /** Server-assigned envelope id. The kit's dedupe key; the app does not need it. */
-  envelopeId: string;
   /** The payload arm, e.g. `APP_ENTRY`. `UNKNOWN` for an arm the kit does not know. */
   kind: string;
-  receivedAt: number;
   /** Server-stamped transport identity (NATIVE_CONTRACT §0.10). */
   senderUserId: string;
   /** The device whose Signal session decrypted this — cryptographic attribution, and the merge tie-break. */
   senderDeviceId: string | null;
-  /** Resolved from the kit's friend graph, never from the payload (NATIVE_CONTRACT §0.5). Null if not a friend. */
-  senderDisplayName: string | null;
   /** `AppEntry`-derived, so null for every other kind. */
   modelKey: string | null;
   entryId: string | null;
@@ -126,6 +120,7 @@ export interface StoredEntry {
   data: string;
   sentAt: number;
   authorDeviceId: string;
+  localMetadata: string | null;
 }
 
 export type ConnectionState = 'disconnected' | 'connecting' | 'reconnecting' | 'connected';
@@ -186,8 +181,8 @@ export const Obscura = {
   getDeviceId: (): Promise<string | null> => Bridge.getDeviceId(),
 
   // Friends
-  acceptFriend: (userId: string, username: string): Promise<void> =>
-    Bridge.acceptFriend(userId, username),
+  acceptFriend: (userId: string): Promise<void> =>
+    Bridge.acceptFriend(userId),
 
   getFriendCode: (): Promise<string> => Bridge.getFriendCode(),
   addFriendByCode: (code: string): Promise<void> => Bridge.addFriendByCode(code),
@@ -220,8 +215,15 @@ export const Obscura = {
   inboxDepth: (): Promise<number> => Bridge.inboxDepth(),
 
   /** Blind upsert — the APP decides who wins, so merge before calling this (§8.1). */
-  entryPut: (model: string, id: string, dataJson: string, sentAt: number, authorDeviceId: string): Promise<void> =>
-    Bridge.entryPut(model, id, dataJson, sentAt, authorDeviceId),
+  entryPut: (
+    model: string,
+    id: string,
+    dataJson: string,
+    sentAt: number,
+    authorDeviceId: string,
+    localMetadataJson: string | null = null,
+  ): Promise<void> =>
+    Bridge.entryPut(model, id, dataJson, sentAt, authorDeviceId, localMetadataJson),
 
   entryAll: (model: string): Promise<StoredEntry[]> => Bridge.entryAll(model),
 
@@ -233,17 +235,17 @@ export const Obscura = {
     Bridge.sendEntry(recipientUserIds, modelKey, entryId, sentAt, payloadJson),
 
   // Signals (typing)
-  sendTyping: (conversationId: string): Promise<void> =>
-    Bridge.sendTyping(TYPING_MODEL, conversationId),
+  sendTyping: (recipientUserIds: string[], conversationId: string): Promise<void> =>
+    Bridge.sendTyping(recipientUserIds, conversationId),
 
-  stopTyping: (conversationId: string): Promise<void> =>
-    Bridge.stopTyping(TYPING_MODEL, conversationId),
+  stopTyping: (recipientUserIds: string[], conversationId: string): Promise<void> =>
+    Bridge.stopTyping(recipientUserIds, conversationId),
 
   observeTyping: (conversationId: string): Promise<void> =>
-    Bridge.observeTyping(TYPING_MODEL, conversationId),
+    Bridge.observeTyping(conversationId),
 
   stopObservingTyping: (conversationId: string): Promise<void> =>
-    Bridge.stopObservingTyping(TYPING_MODEL, conversationId),
+    Bridge.stopObservingTyping(conversationId),
 
   // Attachments — path-based. JS never holds the bytes.
   // upload reads from `filePath`, encrypts, uploads. The source file is left
@@ -304,11 +306,10 @@ export const OBSCURA_EVENT_TYPES = [
   'authFailed',
   'appStateChanged',
   'launchedFrom',
-  'friendsUpdated',
+  'friendsChanged',
   'messageReceived',
   'typingChanged',
   'pushTokenReceived',
-  'debugLog',
 ] as const;
 
 export type ObscuraEventType = (typeof OBSCURA_EVENT_TYPES)[number];
@@ -319,11 +320,10 @@ export type ObscuraEvent =
   | { type: 'authFailed'; reason: string }
   | { type: 'appStateChanged'; state: AppLifecycleState }
   | { type: 'launchedFrom'; screen: string }
-  | { type: 'friendsUpdated'; friends: Friend[] }
+  | { type: 'friendsChanged' }
   | { type: 'messageReceived'; model: string }
   | { type: 'typingChanged'; conversationId: string; typers: string[] }
-  | { type: 'pushTokenReceived'; token: string }
-  | { type: 'debugLog'; message: string };
+  | { type: 'pushTokenReceived'; token: string };
 
 // Compile-time guarantee that the name list and the payload union agree in both
 // directions (every listed name has a payload, and every payload is listed).

@@ -313,14 +313,15 @@ describe('the drain triggers', () => {
     expect(useStore.getState().authed).toBe(false);
   });
 
-  it('splits friendsUpdated by status', () => {
-    applyObscuraEvent({
-      type: 'friendsUpdated',
-      friends: [
-        { userId: BOB, username: 'bob', status: 'accepted' },
-        { userId: 'c', username: 'carol', status: 'pending_received' },
-      ],
-    });
+  it('refreshes the friend graph after friendsChanged', async () => {
+    bridge.__setFriends([
+      { userId: BOB, username: 'bob', status: 'accepted' },
+      { userId: 'c', username: 'carol', status: 'pending_received' },
+    ]);
+    useStore.getState()._setFriendsAndPending([], []);
+
+    applyObscuraEvent({ type: 'friendsChanged' });
+    await flush();
 
     expect(useStore.getState().friends.map((f) => f.username)).toEqual(['bob']);
     expect(useStore.getState().pending.map((f) => f.username)).toEqual(['carol']);

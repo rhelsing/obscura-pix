@@ -21,6 +21,8 @@
 
 import type { Friend, InboxRow, StoredEntry } from '../ObscuraModule';
 
+type FakeInboxRow = InboxRow & { envelopeId: string };
+
 export interface FakeBridgeOptions {
   userId?: string;
   username?: string;
@@ -72,7 +74,7 @@ export class FakeObscuraBridge {
 
   // ─── The thin kit surface ──────────────────────────────────────────────
 
-  private inbox: InboxRow[] = [];
+  private inbox: FakeInboxRow[] = [];
   /** Never reused, exactly like the kits' `AUTOINCREMENT`: a drained inbox must not reissue ids. */
   private nextInboxId = 1;
   private storedEntries = new Map<string, Map<string, StoredEntry>>();
@@ -100,7 +102,7 @@ export class FakeObscuraBridge {
     this.checkFailure('inboxPeek');
     // Side-effect free (§3.3 rule 3): peeking twice without consuming returns the same rows. Copies
     // are returned so a test mutating a row cannot corrupt the store and mask a bug.
-    return this.inbox.slice(0, limit).map((r) => ({ ...r }));
+    return this.inbox.slice(0, limit).map(({ envelopeId: _envelopeId, ...row }) => ({ ...row }));
   }
 
   async inboxConsume(ids: number[]): Promise<void> {
@@ -129,7 +131,14 @@ export class FakeObscuraBridge {
     return this.inbox.length;
   }
 
-  async entryPut(model: string, id: string, dataJson: string, sentAt: number, authorDeviceId: string): Promise<void> {
+  async entryPut(
+    model: string,
+    id: string,
+    dataJson: string,
+    sentAt: number,
+    authorDeviceId: string,
+    localMetadata: string | null,
+  ): Promise<void> {
     this.record('entryPut');
     this.checkFailure('entryPut');
     if (typeof dataJson !== 'string') {
@@ -138,7 +147,9 @@ export class FakeObscuraBridge {
     // BLIND, exactly like the kits: an older write overwrites a newer one, because by the time a
     // write gets here the app has already decided who wins. A double that merged would hide an app
     // that forgot to.
-    this.entryTable(model).set(id, { id, data: dataJson, sentAt, authorDeviceId });
+    this.entryTable(model).set(id, {
+      id, data: dataJson, sentAt, authorDeviceId, localMetadata,
+    });
   }
 
   async entryAll(model: string): Promise<StoredEntry[]> {
@@ -177,16 +188,16 @@ export class FakeObscuraBridge {
    * state the dedupe key exists to prevent. A redelivery is still observable: pass the same
    * `envelopeId` and the second call returns the existing row rather than adding one.
    */
-  __deliverInbox(row: Partial<InboxRow> & { payload: string }): InboxRow {
+  __deliverInbox(
+    row: Partial<InboxRow> & { payload: string; envelopeId?: string },
+  ): FakeInboxRow {
     const id = this.nextInboxId;
-    const full: InboxRow = {
+    const full: FakeInboxRow = {
       id,
       envelopeId: `env_${id}`,
       kind: 'APP_ENTRY',
-      receivedAt: this.nextTimestamp(),
       senderUserId: 'user_peer',
       senderDeviceId: 'device_peer',
-      senderDisplayName: 'peer',
       modelKey: 'directMessage',
       entryId: `entry_${id}`,
       sentAt: this.nextTimestamp(),
@@ -214,10 +225,10 @@ export class FakeObscuraBridge {
     this.__setAuthState('authenticated');
   }
 
-  /** Set the friend graph and emit `friendsUpdated`, as the kit does when it changes. */
+  /** Set the friend graph and emit its payload-free wake event. */
   __setFriends(friends: Friend[]): void {
     this.friends = friends;
-    this.__emit({ type: 'friendsUpdated', friends });
+    this.__emit({ type: 'friendsChanged' });
   }
 
   /** Flip auth state and emit, as login/logout does. */
@@ -369,11 +380,13 @@ export class FakeObscuraBridge {
 
   // ─── Friends ───────────────────────────────────────────
 
-  async acceptFriend(userId: string, username: string): Promise<void> {
+  async acceptFriend(userId: string): Promise<void> {
     this.record('acceptFriend');
     this.checkFailure('acceptFriend');
+    const existing = this.friends.find((f) => f.userId === userId);
+    if (!existing) throw new Error(`Unknown friend ${userId}`);
     const rest = this.friends.filter((f) => f.userId !== userId);
-    this.__setFriends([...rest, { userId, username, status: 'accepted' }]);
+    this.__setFriends([...rest, { ...existing, status: 'accepted' }]);
   }
 
   async getFriendCode(): Promise<string> {
@@ -409,16 +422,16 @@ export class FakeObscuraBridge {
 
   // ─── Signals ───────────────────────────────────────────
 
-  async sendTyping(_modelKey: string, _conversationId: string): Promise<void> {
+  async sendTyping(_recipientUserIds: string[], _conversationId: string): Promise<void> {
     this.record('sendTyping');
   }
-  async stopTyping(_modelKey: string, _conversationId: string): Promise<void> {
+  async stopTyping(_recipientUserIds: string[], _conversationId: string): Promise<void> {
     this.record('stopTyping');
   }
-  async observeTyping(_modelKey: string, _conversationId: string): Promise<void> {
+  async observeTyping(_conversationId: string): Promise<void> {
     this.record('observeTyping');
   }
-  async stopObservingTyping(_modelKey: string, _conversationId: string): Promise<void> {
+  async stopObservingTyping(_conversationId: string): Promise<void> {
     this.record('stopObservingTyping');
   }
 
