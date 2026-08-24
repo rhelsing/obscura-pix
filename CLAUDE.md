@@ -15,9 +15,9 @@ and background push processing cannot rely on a React Native runtime. Everything
 that is not forced native by those constraints belongs in this repo.
 
 The native boundary is
-[`NATIVE_CONTRACT.md`](https://github.com/barrelmaker97/obscura-native/blob/70d6119/docs/NATIVE_CONTRACT.md)
+[`NATIVE_CONTRACT.md`](https://github.com/barrelmaker97/obscura-native/blob/591a659/docs/NATIVE_CONTRACT.md)
 plus
-[`KIT_API.md`](https://github.com/barrelmaker97/obscura-native/blob/70d6119/docs/KIT_API.md).
+[`KIT_API.md`](https://github.com/barrelmaker97/obscura-native/blob/591a659/docs/KIT_API.md).
 Application-owned behavior is
 normative in [`docs/DOMAIN_CONTRACT.md`](docs/DOMAIN_CONTRACT.md). Read all
 three before changing anything that crosses the bridge.
