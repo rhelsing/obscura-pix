@@ -28,8 +28,8 @@ What's built, what's next.
 
 - [ ] **24-hour story expiry.** Nothing expires on either platform.
 - [ ] **Repeatable physical iOS ↔ Android release gate.** Foreground interop has
-      been demonstrated manually; push, link approval, migration, and release
-      signing are not automated.
+      been demonstrated manually. Push and release signing are not automated,
+      and a new iOS device cannot receive link approval.
 
 ## Phase 2: Ephemeral viewing polish
 
@@ -60,23 +60,9 @@ What's built, what's next.
 
 ## Phase 6: iOS
 
-A working iOS foundation is committed under `ios/`: a RN 0.86 scaffold,
-`ObscuraBridge.swift` implementing `docs/BRIDGE.md`, and
-`obscura-native/swift` wired as a local SPM package. It builds in CI and has
-completed a physical Android↔iOS foreground interoperability pass. The cross-platform bridge contract (methods, events,
-payload shapes, atomicity / EXIF / OOM requirements) lives in `docs/BRIDGE.md`;
-both bridges implement that contract. See `docs/IOS_PARITY.md` for detailed
-status.
-
-- [x] Scaffold `ios/` (RN 0.86, bundle `com.obscuraapp.ios`, deployment 16.0)
-- [x] Implement `ObscuraBridge.swift` against `docs/BRIDGE.md`
-- [x] Wire `obscura-native/swift` as a local Swift Package
-- [x] App icons + launch screen assets
-- [x] Simulator-verified auth flow end-to-end
-- [x] Add a `macos-26` iOS CI job that builds the libsignal FFI and app
-- [x] Physical Android↔iOS foreground interoperability pass
-- [ ] Push (#11): APNs entitlement + FCM-via-APNs token wiring
-- [ ] TestFlight/release-signing build
+Foreground interoperability and simulator CI are complete. Remaining work is
+APNs/background delivery, receiving link approval on a new iOS device, and
+release signing. See [`docs/IOS_PARITY.md`](docs/IOS_PARITY.md).
 
 ## Not Planned
 

@@ -75,33 +75,10 @@ jobs:
 
       - run: npm ci
 
-      # The Firebase Gradle plugin requires a google-services.json or the
-      # build fails. The real file is per-environment + gitignored, so we
-      # write a CI-only stub that has the right shape but a fake project.
-      # FCM doesn't actually fire from CI builds, so a fake project is fine.
+      # The Firebase Gradle plugin requires a configuration file. This stub
+      # verifies compilation without enabling push delivery.
       - name: Write stub google-services.json
-        run: |
-          cat > android/app/google-services.json <<'JSON'
-          {
-            "project_info": {
-              "project_number": "000000000000",
-              "project_id": "ci-stub",
-              "storage_bucket": "ci-stub.appspot.com"
-            },
-            "client": [
-              {
-                "client_info": {
-                  "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
-                  "android_client_info": { "package_name": "com.obscuraapp.android" }
-                },
-                "oauth_client": [],
-                "api_key": [{ "current_key": "AIzaSy0000000000000000000000000000000000" }],
-                "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
-              }
-            ],
-            "configuration_version": "1"
-          }
-          JSON
+        run: cp android/app/google-services.stub.json android/app/google-services.json
 
       - name: Assemble release APK
         run: ./gradlew :app:assembleRelease --no-daemon

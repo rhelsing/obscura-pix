@@ -36,8 +36,10 @@ push-sender send <yourUsername> "Hello from push-sender"
 push-sender ping <yourUsername> 5
 ```
 
-To verify the killed-app code path: `adb shell am force-stop com.obscuraapp.android`
-then `push-sender ping <yourUsername> 1` and watch `./logcat.sh`.
+To verify the killed-process path, background the app and remove it from
+recents, then run `push-sender ping <yourUsername> 1` and watch `./logcat.sh`.
+Do not force-stop the app; Android suppresses FCM until a force-stopped app is
+opened again.
 
 ## Logcat helper
 
@@ -63,6 +65,7 @@ Tags filtered: `ObscuraBridge`, `ObscuraMessagingService`, `NotificationHelper`,
   explicit: the kit declares `groupId` only inside its `publishing` block, so
   Gradle's automatic coordinate matching does not fire, and a bare
   `includeBuild` silently falls back to mavenLocal.
+
 - Messages go through `client.send(recipientUserIds, …)` with a JSON payload of
   `{ conversationId, content }`, matching `directMessage` in
   `src/models/schema.ts`. `_authorUserId` is deliberately not sent — the app's

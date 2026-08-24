@@ -1,9 +1,8 @@
 # Notification privacy and transport contract
 
 This document defines the cross-platform constraints for push transport and
-local notification content. Android's current implementation is described in
-[`NOTIFICATIONS_HOW_IT_WORKS.md`](NOTIFICATIONS_HOW_IT_WORKS.md). iOS
-notification delivery is not wired yet.
+local notification content. Android implements them; iOS notification delivery
+is not wired.
 
 ## Privacy invariants
 
@@ -32,12 +31,12 @@ backups. They apply even when richer previews would be convenient.
 
 ## Ownership
 
-| Layer | Responsibility |
-|---|---|
-| Server | Store a token per device and send a silent wake when its queue changes. |
-| Kit | Register the token and process pending encrypted envelopes. Never call OS notification APIs or inspect model names. |
-| Native app | Receive the wake, restore the kit session, drain messages, and post generic local copy when backgrounded. |
-| TypeScript app | Request permission, register refreshed tokens, and interpret committed inbox rows for in-app state. |
+| Layer          | Responsibility                                                                                                      |
+| -------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Server         | Store a token per device and send a silent wake when its queue changes.                                             |
+| Kit            | Register the token and process pending encrypted envelopes. Never call OS notification APIs or inspect model names. |
+| Native app     | Receive the wake, restore the kit session, drain messages, and post generic local copy when backgrounded.           |
+| TypeScript app | Request permission, register refreshed tokens, and interpret committed inbox rows for in-app state.                 |
 
 `processPendingMessages(timeout)` returns one opaque total of successfully
 processed envelopes. It does not consume the app event queue and its result is
@@ -88,7 +87,8 @@ The server and app must use the same Firebase project.
 
 `ObscuraSession` is the process-scoped kit owner and sole
 `incomingMessages` consumer. `ObscuraMessagingService` forwards silent wakes to
-that owner; `NotificationHelper` is the only local-notification builder.
+that owner; `NotificationHelper` is the only local-notification builder. The
+session posts notifications only while the app is backgrounded.
 
 ### iOS
 
@@ -116,3 +116,12 @@ Real-provider tests still need to confirm:
 - local copy and tap metadata contain no identities or content;
 - permission denial and later token rotation have an explicit, tested policy;
 - explicit device deletion stops later pushes.
+
+## Android manual check
+
+1. Install a build with the real Firebase configuration and log in.
+2. Press Home or remove the app from recents. Do not force-stop it; Android
+   blocks FCM delivery to force-stopped apps until they are reopened.
+3. Send an encrypted entry with [`tools/push-sender`](../tools/push-sender/).
+4. Verify generic notification copy and inspect `ObscuraSession`,
+   `ObscuraMessagingService`, and `NotificationHelper` in logcat.
