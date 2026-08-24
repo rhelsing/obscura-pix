@@ -22,8 +22,7 @@ import { logError } from '../utils/log';
  *   stored either: a local row the user can see but that reached nobody is worse than a refusal.
  * - **Write before send**, because the local write is the one that must not be lost. The user's own
  *   content is theirs whether or not the network cooperated; a send failure is retriable, a lost
- *   write is not. This also mirrors what the ORM did — "the local write survives; the server
- *   retries" — so behaviour does not change under the app.
+ *   write is not.
  *
  * ## The sender writes its own copy
  *

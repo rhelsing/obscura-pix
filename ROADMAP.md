@@ -42,7 +42,7 @@ What's built, what's next.
 - [ ] Voice notes (record + send as encrypted attachment)
 - [ ] Message disappears after viewed or 24h
 - [ ] "Screenshotted" status in chat
-- [ ] Read receipts (ECS signal — same pattern as typing)
+- [ ] Read receipts (ephemeral signal — same pattern as typing)
 
 ## Phase 4: Stories V2
 

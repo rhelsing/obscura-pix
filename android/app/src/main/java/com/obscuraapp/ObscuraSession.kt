@@ -279,9 +279,9 @@ object ObscuraSession {
      */
     private fun classifyForNotification(type: String, modelName: String?): String? {
         if (type == "FRIEND_REQUEST") return "New friend request"
-        if (type != "MODEL_SYNC") return null
+        if (type != "APP_ENTRY") return null
         if (modelName == null) {
-            Log.e(TAG, "Notification suppressed: MODEL_SYNC missing model")
+            Log.e(TAG, "Notification suppressed: APP_ENTRY missing model")
             return null
         }
 

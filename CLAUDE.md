@@ -15,9 +15,9 @@ and background push processing cannot rely on a React Native runtime. Everything
 that is not forced native by those constraints belongs in this repo.
 
 The native boundary is
-[`NATIVE_CONTRACT.md`](https://github.com/barrelmaker97/obscura-native/blob/a13531b/docs/NATIVE_CONTRACT.md)
+[`NATIVE_CONTRACT.md`](https://github.com/barrelmaker97/obscura-native/blob/b776161/docs/NATIVE_CONTRACT.md)
 plus
-[`KIT_API.md`](https://github.com/barrelmaker97/obscura-native/blob/a13531b/docs/KIT_API.md).
+[`KIT_API.md`](https://github.com/barrelmaker97/obscura-native/blob/b776161/docs/KIT_API.md).
 Application-owned behavior is
 normative in [`docs/DOMAIN_CONTRACT.md`](docs/DOMAIN_CONTRACT.md). Read all
 three before changing anything that crosses the bridge.
@@ -88,9 +88,8 @@ Four models. This is the whole thing:
 | `pix` | REPLACE (the **recipient** writes `viewedAt`) | conversation | conversation names self + sender |
 | `profile` | REPLACE | all accepted friends | id must be `profile_<senderUserId>` |
 
-Notes for anyone tempted to reach for a CRDT: only `pix` and `profile` are mutable, and the merge
-they need is a timestamp comparison with a device-id tie-break. `pix.viewedAt` is a
-viewed-**receipt** wearing a CRDT costume.
+Only `pix` and `profile` are mutable, and their merge is a timestamp comparison with a device-id
+tie-break. `pix.viewedAt` is a viewed receipt; do not introduce a generic merge framework for it.
 
 ## Known gaps
 

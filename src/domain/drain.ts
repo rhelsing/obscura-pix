@@ -155,7 +155,7 @@ export function planDrain(
   for (const row of rows) {
     // §4.1: an arm the kit did not recognise. The kit preserved it rather than destroying it, and
     // preserving it was right — but the app has no more idea what it is than the kit did.
-    if (row.kind !== 'MODEL_SYNC') {
+    if (row.kind !== 'APP_ENTRY') {
       plan.discard.push({ id: row.id, reason: 'unknown-kind' });
       continue;
     }
@@ -166,7 +166,7 @@ export function planDrain(
       continue;
     }
 
-    // MODEL_SYNC-derived fields the merge cannot work without. `senderDeviceId` is the REPLACE
+    // APP_ENTRY-derived fields the merge cannot work without. `senderDeviceId` is the REPLACE
     // tie-break and must be the session-attributed device (NATIVE_CONTRACT §0.10 rule 4) — a row without one cannot
     // be ordered deterministically, so storing it would make two devices converge differently.
     // `senderUserId` is the authorization and attribution input: without it there is nothing to

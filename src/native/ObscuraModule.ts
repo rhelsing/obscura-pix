@@ -1,14 +1,62 @@
 import { NativeModules, NativeEventEmitter, TurboModuleRegistry, type EmitterSubscription } from 'react-native';
 
+interface NativeObscuraBridge {
+  registerUser(username: string, password: string): Promise<void>;
+  loginSmart(username: string, password: string): Promise<LoginScenario>;
+  loginAndProvision(username: string, password: string): Promise<void>;
+  connect(): Promise<void>;
+  logout(): Promise<void>;
+  getConnectionState(): Promise<ConnectionState>;
+  getAuthState(): Promise<AuthState>;
+  getUserId(): Promise<string | null>;
+  getUsername(): Promise<string | null>;
+  getDeviceId(): Promise<string | null>;
+  acceptFriend(userId: string, username: string): Promise<void>;
+  getFriendCode(): Promise<string>;
+  addFriendByCode(code: string): Promise<void>;
+  getFriends(): Promise<Friend[]>;
+  generateLinkCode(): Promise<string>;
+  validateAndApproveLink(code: string): Promise<void>;
+  inboxPeek(limit: number): Promise<InboxRow[]>;
+  inboxConsume(ids: number[]): Promise<void>;
+  inboxDiscard(ids: number[], reason: string): Promise<void>;
+  inboxDepth(): Promise<number>;
+  entryPut(
+    model: string, id: string, dataJson: string, sentAt: number, authorDeviceId: string,
+  ): Promise<void>;
+  entryAll(model: string): Promise<StoredEntry[]>;
+  sendEntry(
+    recipientUserIds: string[], modelKey: string, entryId: string,
+    sentAt: number, payloadJson: string,
+  ): Promise<void>;
+  sendTyping(modelKey: string, conversationId: string): Promise<void>;
+  stopTyping(modelKey: string, conversationId: string): Promise<void>;
+  observeTyping(modelKey: string, conversationId: string): Promise<void>;
+  stopObservingTyping(modelKey: string, conversationId: string): Promise<void>;
+  uploadAttachment(filePath: string): Promise<AttachmentRef>;
+  downloadAttachment(id: string, contentKey: string, nonce: string): Promise<string>;
+  resizeImage(srcPath: string, maxDim: number, quality: number): Promise<ResizedImage>;
+  writeTestImage(width: number, height: number): Promise<ResizedImage>;
+  requestPushPermission(): Promise<boolean>;
+  registerPushToken(token: string): Promise<void>;
+  getDebugLog(): Promise<string[]>;
+  prewarmAudioSession(): Promise<void>;
+  deleteFile(path: string): Promise<void>;
+  setClipboard(text: string): Promise<void>;
+  getLaunchIntent(): Promise<LaunchIntent | null>;
+}
+
 // Try TurboModuleRegistry first (RN 0.84+), fall back to NativeModules (old arch)
 const ObscuraBridge =
-  TurboModuleRegistry.get('ObscuraBridge') ||
-  NativeModules.ObscuraBridge ||
+  (TurboModuleRegistry.get('ObscuraBridge') as NativeObscuraBridge | null) ||
+  (NativeModules.ObscuraBridge as NativeObscuraBridge | undefined) ||
   null;
 
-// Stub for when native module isn't available (e.g. under jest).
-const noop = (..._args: any[]): Promise<any> => Promise.resolve(null);
-const Bridge = ObscuraBridge || new Proxy({}, { get: (_t, _prop) => noop });
+const Bridge: NativeObscuraBridge = ObscuraBridge ?? new Proxy({} as NativeObscuraBridge, {
+  get: (_target, property) => () => Promise.reject(
+    new Error(`ObscuraBridge.${String(property)} is unavailable`),
+  ),
+});
 const TYPING_MODEL = 'directMessage';
 
 // ─── Types ───────────────────────────────────────────────
@@ -56,7 +104,7 @@ export interface InboxRow {
   id: number;
   /** Server-assigned envelope id. The kit's dedupe key; the app does not need it. */
   envelopeId: string;
-  /** The payload arm, e.g. `MODEL_SYNC`. `UNKNOWN` for an arm the kit does not know. */
+  /** The payload arm, e.g. `APP_ENTRY`. `UNKNOWN` for an arm the kit does not know. */
   kind: string;
   receivedAt: number;
   /** Server-stamped transport identity (NATIVE_CONTRACT §0.10). */
@@ -65,7 +113,7 @@ export interface InboxRow {
   senderDeviceId: string | null;
   /** Resolved from the kit's friend graph, never from the payload (NATIVE_CONTRACT §0.5). Null if not a friend. */
   senderDisplayName: string | null;
-  /** `ModelSync`-derived, so null for every other kind. */
+  /** `AppEntry`-derived, so null for every other kind. */
   modelKey: string | null;
   entryId: string | null;
   sentAt: number | null;
@@ -128,7 +176,6 @@ export const Obscura = {
     Bridge.loginAndProvision(username, password),
 
   connect: (): Promise<void> => Bridge.connect(),
-  disconnect: (): Promise<void> => Bridge.disconnect(),
   logout: (): Promise<void> => Bridge.logout(),
 
   // State
@@ -139,16 +186,12 @@ export const Obscura = {
   getDeviceId: (): Promise<string | null> => Bridge.getDeviceId(),
 
   // Friends
-  befriend: (userId: string, username: string): Promise<void> =>
-    Bridge.befriend(userId, username),
-
   acceptFriend: (userId: string, username: string): Promise<void> =>
     Bridge.acceptFriend(userId, username),
 
   getFriendCode: (): Promise<string> => Bridge.getFriendCode(),
   addFriendByCode: (code: string): Promise<void> => Bridge.addFriendByCode(code),
   getFriends: (): Promise<Friend[]> => Bridge.getFriends(),
-  getPendingRequests: (): Promise<Friend[]> => Bridge.getPendingRequests(),
 
   // Device linking
   generateLinkCode: (): Promise<string> => Bridge.generateLinkCode(),
@@ -227,8 +270,6 @@ export const Obscura = {
 
   // Misc
   getDebugLog: (): Promise<string[]> => Bridge.getDebugLog(),
-  /** FLAG_SECURE on Android, no-op on iOS for now. */
-  setSecureScreen: (enabled: boolean): Promise<void> => Bridge.setSecureScreen(enabled),
   /**
    * Warm up the audio HAL so video recording starts instantly. Cold
    * AVAudioSession activation on iOS costs ~1.4s; call this when the camera

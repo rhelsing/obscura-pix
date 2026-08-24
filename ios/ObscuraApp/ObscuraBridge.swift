@@ -108,7 +108,7 @@ final class ObscuraBridge: RCTEventEmitter {
                 case .friendsUpdated(let friends):
                     self.emit(.friendsUpdated, ["friends": friends.map { ObscuraBridge.friendDict($0) }])
                 case .messageReceived(let model):
-                    // Minimal payload — JS re-queries the ORM. Don't synthesize an id.
+                    // Minimal payload — JS re-queries the entry store. Don't synthesize an id.
                     self.emit(.messageReceived, ["model": model])
                 case .typingChanged(let conversationId, let typers):
                     self.emit(.typingChanged, ["conversationId": conversationId, "typers": typers])
@@ -214,13 +214,6 @@ extension ObscuraBridge {
         }
     }
 
-    @objc(disconnect:rejecter:)
-    func disconnect(_ resolve: RCTPromiseResolveBlock,
-                    rejecter reject: RCTPromiseRejectBlock) {
-        ObscuraSession.shared.client.disconnect()
-        resolve(nil)
-    }
-
     @objc(logout:rejecter:)
     func logout(_ resolve: @escaping RCTPromiseResolveBlock,
                 rejecter reject: @escaping RCTPromiseRejectBlock) {
@@ -261,16 +254,6 @@ extension ObscuraBridge {
 // MARK: - Friends + device linking
 
 extension ObscuraBridge {
-
-    @objc(befriend:username:resolver:rejecter:)
-    func befriend(_ userId: String, username: String,
-                  resolver resolve: @escaping RCTPromiseResolveBlock,
-                  rejecter reject: @escaping RCTPromiseRejectBlock) {
-        Task {
-            do { try await client.befriend(userId, username: username); resolve(nil) }
-            catch { rejectKit(reject, "BEFRIEND_ERROR", error) }
-        }
-    }
 
     @objc(acceptFriend:username:resolver:rejecter:)
     func acceptFriend(_ userId: String, username: String,
@@ -313,15 +296,6 @@ extension ObscuraBridge {
         Task {
             let all = await client.friends.getAll()
             resolve(all.map { ObscuraBridge.friendDict($0) })
-        }
-    }
-
-    @objc(getPendingRequests:rejecter:)
-    func getPendingRequests(_ resolve: @escaping RCTPromiseResolveBlock,
-                            rejecter reject: @escaping RCTPromiseRejectBlock) {
-        Task {
-            let pending = await client.friends.getPending()
-            resolve(pending.map { ObscuraBridge.friendDict($0) })
         }
     }
 
@@ -468,7 +442,7 @@ extension ObscuraBridge {
     }
 
     /// `payload` crosses as a UTF-8 string, and that is only meaningful for kinds the app
-    /// understands. For a MODEL_SYNC it is the app's own JSON, byte-identical to what the sender
+    /// understands. For an APP_ENTRY it is the app's own JSON, byte-identical to what the sender
     /// wrote. For an unknown arm (§4.1) it is arbitrary protobuf bytes and this is lossy — acceptable
     /// precisely because §4.1 requires the app to `discard` a row whose `kind` it does not recognise
     /// WITHOUT reading the payload.
@@ -721,14 +695,6 @@ extension ObscuraBridge {
     func deleteFile(_ path: String,
                     resolver resolve: RCTPromiseResolveBlock, rejecter reject: RCTPromiseRejectBlock) {
         try? FileManager.default.removeItem(atPath: path)
-        resolve(nil)
-    }
-
-    /// Android sets FLAG_SECURE; on iOS this is an accepted no-op (a future
-    /// implementation could blur the app when backgrounded).
-    @objc(setSecureScreen:resolver:rejecter:)
-    func setSecureScreen(_ enabled: Bool,
-                         resolver resolve: RCTPromiseResolveBlock, rejecter reject: RCTPromiseRejectBlock) {
         resolve(nil)
     }
 

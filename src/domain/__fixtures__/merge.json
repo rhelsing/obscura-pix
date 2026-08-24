@@ -1,7 +1,7 @@
 {
   "version": 1,
   "kind": "merge",
-  "description": "L3 CRDT merge conformance. Applies a set of ops (incoming syncs) and pins the resolved state. Cases with multiple applyOrders assert CONVERGENCE: the same op set applied in different arrival orders MUST resolve to the identical state (the core CRDT property). Ops are applied via the merge (incoming-sync) path. Note: the future-timestamp clamp is NOT vector-tested here because it is wall-clock-relative (see SPEC 2); it is covered by per-kit unit tests.",
+  "description": "Application merge conformance. Applies incoming entries and pins the resolved state. Cases with multiple applyOrders assert convergence: the same entries applied in different arrival orders must resolve to identical state. The future-timestamp clamp is not vector-tested because it is wall-clock-relative; per-kit tests cover it.",
   "cases": [
     {
       "name": "GSet union merges distinct entries, order-independent",

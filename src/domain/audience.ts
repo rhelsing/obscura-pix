@@ -107,7 +107,7 @@ export function resolveAudience(
       // whatever userId a peer wrote into it.
       //
       // That is reachable, not theoretical. `StoriesScreen` writes a viewed-receipt back with
-      // `{ ...story.data }`, and `story.data.conversationId` came from a peer's ModelSync. Any
+      // `{ ...story.data }`, and `story.data.conversationId` came from a peer's AppEntry. Any
       // authenticated user can deliver to any device (friendship is not required to send, KIT_API
       // §4.1), so a stranger could push a `pix` naming `<me>_<userId of their choosing>` and my
       // device would mail the entry — `mediaRef`, `contentKey`, `nonce`, `caption` — to that userId
