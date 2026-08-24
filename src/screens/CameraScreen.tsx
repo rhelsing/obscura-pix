@@ -1,7 +1,7 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Pressable, StyleSheet, Linking, PanResponder, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, Pressable, StyleSheet, PanResponder, Animated } from 'react-native';
 import {
-  Camera, useCameraDevice, useCameraPermission, useCameraFormat, useMicrophonePermission,
+  Camera, useCameraDevice, useCameraFormat, useMicrophonePermission,
 } from 'react-native-vision-camera';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -11,6 +11,7 @@ import { useCameraActive } from '../navigation/CameraActiveContext';
 import { logError } from '../utils/log';
 import { clamp, touchDist } from '../utils/gesture';
 import { FlashIcon, FlipCameraIcon } from '../components/icons';
+import { CameraPermissionGate } from '../components/CameraPermissionGate';
 import type { RootStackParamList } from '../navigation/types';
 import { colors } from '../styles';
 
@@ -24,7 +25,6 @@ const TAB_BAR_CLEARANCE = 24;
 
 export function CameraScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { hasPermission, requestPermission } = useCameraPermission();
   const { hasPermission: hasMic, requestPermission: requestMic } = useMicrophonePermission();
   const insets = useSafeAreaInsets();
   const [facing, setFacing] = useState<'front' | 'back'>('back');
@@ -180,21 +180,6 @@ export function CameraScreen() {
     });
   }, [nav]);
 
-  // Permission not granted yet
-  if (!hasPermission) {
-    return (
-      <View style={cs.permissionContainer}>
-        <Text style={cs.permissionText}>Camera access needed</Text>
-        <TouchableOpacity style={cs.permissionBtn} onPress={requestPermission}>
-          <Text style={cs.permissionBtnText}>Grant access</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => Linking.openSettings()}>
-          <Text style={cs.settingsLink}>Open settings</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
   // No device available (emulator without camera)
   if (!device) {
     return (
@@ -209,57 +194,59 @@ export function CameraScreen() {
   }
 
   return (
-    <View style={cs.container}>
-      <Camera
-        ref={camera}
-        style={StyleSheet.absoluteFill}
-        device={device}
-        format={format}
-        isActive={cameraActive}
-        photo={true}
-        video={true}
-        audio={hasMic}
-        fps={30}
-        videoBitRate="low"
-        photoQualityBalance="speed"
-        zoom={zoom}
-      />
+    <CameraPermissionGate message="Camera access needed">
+      <View style={cs.container}>
+        <Camera
+          ref={camera}
+          style={StyleSheet.absoluteFill}
+          device={device}
+          format={format}
+          isActive={cameraActive}
+          photo={true}
+          video={true}
+          audio={hasMic}
+          fps={30}
+          videoBitRate="low"
+          photoQualityBalance="speed"
+          zoom={zoom}
+        />
 
       {/* Pinch-zoom gesture surface. Claims only on a 2-finger move, so a
           single-finger horizontal drag falls through to the tab pager for the
           swipe-to-Chats transition. Below the controls overlay (box-none). */}
-      <View style={StyleSheet.absoluteFill} {...pan.panHandlers} />
+        <View style={StyleSheet.absoluteFill} {...pan.panHandlers} />
 
       {/* Controls overlay. Bottom is padded clear of the transparent tab bar
           that floats over the full-bleed camera. */}
-      <View style={cs.overlay} pointerEvents="box-none">
+        <View style={cs.overlay} pointerEvents="box-none">
         {/* Bottom controls. Shutter is centered (the anchor); flash + flip
             flank it as icons. Kept out of the top strip because the transparent
             nav header sits on top there and would swallow the taps. */}
-        <View style={[cs.bottomControls, { paddingBottom: insets.bottom + TAB_BAR_CLEARANCE }]}>
-          <View style={cs.controlsRow}>
-            <TouchableOpacity style={cs.flashBtn} onPress={toggleFlash} accessibilityLabel="Toggle flash">
-              <FlashIcon size={26} color={flash === 'on' ? colors.accent : '#fff'} on={flash === 'on'} />
-            </TouchableOpacity>
+          <View style={[cs.bottomControls, { paddingBottom: insets.bottom + TAB_BAR_CLEARANCE }]}>
+            <View style={cs.controlsRow}>
+              <TouchableOpacity style={cs.flashBtn} onPress={toggleFlash} accessibilityLabel="Toggle flash">
+                <FlashIcon size={26} color={flash === 'on' ? colors.accent : '#fff'} on={flash === 'on'} />
+              </TouchableOpacity>
 
-            <Animated.View style={{ transform: [{ scale: shutterScale }] }}>
-              <Pressable
-                onPressIn={onShutterPressIn}
-                onPressOut={onShutterPressOut}
-                style={[cs.captureBtn, recording && cs.captureBtnActive]}
-                accessibilityLabel="Capture"
-              >
-                <View style={[cs.captureBtnInner, recording && cs.captureBtnInnerActive]} />
-              </Pressable>
-            </Animated.View>
+              <Animated.View style={{ transform: [{ scale: shutterScale }] }}>
+                <Pressable
+                  onPressIn={onShutterPressIn}
+                  onPressOut={onShutterPressOut}
+                  style={[cs.captureBtn, recording && cs.captureBtnActive]}
+                  accessibilityLabel="Capture"
+                >
+                  <View style={[cs.captureBtnInner, recording && cs.captureBtnInnerActive]} />
+                </Pressable>
+              </Animated.View>
 
-            <TouchableOpacity style={cs.flipBtn} onPress={flipCamera} accessibilityLabel="Flip camera">
-              <FlipCameraIcon size={30} color="#fff" />
-            </TouchableOpacity>
+              <TouchableOpacity style={cs.flipBtn} onPress={flipCamera} accessibilityLabel="Flip camera">
+                <FlipCameraIcon size={30} color="#fff" />
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </View>
-    </View>
+    </CameraPermissionGate>
   );
 }
 
@@ -290,6 +277,5 @@ const cs = StyleSheet.create({
   permissionText: { color: '#fff', fontSize: 18, fontWeight: '600', marginBottom: 16 },
   permissionBtn: { backgroundColor: colors.accent, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12, marginBottom: 12 },
   permissionBtnText: { color: '#000', fontWeight: '700', fontSize: 16 },
-  settingsLink: { color: colors.accent, fontSize: 14 },
   hint: { color: '#666', fontSize: 14, marginTop: 8 },
 });

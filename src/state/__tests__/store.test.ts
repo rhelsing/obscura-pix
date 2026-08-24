@@ -1,6 +1,6 @@
 import {
   useStore, loadEntries, drainAndRefresh, saveEntry,
-  applyObscuraEvent, loadSession,
+  applyObscuraEvent, loadSession, refreshFriendGraph,
 } from '../store';
 import { Obscura } from '../../native/ObscuraModule';
 import { getFakeBridge } from '../../native/__fixtures__/reactNativeMock';
@@ -38,6 +38,21 @@ function session() {
 beforeEach(() => {
   useStore.getState().reset();
   bridge.__authenticate({ userId: SELF, deviceId: DEVICE });
+});
+
+describe('refreshFriendGraph', () => {
+  it('pulls accepted and pending status after an imperative friend action', async () => {
+    bridge.__setFriends([
+      { userId: BOB, username: 'bob', status: 'accepted' },
+      { userId: 'carol', username: 'carol', status: 'pending_received' },
+    ]);
+    useStore.getState()._setFriendsAndPending([], []);
+
+    await refreshFriendGraph();
+
+    expect(useStore.getState().friends.map((f) => f.username)).toEqual(['bob']);
+    expect(useStore.getState().pending.map((f) => f.username)).toEqual(['carol']);
+  });
 });
 
 describe('loadEntries', () => {

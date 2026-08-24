@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View, Text, TouchableOpacity, FlatList, StyleSheet,
 } from 'react-native';
@@ -8,11 +8,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useHeaderHeight } from '@react-navigation/elements';
 import { Obscura, type Friend, type ModelEntry } from '../native/ObscuraModule';
 import { conversationId } from '../domain/conversation';
-import { useSession, useModelEntries } from '../state/store';
+import { useSession, useModelEntries, refreshFriendGraph } from '../state/store';
 import { AUTHOR_USER_ID } from '../models/schema';
 import { authorOf } from '../utils/identity';
 import { StoriesRow } from './StoriesScreen';
 import { Avatar } from '../components/Avatar';
+import { toast } from '../components/Toast';
 import type { RootStackParamList } from '../navigation/types';
 import { openPixViewer } from '../navigation/openPixViewer';
 import { timeAgo } from '../utils/format';
@@ -36,8 +37,22 @@ export function ChatListScreen() {
   const { friends, pending, myUserId } = useSession();
   const messages = useModelEntries('directMessage');
   const pixEntries = useModelEntries('pix');
+  const [acceptingUserId, setAcceptingUserId] = useState<string | null>(null);
 
   const onViewPix = (sender: Friend, entries: ModelEntry[]) => openPixViewer(nav, sender, entries);
+  const onAcceptFriend = useCallback(async (friend: Friend) => {
+    if (acceptingUserId !== null) return;
+    setAcceptingUserId(friend.userId);
+    try {
+      await Obscura.acceptFriend(friend.userId, friend.username);
+      await refreshFriendGraph();
+      toast.success(`You and ${friend.username} are now friends`);
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Could not accept friend request');
+    } finally {
+      setAcceptingUserId(null);
+    }
+  }, [acceptingUserId]);
 
   // Build activity list — each friend with their latest chat + pix state.
   // Memoized so the four filter passes per friend don't run on every render.
@@ -98,8 +113,14 @@ export function ChatListScreen() {
             </Text>
           </View>
           {f.status === 'pending_received' && (
-            <TouchableOpacity style={cl.acceptBtn} onPress={() => Obscura.acceptFriend(f.userId, f.username)}>
-              <Text style={cl.acceptBtnText}>Accept</Text>
+            <TouchableOpacity
+              style={cl.acceptBtn}
+              onPress={() => onAcceptFriend(f)}
+              disabled={acceptingUserId !== null}
+            >
+              <Text style={cl.acceptBtnText}>
+                {acceptingUserId === f.userId ? 'Accepting…' : 'Accept'}
+              </Text>
             </TouchableOpacity>
           )}
         </View>
