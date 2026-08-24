@@ -1,95 +1,59 @@
 # Obscura Pix
 
-End-to-end encrypted photo messaging app. Signal Protocol encryption, disappearing content. Built on ObscuraKit.
-
-React Native app, **Android-only in production**. An iOS foundation and Swift
-bridge are committed under `ios/`, build in CI, and have completed a physical
-Android↔iOS interoperability pass, but are not production-ready. See
+End-to-end encrypted photo messaging built with React Native and ObscuraKit.
+Android is the current release target. The iOS app builds and supports
+foreground interoperability, but push and release signing are incomplete. See
 [`docs/IOS_PARITY.md`](docs/IOS_PARITY.md).
-
-## What it does
-
-- Friends via shareable codes
-- Encrypted chat with typing indicators
-- Stories (posted to all friends; **they do not expire yet** — see `ROADMAP.md`)
-- Ephemeral photos (Pix) — encrypted, view-once
-- Profiles synced to friends
-- Auto-reconnect, session persistence, offline delivery
-- Android push notifications (FCM); iOS push is not wired
-
-The app never touches encryption, protobufs, or WebSocket frames. Those are the kit's, and they are
-the *only* thing the kit does: it is a durable, authenticated inbox and outbox for bytes it cannot
-read. Everything about what those bytes mean — merge, audience, drain, identity, rendering — lives
-in `src/`, in TypeScript, written once. See [`CLAUDE.md`](CLAUDE.md).
 
 ## Architecture
 
-```
-React Native (shared UI, src/)
-  ├── Android: ObscuraBridgeModule.kt → obscura-native/kotlin
-  └── iOS: ObscuraBridge.swift → obscura-native/swift
+```text
+React Native application (`src/`)
+  ├── Android host bridge → `obscura-native/kotlin`
+  └── iOS host bridge     → `obscura-native/swift`
 ```
 
-Model semantics are defined once in `src/models/schema.ts` and
-[`docs/DOMAIN_CONTRACT.md`](docs/DOMAIN_CONTRACT.md), and read by the **app
-alone**. Nothing about a model crosses the bridge. The bridge surface (methods
-+ events) is documented in `docs/BRIDGE.md`.
+- Pix owns model schemas, payload parsing, recipients, authorization, merge,
+  expiry, outbox policy, and rendering.
+- ObscuraKit owns authentication, friends/devices, Signal, transport, typing,
+  encrypted attachments, the durable inbox, and opaque entry storage.
+- The Android and iOS host layers own OS lifecycle, permissions, files, push,
+  notifications, and React Native marshalling.
+
+The application domain contract is
+[`docs/DOMAIN_CONTRACT.md`](docs/DOMAIN_CONTRACT.md). The native bridge contract
+is [`docs/BRIDGE.md`](docs/BRIDGE.md).
 
 ## Setup
 
-### Prerequisites
+Follow [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 
-- Node 22.11+, React Native CLI
-- Android Studio, JDK 21
+## Project layout
 
-### Install + run
+```text
+src/domain/                 Pure authorization, audience, merge, and drain planning
+src/models/schema.ts        Application model declarations
+src/state/                  Inbox/outbox effects and Zustand state
+src/native/ObscuraModule.ts Typed React Native bridge facade
+src/screens/                Shared UI
+android/.../obscuraapp/     Android host, bridge, lifecycle, and notifications
+ios/ObscuraApp/             iOS host and bridge
+obscura-native/             Pinned native source submodule
+tools/push-sender/          Real Android push test sender
+```
+
+## Checks
 
 ```bash
-git submodule update --init --recursive
-npm ci
-npx react-native run-android
+npm test
+npm run typecheck
+npm run lint
 ```
 
-A Firebase `google-services.json` is required for FCM; place it at `android/app/google-services.json` (gitignored).
+The Jest suite covers domain, native facade, and state behavior. It does not
+cover rendered UI or physical-device behavior.
 
-## Project Structure
-
-```
-src/
-  domain/                 — the app's logic, pure and fully tested
-    merge.ts              — APPEND / REPLACE (DOMAIN_CONTRACT)
-    audience.ts           — who a write goes to (DOMAIN_CONTRACT)
-    drain.ts              — classify, authorize, attribute, merge an inbox batch
-  state/                  — the effects those decisions drive
-    drainInbox.ts         — peek → write → consume | discard
-    writeEntry.ts         — store locally, then send; the durable outbox
-    store.ts              — Zustand store + useSession / useModelEntries hooks
-  models/schema.ts        — model semantics (app-only; never crosses the bridge)
-  native/ObscuraModule.ts — TypeScript bridge facade
-    __fixtures__/         — the in-memory kit double the tests run against
-  utils/identity.ts       — userId → display name, from the friend graph only
-  navigation/             — React Navigation root + types
-  screens/                — UI screens
-android/
-  app/src/main/java/com/obscuraapp/
-    ObscuraBridgeModule.kt — Bridge: JS ↔ obscura-native/kotlin
-    ObscuraSession.kt      — Process-scoped owner of the kit client
-    ObscuraMessagingService.kt — FCM silent-push receiver
-    NotificationHelper.kt  — Local notification posting
-obscura-native/            — Pinned native source submodule
-docs/
-  BRIDGE.md               — Cross-platform bridge contract
-tools/push-sender/        — Kotlin CLI for triggering test pushes
-App.tsx                   — Providers + navigator
-```
-
-## Development
-
-Native events push reactively to JS — no polling. Friends, connection state, auth state, typing, and incoming messages all flow through `onObscuraEvent` from `src/native/ObscuraModule.ts`. The Zustand store at `src/state/store.ts` subscribes once and fans out to screens via `useSession()` and `useModelEntries(model)`.
-
-JS changes hot-reload via Metro. Native (Kotlin) changes require a rebuild.
-
-Native dependency updates are explicit gitlink changes:
+## Updating the native pin
 
 ```bash
 git -C obscura-native fetch origin
@@ -98,14 +62,5 @@ git -C obscura-native submodule update --init --recursive
 git add obscura-native
 ```
 
-For coordinated development, work on a branch inside `obscura-native/`, land
-that change there first, and then update Pix's gitlink to the resulting commit.
-
-`npm test` runs the Node-side suite — `src/domain`, `src/native` and `src/state` against the
-in-memory kit double — and CI runs it on every PR. Anything that RENDERS is out
-of scope for it; `jest.config.js` explains why.
-
-## Dependencies
-
-- [obscura-native](https://github.com/barrelmaker97/obscura-native) — pinned Kotlin and Swift native encrypted data layers
-- [obscura-server](https://github.com/barrelmaker97/obscura-server) — server (dumb relay, never sees contents)
+Land coordinated native work in `obscura-native` first, then update this
+repository's gitlink.

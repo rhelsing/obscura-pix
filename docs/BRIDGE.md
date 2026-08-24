@@ -1,14 +1,10 @@
 # Pix bridge contract
 
-This is the contract between the JS UI layer and the per-platform native
-bridges (Kotlin on Android, Swift on iOS). It is the **single source of
-truth** for method and event shapes. Unless a platform exception is stated,
-every method MUST be implemented by both platforms and every event MUST use the
-exact payload shape shown. [`IOS_PARITY.md`](IOS_PARITY.md) records the current
-iOS implementation gaps.
-
-The TS facade lives in [`src/native/ObscuraModule.ts`](../src/native/ObscuraModule.ts);
-keep this document in sync with that file.
+This document defines the behavior of the JS-to-native bridge. The executable
+method and event shapes live in
+[`src/native/ObscuraModule.ts`](../src/native/ObscuraModule.ts). Android, iOS,
+the test fixture, and this document must match that surface. Platform gaps are
+listed in [`IOS_PARITY.md`](IOS_PARITY.md).
 
 ## Design principles
 
@@ -22,7 +18,7 @@ keep this document in sync with that file.
   the way in (`store.ts`'s `loadEntries`). There is no schema on this bridge —
   `src/models/schema.ts` is read by the app alone and never crosses.
 - **The caller names the recipients.** `sendEntry` takes a userId list and the
-  kit fans out to exactly those (plus the author's own *other* devices). It
+  kit fans out to exactly those (plus the author's own _other_ devices). It
   resolves no audience of its own. Audience resolution is
   `src/domain/audience.ts`.
 - **Identity comes from the envelope.** `inboxPeek` returns `senderUserId` /
@@ -52,26 +48,26 @@ must implement; "android only" means iOS may either no-op or throw.
 
 ### Auth
 
-| Method | Args | Returns | Platforms |
-|---|---|---|---|
-| `registerUser(username, password)` | strings | `void` | both |
-| `loginSmart(username, password)` | strings | `LoginScenario` | both |
-| `loginAndProvision(username, password)` | strings | `void` | both |
-| `connect()` | — | `void` | both |
-| `logout()` | — | `void` | both |
+| Method                                  | Args    | Returns         | Platforms |
+| --------------------------------------- | ------- | --------------- | --------- |
+| `registerUser(username, password)`      | strings | `void`          | both      |
+| `loginSmart(username, password)`        | strings | `LoginScenario` | both      |
+| `loginAndProvision(username, password)` | strings | `void`          | both      |
+| `connect()`                             | —       | `void`          | both      |
+| `logout()`                              | —       | `void`          | both      |
 
 `LoginScenario` is one of: `existingDevice` `newDevice`
 `deviceMismatch` `invalidCredentials` `userNotFound`.
 
 ### Current state (reads of kit state)
 
-| Method | Returns | Platforms |
-|---|---|---|
-| `getConnectionState()` | `ConnectionState` | both |
-| `getAuthState()` | `AuthState` | both |
-| `getUserId()` | `string \| null` | both |
-| `getUsername()` | `string \| null` | both |
-| `getDeviceId()` | `string \| null` | both |
+| Method                 | Returns           | Platforms |
+| ---------------------- | ----------------- | --------- |
+| `getConnectionState()` | `ConnectionState` | both      |
+| `getAuthState()`       | `AuthState`       | both      |
+| `getUserId()`          | `string \| null`  | both      |
+| `getUsername()`        | `string \| null`  | both      |
+| `getDeviceId()`        | `string \| null`  | both      |
 
 `ConnectionState`: `disconnected` `connecting` `reconnecting` `connected`.
 `AuthState`: `loggedOut` `authenticated` `pendingApproval`.
@@ -82,12 +78,12 @@ this device is.
 
 ### Friends
 
-| Method | Args | Returns | Platforms |
-|---|---|---|---|
-| `acceptFriend(userId)` | string | `void` | both |
-| `getFriendCode()` | — | `string` (base64-wrapped JSON `{n,u}`) | both |
-| `addFriendByCode(code)` | string | `void` | both |
-| `getFriends()` | — | `Friend[]` | both |
+| Method                  | Args   | Returns                                | Platforms |
+| ----------------------- | ------ | -------------------------------------- | --------- |
+| `acceptFriend(userId)`  | string | `void`                                 | both      |
+| `getFriendCode()`       | —      | `string` (base64-wrapped JSON `{n,u}`) | both      |
+| `addFriendByCode(code)` | string | `void`                                 | both      |
+| `getFriends()`          | —      | `Friend[]`                             | both      |
 
 `Friend = { userId, username, status: 'pending_sent' \| 'pending_received' \| 'accepted' }`.
 
@@ -96,10 +92,10 @@ name that did not come from here came from a peer.
 
 ### Device linking
 
-| Method | Args | Returns | Platforms |
-|---|---|---|---|
-| `generateLinkCode()` | — | `string` | both |
-| `validateAndApproveLink(code)` | string | `void` | both |
+| Method                         | Args   | Returns  | Platforms |
+| ------------------------------ | ------ | -------- | --------- |
+| `generateLinkCode()`           | —      | `string` | both      |
+| `validateAndApproveLink(code)` | string | `void`   | both      |
 
 ### The inbox ([`KIT_API.md` §3](https://github.com/barrelmaker97/obscura-native/blob/591a659/docs/KIT_API.md))
 
@@ -107,12 +103,12 @@ How messages arrive. The kit persists a row, ACKs, and then notifies — and
 **an ACK is a DELETE**, so once a row exists the server's copy is gone and the
 row is the only copy of that message anywhere.
 
-| Method | Args | Returns | Platforms |
-|---|---|---|---|
-| `inboxPeek(limit)` | int | `InboxRow[]` | both |
-| `inboxConsume(ids)` | number[] | `void` | both |
-| `inboxDiscard(ids, reason)` | number[], string | `void` | both |
-| `inboxDepth()` | — | number | both |
+| Method                      | Args             | Returns      | Platforms |
+| --------------------------- | ---------------- | ------------ | --------- |
+| `inboxPeek(limit)`          | int              | `InboxRow[]` | both      |
+| `inboxConsume(ids)`         | number[]         | `void`       | both      |
+| `inboxDiscard(ids, reason)` | number[], string | `void`       | both      |
+| `inboxDepth()`              | —                | number       | both      |
 
 ```ts
 InboxRow = {
@@ -142,7 +138,7 @@ Implementations MUST:
   security-relevant event (§3.3 rule 5). It is data loss chosen deliberately.
   The app logs it too — a discard must never be the quiet path.
 - **Dedupe internally on the server envelope id** (`UNIQUE` + `INSERT OR IGNORE`, §3.3 rule 8).
-  Persist-then-ack *guarantees* redelivery: the ack is best-effort and its
+  Persist-then-ack _guarantees_ redelivery: the ack is best-effort and its
   failure is swallowed, so the same envelope arriving twice is routine.
 - **`senderDeviceId` comes from the address of the session that decrypted the
   message**, never from a wire field (`NATIVE_CONTRACT.md` §0.10 rule 4).
@@ -156,10 +152,10 @@ its own entry directly.
 Where the app keeps what it made of the inbox. The kit owns the table; it has no
 opinion about the contents.
 
-| Method | Args | Returns | Platforms |
-|---|---|---|---|
-| `entryPut(model, id, dataJson, sentAt, authorDeviceId, localMetadataJson?)` | string, string, string, number, string, string? | `void` | both |
-| `entryAll(model)` | string | `StoredEntry[]` | both |
+| Method                                                                      | Args                                            | Returns         | Platforms |
+| --------------------------------------------------------------------------- | ----------------------------------------------- | --------------- | --------- |
+| `entryPut(model, id, dataJson, sentAt, authorDeviceId, localMetadataJson?)` | string, string, string, number, string, string? | `void`          | both      |
+| `entryAll(model)`                                                           | string                                          | `StoredEntry[]` | both      |
 
 `StoredEntry = { id, data: string, sentAt, authorDeviceId, localMetadata }`. `data` is application
 JSON; `localMetadata` is opaque device-local bookkeeping and is never sent.
@@ -173,9 +169,9 @@ the app refreshes explicitly, because it is the app that knows what changed.
 
 ### Send ([`KIT_API.md` §5](https://github.com/barrelmaker97/obscura-native/blob/591a659/docs/KIT_API.md))
 
-| Method | Args | Returns | Platforms |
-|---|---|---|---|
-| `sendEntry(recipientUserIds, modelKey, entryId, sentAt, payloadJson)` | string[], string, string, number, string | `void` | both |
+| Method                                                                | Args                                     | Returns | Platforms |
+| --------------------------------------------------------------------- | ---------------------------------------- | ------- | --------- |
+| `sendEntry(recipientUserIds, modelKey, entryId, sentAt, payloadJson)` | string[], string, string, number, string | `void`  | both      |
 
 Implementations MUST:
 
@@ -189,12 +185,12 @@ Implementations MUST:
 
 ### Typing signals
 
-| Method | Args | Returns | Platforms |
-|---|---|---|---|
-| `sendTyping(recipientUserIds, conversationId)` | string[], string | `void` | both |
-| `stopTyping(recipientUserIds, conversationId)` | string[], string | `void` | both |
-| `observeTyping(conversationId)` | string | `void` | both |
-| `stopObservingTyping(conversationId)` | string | `void` | both |
+| Method                                         | Args             | Returns | Platforms |
+| ---------------------------------------------- | ---------------- | ------- | --------- |
+| `sendTyping(recipientUserIds, conversationId)` | string[], string | `void`  | both      |
+| `stopTyping(recipientUserIds, conversationId)` | string[], string | `void`  | both      |
+| `observeTyping(conversationId)`                | string           | `void`  | both      |
+| `stopObservingTyping(conversationId)`          | string           | `void`  | both      |
 
 While an observation is active, the bridge emits
 [`typingChanged`](#typingchanged) whenever the typer set for that
@@ -208,10 +204,10 @@ recipients explicitly; `conversationId` is an opaque UI context.
 Bytes never cross the bridge. `uploadAttachment` reads from a local file path;
 `downloadAttachment` decrypts to a cache file and returns its absolute path.
 
-| Method | Args | Returns | Platforms |
-|---|---|---|---|
-| `uploadAttachment(filePath)` | string | `{ id, contentKey, nonce }` | both |
-| `downloadAttachment(id, contentKey, nonce)` | strings | absolute file path | both |
+| Method                                      | Args    | Returns                     | Platforms |
+| ------------------------------------------- | ------- | --------------------------- | --------- |
+| `uploadAttachment(filePath)`                | string  | `{ id, contentKey, nonce }` | both      |
+| `downloadAttachment(id, contentKey, nonce)` | strings | absolute file path          | both      |
 
 The app stores `{id, contentKey, nonce}` inside its own payload; the kit treats
 them as opaque. Note the coupling: attachment blobs expire server-side at 30
@@ -219,6 +215,7 @@ days while inbox rows have no expiry, so an unconsumed row can outlive its media
 
 Downloads are cached at `<cacheDir>/attachments/<safeId>.jpg`; repeat calls
 short-circuit on cache hit. Implementations MUST:
+
 - Sanitize the id to a safe filename before writing (no path traversal).
 - **Publish atomically.** Write to a sibling temp file first, then rename into
   place. The "cache hit" branch must never observe a partially-written file
@@ -226,13 +223,14 @@ short-circuit on cache hit. Implementations MUST:
 
 ### Image processing (path-in, path-out)
 
-| Method | Args | Returns | Platforms |
-|---|---|---|---|
-| `resizeImage(srcPath, maxDim, quality)` | string, int, int | `{ path, width, height }` | both |
-| `writeTestImage(width, height)` | ints | `{ path, width, height }` | both |
+| Method                                  | Args             | Returns                   | Platforms |
+| --------------------------------------- | ---------------- | ------------------------- | --------- |
+| `resizeImage(srcPath, maxDim, quality)` | string, int, int | `{ path, width, height }` | both      |
+| `writeTestImage(width, height)`         | ints             | `{ path, width, height }` | both      |
 
 `resizeImage` re-encodes as JPEG at `quality` (1-100) so the largest side is at
 most `maxDim` px. Implementations MUST:
+
 - Honor EXIF `Orientation` — the output pixels are in display orientation
   (front-camera selfies must not render rotated). On Android this means
   reading `ExifInterface.TAG_ORIENTATION` and baking the rotation/flip into
@@ -250,13 +248,14 @@ The source file is untouched in both cases.
 
 ### Push notifications
 
-| Method | Args | Returns | Platforms |
-|---|---|---|---|
-| `requestPushPermission()` | — | `boolean` (granted) | both; token event Android only |
-| `registerPushToken(token)` | string | `void` | both |
+| Method                     | Args   | Returns             | Platforms                      |
+| -------------------------- | ------ | ------------------- | ------------------------------ |
+| `requestPushPermission()`  | —      | `boolean` (granted) | both; token event Android only |
+| `registerPushToken(token)` | string | `void`              | both                           |
 
 An implementation of `requestPushPermission` is complete only when it can do
 all of the following:
+
 1. Trigger the platform-native permission UI if not already decided.
 2. Fetch the platform push token (FCM on Android, APNs/FCM-via-APNs on iOS).
 3. Deliver the token via a [`pushTokenReceived`](#pushtokenreceived) event.
@@ -273,9 +272,9 @@ iOS must use the same event flow once token forwarding exists.
 
 ### Deep linking
 
-| Method | Args | Returns | Platforms |
-|---|---|---|---|
-| `getLaunchIntent()` | — | `{ screen: string } \| null` | both |
+| Method              | Args | Returns                      | Platforms |
+| ------------------- | ---- | ---------------------------- | --------- |
+| `getLaunchIntent()` | —    | `{ screen: string } \| null` | both      |
 
 `getLaunchIntent` returns the cold-start deep-link target and consumes it
 (repeat calls return null). Called once by JS on app mount. Warm-start
@@ -284,6 +283,7 @@ deep-links (app already running, notification tapped) arrive via the
 at cold start so the pull API is the only way to learn about that case.
 
 The current schema is a single `screen` string. Platform status:
+
 - Android: read intent extras (`intent.getStringExtra("screen")`) in
   the host activity, hook `onNewIntent` for warm starts.
 - iOS: the method and event surface exist, but notification callbacks are not
@@ -291,12 +291,12 @@ The current schema is a single `screen` string. Platform status:
 
 ### Misc
 
-| Method | Args | Returns | Platforms |
-|---|---|---|---|
-| `getDebugLog()` | — | `string[]` | both |
-| `prewarmAudioSession()` | — | `void` | both (no-op on Android) |
-| `deleteFile(path)` | string | `void` | both |
-| `setClipboard(text)` | string | `void` | both |
+| Method                  | Args   | Returns    | Platforms               |
+| ----------------------- | ------ | ---------- | ----------------------- |
+| `getDebugLog()`         | —      | `string[]` | both                    |
+| `prewarmAudioSession()` | —      | `void`     | both (no-op on Android) |
+| `deleteFile(path)`      | string | `void`     | both                    |
+| `setClipboard(text)`    | string | `void`     | both                    |
 
 `prewarmAudioSession` warms the audio HAL so video recording starts instantly;
 cold `AVAudioSession` activation on iOS costs ~1.4s. Idempotent, no-op on
@@ -306,8 +306,8 @@ Android.
 
 ### RN plumbing
 
-| Method | Notes |
-|---|---|
+| Method                   | Notes                                         |
+| ------------------------ | --------------------------------------------- |
 | `addListener(eventName)` | Required by `NativeEventEmitter`. No-op stub. |
 | `removeListeners(count)` | Required by `NativeEventEmitter`. No-op stub. |
 
@@ -321,15 +321,17 @@ native implementations, or it will silently never fire. `OBSCURA_EVENT_TYPES`
 in that file is the canonical name list and mirrors the `BridgeEvent` enum in
 `ObscuraBridgeModule.kt`.
 
-The ten types below are the whole set.
+The nine types below are the whole set.
 
 ### `connectionChanged`
+
 `{ type: 'connectionChanged', state: ConnectionState }` — emitted whenever
 the underlying WebSocket connection state transitions. JS drains the inbox and
 flushes the outbox on `'connected'`: reconnect is when the server redelivers
 anything it did not see acked.
 
 ### `authStateChanged`
+
 `{ type: 'authStateChanged', state: AuthState }` — emitted on login,
 logout, and pending-approval transitions. JS treats `'loggedOut'` as
 "session is gone, route to AuthScreen", and `'authenticated'` as
@@ -337,11 +339,13 @@ logout, and pending-approval transitions. JS treats `'loggedOut'` as
 is approved.
 
 ### `authFailed`
+
 `{ type: 'authFailed', reason: string }` — emitted when the kit's token
 refresh has exhausted its retry budget. JS treats this as "session is gone,
 route to AuthScreen."
 
 ### `appStateChanged`
+
 `{ type: 'appStateChanged', state: 'active' | 'background' }` — emitted on
 process-wide foreground/background transitions. Replayed once
 to a freshly-bound bridge so JS sees the current state without waiting for
@@ -349,15 +353,18 @@ the next transition. JS drains on `'active'` to process work queued while it
 was suspended. iOS native background wake handling is not implemented yet.
 
 ### `launchedFrom`
+
 `{ type: 'launchedFrom', screen: string }` — emitted when a warm-start
 deep-link arrives (app already running, notification tapped). For cold
 starts use [`getLaunchIntent`](#deep-linking) instead.
 
 ### `friendsChanged`
+
 `{ type: 'friendsChanged' }` — a wake-up emitted whenever the friend graph changes. JS calls
 `getFriends()` for the canonical snapshot.
 
 ### `messageReceived`
+
 `{ type: 'messageReceived', model: string }` — emitted after an inbox row for
 a remote `APP_ENTRY` has been **persisted**. It is a wake-up, not a delivery:
 the data is in the inbox, and nothing reaches the entry store until the app
@@ -369,11 +376,13 @@ delivery path. That is exactly why the app also drains on cold start,
 reconnect and foreground.
 
 ### `typingChanged`
+
 `{ type: 'typingChanged', conversationId: string, typers: string[] }` —
 emitted while an `observeTyping(conversationId)` is active. `typers` is the
 current set of remote display names that are typing.
 
 ### `pushTokenReceived`
+
 `{ type: 'pushTokenReceived', token: string }` — emitted when a fresh push
 token is available (after `requestPushPermission`, on cold start with a
 cached token, or on rotation). JS calls `registerPushToken` in response.
