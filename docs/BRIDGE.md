@@ -18,7 +18,7 @@ keep this document in sync with that file.
   No base64 round-trips, no megabyte-sized strings flying across the bridge.
 - **Nothing parses a payload, on either side.** `data` / `payload` cross as
   opaque JSON **strings**. The kit stores bytes it cannot read
-  ([`NATIVE_CONTRACT.md` §0.4](https://github.com/barrelmaker97/obscura-native/blob/7bd90b7/docs/NATIVE_CONTRACT.md)); the app parses them once, on
+  ([`NATIVE_CONTRACT.md` §0.4](https://github.com/barrelmaker97/obscura-native/blob/a13531b/docs/NATIVE_CONTRACT.md)); the app parses them once, on
   the way in (`store.ts`'s `loadEntries`). There is no schema on this bridge —
   `src/models/schema.ts` is read by the app alone and never crosses.
 - **The caller names the recipients.** `sendEntry` takes a userId list and the
@@ -104,7 +104,7 @@ name that did not come from here came from a peer.
 | `generateLinkCode()` | — | `string` | both |
 | `validateAndApproveLink(code)` | string | `void` | both |
 
-### The inbox ([`KIT_API.md` §3](https://github.com/barrelmaker97/obscura-native/blob/7bd90b7/docs/KIT_API.md))
+### The inbox ([`KIT_API.md` §3](https://github.com/barrelmaker97/obscura-native/blob/a13531b/docs/KIT_API.md))
 
 How messages arrive. The kit persists a row, ACKs, and then notifies — and
 **an ACK is a DELETE**, so once a row exists the server's copy is gone and the
@@ -157,7 +157,7 @@ There is deliberately **no insert**: the inbox is kit-write, app-read-and-delete
 (§3.3 rule 9). The sending device gets no inbox row for its own send and writes
 its own entry directly.
 
-### The entry store ([`KIT_API.md` §8.1](https://github.com/barrelmaker97/obscura-native/blob/7bd90b7/docs/KIT_API.md))
+### The entry store ([`KIT_API.md` §8.1](https://github.com/barrelmaker97/obscura-native/blob/a13531b/docs/KIT_API.md))
 
 Where the app keeps what it made of the inbox. The kit owns the table; it has no
 opinion about the contents.
@@ -177,7 +177,7 @@ by the time a write reaches the bridge the app has already decided who wins
 **No `entriesChanged` event.** `entryPut` is a plain write and emits nothing;
 the app refreshes explicitly, because it is the app that knows what changed.
 
-### Send ([`KIT_API.md` §5](https://github.com/barrelmaker97/obscura-native/blob/7bd90b7/docs/KIT_API.md))
+### Send ([`KIT_API.md` §5](https://github.com/barrelmaker97/obscura-native/blob/a13531b/docs/KIT_API.md))
 
 | Method | Args | Returns | Platforms |
 |---|---|---|---|
