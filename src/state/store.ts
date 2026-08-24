@@ -10,7 +10,7 @@ import { writeEntry, flushOutbox } from './writeEntry';
 import { logError } from '../utils/log';
 
 /**
- * Process-wide store for session state and ORM entry caches.
+ * Process-wide store for session state and application entry caches.
  *
  * Selectors:
  *   - useSession()           — session shape used by every screen

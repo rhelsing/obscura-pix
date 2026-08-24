@@ -72,8 +72,8 @@ friend sends pix
        → ObscuraSession.tryRestore() (restores session if cold) → processPendingMessages(25s)
          which connects + drives the drain)
   → kit decrypts and emits on incomingMessages
-  → ObscuraSession's single collector receives it          → "Incoming: MODEL_SYNC from=…"
-       modelName = msg.raw?.modelSync?.model               // "pix" | "directMessage"
+  → ObscuraSession's single collector receives it          → "Incoming: APP_ENTRY"
+       modelName = msg.raw?.appEntry?.model               // "pix" | "directMessage"
        → fans out to EventSink (RN bridge updates in-app UI, if alive)
        → if !appInForeground:
             NotificationHelper.postGeneric(ctx, classify(msg, modelName))
@@ -134,7 +134,7 @@ and silently delivers to nobody.
 
 ## Build note (Android)
 
-The consumer reads `msg.raw.modelSync.model` (a protobuf type) to choose "New pix" vs "New
+The consumer reads `msg.raw.appEntry.model` (a protobuf type) to choose "New pix" vs "New
 message". The kit keeps protobuf as an `implementation` dependency, so the app declares
 `com.google.protobuf:protobuf-java:3.25.3` itself for compile visibility — already present
 transitively at runtime, so no version conflict. See `android/app/build.gradle`.
@@ -149,12 +149,12 @@ $ADB -s <device> logcat -c
 # on the device: open app, log in, press HOME (do NOT force-stop)
 # from another device/account: send a pix
 $ADB -s <device> logcat -s ObscuraSession:V ObscuraMessagingService:V
-# expect: Incoming: MODEL_SYNC → Posted notification: New pix
+# expect: Incoming: APP_ENTRY → Posted notification: New pix
 ```
 
 ### Cold-start path
 
 Kill the app from the recents switcher (not force-stop), then send a pix from another account.
-`tools/push-sender/` is a standalone Kotlin CLI for driving real `MODEL_SYNC` pushes end-to-end;
+`tools/push-sender/` is a standalone Kotlin CLI for driving real `APP_ENTRY` pushes end-to-end;
 see its README. The silent push should restore the session at process start and post the
 notification without the app being opened.

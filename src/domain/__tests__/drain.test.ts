@@ -30,7 +30,7 @@ let nextId = 1;
 function row(over: Partial<DrainRow> = {}): DrainRow {
   return {
     id: nextId++,
-    kind: 'MODEL_SYNC',
+    kind: 'APP_ENTRY',
     modelKey: 'directMessage',
     entryId: `entry_${nextId}`,
     sentAt: 1_000,

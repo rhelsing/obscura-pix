@@ -105,11 +105,11 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
             putArray("friends", arr)
         }
         override fun onMessageReceived(type: String, modelName: String?) {
-            if (type == "MODEL_SYNC") {
-                // Payload is intentionally minimal — consumers re-query the ORM for the
+            if (type == "APP_ENTRY") {
+                // Payload is intentionally minimal — consumers re-query the entry store for the
                 // authoritative entries. Don't synthesize a fake id here.
                 if (modelName == null) {
-                    Log.e(TAG, "MODEL_SYNC missing model; event suppressed")
+                    Log.e(TAG, "APP_ENTRY missing model; event suppressed")
                     return
                 }
                 emit(BridgeEvent.MESSAGE_RECEIVED) { putString("model", modelName) }
@@ -277,18 +277,6 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun disconnect(promise: Promise) {
-        scope.launch {
-            try {
-                requireClient().disconnect()
-                promise.resolve(null)
-            } catch (e: Exception) {
-                promise.rejectKit("DISCONNECT_ERROR", e)
-            }
-        }
-    }
-
-    @ReactMethod
     fun logout(promise: Promise) {
         scope.launch {
             try {
@@ -322,15 +310,6 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun getPendingRequests(promise: Promise) {
-        val c = client
-        if (c == null) { promise.resolve(Arguments.createArray()); return }
-        val arr = Arguments.createArray()
-        for (f in c.pendingRequests.value) arr.pushMap(friendToMap(f, "pending_received"))
-        promise.resolve(arr)
-    }
-
-    @ReactMethod
     fun getAuthState(promise: Promise) {
         val state = client?.authState?.value ?: AuthState.LOGGED_OUT
         promise.resolve(when (state) {
@@ -345,20 +324,6 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     @ReactMethod fun getDeviceId(promise: Promise) { promise.resolve(client?.deviceId) }
 
     // ─── Friends ────────────────────────────────────────────────────────────
-
-    @ReactMethod
-    fun befriend(userId: String, username: String, promise: Promise) {
-        scope.launch {
-            try {
-                Log.d(TAG, "befriend: $username ($userId)")
-                requireClient().befriend(userId, username)
-                promise.resolve(null)
-            } catch (e: Exception) {
-                Log.e(TAG, "befriend failed: ${e.message}")
-                promise.rejectKit("BEFRIEND_ERROR", e)
-            }
-        }
-    }
 
     @ReactMethod
     fun acceptFriend(userId: String, username: String, promise: Promise) {
@@ -701,29 +666,6 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         promise.resolve(arr)
     }
 
-    // ─── Screen Security ────────────────────────────────────────────────────
-
-    @ReactMethod
-    fun setSecureScreen(enabled: Boolean, promise: Promise) {
-        UiThreadUtil.runOnUiThread {
-            try {
-                val window = reactApplicationContext.currentActivity?.window
-                    ?: run { promise.resolve(null); return@runOnUiThread }
-                if (enabled) {
-                    window.setFlags(
-                        android.view.WindowManager.LayoutParams.FLAG_SECURE,
-                        android.view.WindowManager.LayoutParams.FLAG_SECURE,
-                    )
-                } else {
-                    window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
-                }
-                promise.resolve(null)
-            } catch (e: Exception) {
-                promise.rejectKit("SECURE_ERROR", e)
-            }
-        }
-    }
-
     // ─── Deep linking ───────────────────────────────────────────────────────
 
     /**
@@ -1026,7 +968,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
     /**
      * `payload` crosses as a UTF-8 STRING, and that is only meaningful for kinds the app understands.
      *
-     * For a MODEL_SYNC it is the app's own JSON, byte-identical to what the sender wrote. For an
+     * For an APP_ENTRY it is the app's own JSON, byte-identical to what the sender wrote. For an
      * unknown arm (§4.1) it is arbitrary protobuf bytes and this string is lossy — which is
      * acceptable precisely because §4.1 requires the app to `discard` a row whose `kind` it does not
      * recognise WITHOUT reading the payload. A row the app must not read cannot be corrupted by an

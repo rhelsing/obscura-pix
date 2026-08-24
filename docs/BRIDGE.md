@@ -18,7 +18,7 @@ keep this document in sync with that file.
   No base64 round-trips, no megabyte-sized strings flying across the bridge.
 - **Nothing parses a payload, on either side.** `data` / `payload` cross as
   opaque JSON **strings**. The kit stores bytes it cannot read
-  ([`NATIVE_CONTRACT.md` §0.4](https://github.com/barrelmaker97/obscura-native/blob/a13531b/docs/NATIVE_CONTRACT.md)); the app parses them once, on
+  ([`NATIVE_CONTRACT.md` §0.4](https://github.com/barrelmaker97/obscura-native/blob/b776161/docs/NATIVE_CONTRACT.md)); the app parses them once, on
   the way in (`store.ts`'s `loadEntries`). There is no schema on this bridge —
   `src/models/schema.ts` is read by the app alone and never crosses.
 - **The caller names the recipients.** `sendEntry` takes a userId list and the
@@ -58,7 +58,6 @@ must implement; "android only" means iOS may either no-op or throw.
 | `loginSmart(username, password)` | strings | `LoginScenario` | both |
 | `loginAndProvision(username, password)` | strings | `void` | both |
 | `connect()` | — | `void` | both |
-| `disconnect()` | — | `void` | both |
 | `logout()` | — | `void` | both |
 
 `LoginScenario` is one of: `existingDevice` `newDevice`
@@ -85,12 +84,10 @@ this device is.
 
 | Method | Args | Returns | Platforms |
 |---|---|---|---|
-| `befriend(userId, username)` | strings | `void` | both |
 | `acceptFriend(userId, username)` | strings | `void` | both |
 | `getFriendCode()` | — | `string` (base64-wrapped JSON `{n,u}`) | both |
 | `addFriendByCode(code)` | string | `void` | both |
 | `getFriends()` | — | `Friend[]` | both |
-| `getPendingRequests()` | — | `Friend[]` | both |
 
 `Friend = { userId, username, status: 'pending_sent' \| 'pending_received' \| 'accepted' }`.
 
@@ -104,7 +101,7 @@ name that did not come from here came from a peer.
 | `generateLinkCode()` | — | `string` | both |
 | `validateAndApproveLink(code)` | string | `void` | both |
 
-### The inbox ([`KIT_API.md` §3](https://github.com/barrelmaker97/obscura-native/blob/a13531b/docs/KIT_API.md))
+### The inbox ([`KIT_API.md` §3](https://github.com/barrelmaker97/obscura-native/blob/b776161/docs/KIT_API.md))
 
 How messages arrive. The kit persists a row, ACKs, and then notifies — and
 **an ACK is a DELETE**, so once a row exists the server's copy is gone and the
@@ -121,12 +118,12 @@ row is the only copy of that message anywhere.
 InboxRow = {
   id: number             // monotonic per install; drain order. NOT a message id.
   envelopeId: string     // server-assigned. The kit's dedupe key: UNIQUE + INSERT OR IGNORE.
-  kind: string           // the client.proto payload arm, e.g. "MODEL_SYNC"
+  kind: string           // the client.proto payload arm, e.g. "APP_ENTRY"
   receivedAt: number
   senderUserId: string           // server-stamped (NATIVE_CONTRACT §0.10)
   senderDeviceId: string|null    // the decrypting session's address — the merge tie-break
   senderDisplayName: string|null // from the kit's friend graph; null if not a friend
-  modelKey: string|null  // ModelSync-derived, so null for every other kind
+  modelKey: string|null  // AppEntry-derived, so null for every other kind
   entryId: string|null
   sentAt: number|null    // peer-supplied; clamped per NATIVE_CONTRACT §2.4 before storage
   payload: string        // opaque JSON string
@@ -157,7 +154,7 @@ There is deliberately **no insert**: the inbox is kit-write, app-read-and-delete
 (§3.3 rule 9). The sending device gets no inbox row for its own send and writes
 its own entry directly.
 
-### The entry store ([`KIT_API.md` §8.1](https://github.com/barrelmaker97/obscura-native/blob/a13531b/docs/KIT_API.md))
+### The entry store ([`KIT_API.md` §8.1](https://github.com/barrelmaker97/obscura-native/blob/b776161/docs/KIT_API.md))
 
 Where the app keeps what it made of the inbox. The kit owns the table; it has no
 opinion about the contents.
@@ -177,7 +174,7 @@ by the time a write reaches the bridge the app has already decided who wins
 **No `entriesChanged` event.** `entryPut` is a plain write and emits nothing;
 the app refreshes explicitly, because it is the app that knows what changed.
 
-### Send ([`KIT_API.md` §5](https://github.com/barrelmaker97/obscura-native/blob/a13531b/docs/KIT_API.md))
+### Send ([`KIT_API.md` §5](https://github.com/barrelmaker97/obscura-native/blob/b776161/docs/KIT_API.md))
 
 | Method | Args | Returns | Platforms |
 |---|---|---|---|
@@ -301,13 +298,9 @@ The current schema is a single `screen` string. Platform status:
 | Method | Args | Returns | Platforms |
 |---|---|---|---|
 | `getDebugLog()` | — | `string[]` | both |
-| `setSecureScreen(enabled)` | bool | `void` | android (no-op acceptable on iOS) |
 | `prewarmAudioSession()` | — | `void` | both (no-op on Android) |
 | `deleteFile(path)` | string | `void` | both |
 | `setClipboard(text)` | string | `void` | both |
-
-`setSecureScreen` sets `FLAG_SECURE` on Android to prevent app previews and
-screenshots. It is a no-op on iOS.
 
 `prewarmAudioSession` warms the audio HAL so video recording starts instantly;
 cold `AVAudioSession` activation on iOS costs ~1.4s. Idempotent, no-op on
@@ -372,7 +365,7 @@ until something polled.
 
 ### `messageReceived`
 `{ type: 'messageReceived', model: string }` — emitted after an inbox row for
-a remote `MODEL_SYNC` has been **persisted**. It is a wake-up, not a delivery:
+a remote `APP_ENTRY` has been **persisted**. It is a wake-up, not a delivery:
 the data is in the inbox, and nothing reaches the entry store until the app
 drains it there. Payload is intentionally minimal. **Do not** synthesize a fake
 entry id.

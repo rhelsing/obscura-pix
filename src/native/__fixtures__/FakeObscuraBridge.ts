@@ -169,7 +169,7 @@ export class FakeObscuraBridge {
    * Simulate a message arriving: the kit persists an inbox row, then notifies. Merge-before-notify
    * is the kit's order and the reason "event → drain" is safe.
    *
-   * Defaults describe a well-formed MODEL_SYNC, so a test only states what it is varying.
+   * Defaults describe a well-formed APP_ENTRY, so a test only states what it is varying.
    *
    * **Deduped on `envelopeId`**, because both kits are `UNIQUE(envelope_id)` + `INSERT OR IGNORE`
    * (KIT_API §3.3 rule 8). Without it a test could build a two-rows-one-envelope state the real kits
@@ -182,7 +182,7 @@ export class FakeObscuraBridge {
     const full: InboxRow = {
       id,
       envelopeId: `env_${id}`,
-      kind: 'MODEL_SYNC',
+      kind: 'APP_ENTRY',
       receivedAt: this.nextTimestamp(),
       senderUserId: 'user_peer',
       senderDeviceId: 'device_peer',
@@ -331,11 +331,6 @@ export class FakeObscuraBridge {
     this.__setConnectionState('connected');
   }
 
-  async disconnect(): Promise<void> {
-    this.record('disconnect');
-    this.__setConnectionState('disconnected');
-  }
-
   async logout(): Promise<void> {
     this.record('logout');
     this.checkFailure('logout');
@@ -374,12 +369,6 @@ export class FakeObscuraBridge {
 
   // ─── Friends ───────────────────────────────────────────
 
-  async befriend(userId: string, username: string): Promise<void> {
-    this.record('befriend');
-    this.checkFailure('befriend');
-    this.__setFriends([...this.friends, { userId, username, status: 'pending_sent' }]);
-  }
-
   async acceptFriend(userId: string, username: string): Promise<void> {
     this.record('acceptFriend');
     this.checkFailure('acceptFriend');
@@ -396,17 +385,15 @@ export class FakeObscuraBridge {
     this.record('addFriendByCode');
     this.checkFailure('addFriendByCode');
     const [userId, username] = code.split(':');
-    await this.befriend(userId, username ?? userId);
+    this.__setFriends([
+      ...this.friends,
+      { userId, username: username ?? userId, status: 'pending_sent' },
+    ]);
   }
 
   async getFriends(): Promise<Friend[]> {
     this.record('getFriends');
     return [...this.friends];
-  }
-
-  async getPendingRequests(): Promise<Friend[]> {
-    this.record('getPendingRequests');
-    return this.friends.filter((f) => f.status !== 'accepted');
   }
 
   // ─── Device linking ────────────────────────────────────
@@ -486,9 +473,6 @@ export class FakeObscuraBridge {
   async getDebugLog(): Promise<string[]> {
     this.record('getDebugLog');
     return [...this.debugLog];
-  }
-  async setSecureScreen(_enabled: boolean): Promise<void> {
-    this.record('setSecureScreen');
   }
   async prewarmAudioSession(): Promise<void> {
     this.record('prewarmAudioSession');
