@@ -74,9 +74,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace "com.obscuraapp"
+    namespace "dev.barrelmaker.obscura"
     defaultConfig {
-        applicationId "com.obscuraapp.android"
+        applicationId "dev.barrelmaker.obscura"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
@@ -167,7 +167,7 @@ dependencies {
     // JSC fallback intentionally omitted — Hermes is on (gradle.properties).
 
     // ObscuraKit — E2E encrypted data layer
-    implementation("com.obscura:obscura-kit:0.1.0")
+    implementation("dev.barrelmaker.obscura.kit:obscura-kit:0.1.0")
 
     // Android SQLDelight driver (replaces JVM driver from ObscuraKit)
     implementation("app.cash.sqldelight:android-driver:2.0.2")

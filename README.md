@@ -1,6 +1,6 @@
-# Obscura Pix
+# Obscura
 
-End-to-end encrypted photo messaging built with React Native and ObscuraKit.
+End-to-end encrypted messaging built with React Native and ObscuraKit.
 Android is the current release target. The iOS app builds and supports
 foreground interoperability, but push and release signing are incomplete. See
 [`docs/IOS_PARITY.md`](docs/IOS_PARITY.md).
@@ -13,7 +13,7 @@ React Native application (`src/`)
   └── iOS host bridge     → `obscura-native/swift`
 ```
 
-- Pix owns model schemas, payload parsing, recipients, authorization, merge,
+- The TypeScript app owns model schemas, payload parsing, recipients, authorization, merge,
   expiry, outbox policy, and rendering.
 - ObscuraKit owns authentication, friends/devices, Signal, transport, typing,
   encrypted attachments, the durable inbox, and opaque entry storage.
@@ -36,8 +36,8 @@ src/models/schema.ts        Application model declarations
 src/state/                  Inbox/outbox effects and Zustand state
 src/native/ObscuraModule.ts Typed React Native bridge facade
 src/screens/                Shared UI
-android/.../obscuraapp/     Android host, bridge, lifecycle, and notifications
-ios/ObscuraApp/             iOS host and bridge
+android/.../obscura/        Android host, bridge, lifecycle, and notifications
+ios/Obscura/                iOS host and bridge
 obscura-native/             Pinned native source submodule
 tools/push-sender/          Real Android push test sender
 ```

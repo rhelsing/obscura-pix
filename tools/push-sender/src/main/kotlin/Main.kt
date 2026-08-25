@@ -1,9 +1,9 @@
-import com.obscura.kit.AuthState
-import com.obscura.kit.ConnectionState
-import com.obscura.kit.ObscuraClient
-import com.obscura.kit.ObscuraConfig
-import com.obscura.kit.stores.FriendData
-import com.obscura.kit.stores.FriendStatus
+import dev.barrelmaker.obscura.kit.AuthState
+import dev.barrelmaker.obscura.kit.ConnectionState
+import dev.barrelmaker.obscura.kit.ObscuraClient
+import dev.barrelmaker.obscura.kit.ObscuraConfig
+import dev.barrelmaker.obscura.kit.stores.FriendData
+import dev.barrelmaker.obscura.kit.stores.FriendStatus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
@@ -65,11 +65,7 @@ private fun conversationId(myUserId: String, friendUserId: String): String =
  * Send a `directMessage` entry the pix app will actually render.
  *
  * Uses the kit's `send(recipientUserIds, …)` — the caller names the recipients and hands over an
- * opaque payload. `sendModelSync(friendUsername, …)` is the older path where the kit resolves the
- * audience from an application concept, which SPEC §0.4 forbids.
- *
- * The payload is JSON bytes: `sendEntry` copies them straight into the modelSync `data` field,
- * which is exactly what `sendModelSync` produced via `JSONObject(data).toString().toByteArray()`.
+ * opaque payload.
  *
  * Fields must match `src/models/schema.ts` → `directMessage`: `conversationId` and `content`.
  * `_authorUserId` is NOT sent — the app's drain stamps it from the envelope, which is the only
@@ -87,7 +83,6 @@ private suspend fun sendDirectMessage(c: ObscuraClient, friend: FriendData, text
         recipientUserIds = listOf(friend.userId),
         modelKey = "directMessage",
         entryId = java.util.UUID.randomUUID().toString(),
-        op = "CREATE",
         sentAt = System.currentTimeMillis(),
         payload = payload,
     )
@@ -95,7 +90,7 @@ private suspend fun sendDirectMessage(c: ObscuraClient, friend: FriendData, text
 
 /** Resolve an ACCEPTED friend by username, or exit with a usable message. */
 private suspend fun requireFriend(c: ObscuraClient, username: String): FriendData =
-    c.friendList.value.find { it.username == username && it.status == FriendStatus.ACCEPTED }
+    c.getFriends().find { it.username == username && it.status == FriendStatus.ACCEPTED }
         ?: run {
             System.err.println("Not friends with $username (or request not accepted yet).")
             System.err.println("Run `befriend`, then accept it on the phone, then `friends` to confirm.")
@@ -159,22 +154,19 @@ private suspend fun run(args: Array<String>) {
             val c = client()
             loginOrRegister(c)
             connect(c)
-            // Wait for incoming FRIEND_REQUESTs to land. `pendingRequests` is a SQLDelight query
-            // flow: the connection's own collector processes inbound messages and writes them to
-            // the local DB, and the flow re-emits. Nothing to pump by hand — the old
-            // `waitForMessage(500)` poll was removed from the kit along with the rest of the
-            // app-facing message-inspection surface.
+            // Wait for incoming FRIEND_REQUESTs to land in the observed friend graph.
             val deadline = System.currentTimeMillis() + 5_000
-            while (c.pendingRequests.value.isEmpty() && System.currentTimeMillis() < deadline) {
+            var pending = c.getFriends().filter { it.status == FriendStatus.PENDING_RECEIVED }
+            while (pending.isEmpty() && System.currentTimeMillis() < deadline) {
                 delay(250)
+                pending = c.getFriends().filter { it.status == FriendStatus.PENDING_RECEIVED }
             }
-            val pending = c.pendingRequests.value
             if (pending.isEmpty()) {
                 println("No pending requests.")
             } else {
                 for (p in pending) {
                     println("Accepting friend request from ${p.username} (${p.userId})")
-                    c.acceptFriend(p.userId, p.username)
+                    c.acceptFriend(p.userId)
                     delay(300)
                 }
             }
@@ -185,7 +177,7 @@ private suspend fun run(args: Array<String>) {
             loginOrRegister(c)
             connect(c)
             delay(1000)
-            val list = c.friendList.value
+            val list = c.getFriends()
             if (list.isEmpty()) println("(no friends)")
             list.forEach { println("  ${it.username}  ${it.userId}  ${it.status}") }
             c.disconnect()
@@ -204,7 +196,7 @@ private suspend fun run(args: Array<String>) {
             val friend = requireFriend(c, recipientUsername)
             println("friend:  ${friend.username} (${friend.userId})")
             println("cached devices (what a send targets): ${friend.devices.size}")
-            friend.devices.forEach { println("  - ${it.deviceId}  regId=${it.registrationId}") }
+            friend.devices.forEach { println("  - ${it.id}  ${it.name}") }
             c.disconnect()
         }
         "send" -> {

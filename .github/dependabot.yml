@@ -74,7 +74,7 @@ updates:
       - dependency-name: "app.cash.sqldelight:*"
       # Bumped via the kit's own publication. Dependabot can't see
       # mavenLocal anyway.
-      - dependency-name: "com.obscura:obscura-kit"
+      - dependency-name: "dev.barrelmaker.obscura.kit:obscura-kit"
       # RN gradle plugin owns the AGP version + tested gradle wrapper line.
       - dependency-name: "com.android.tools.build:gradle"
       - dependency-name: "gradle"

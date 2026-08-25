@@ -1,17 +1,17 @@
-package com.obscuraapp
+package dev.barrelmaker.obscura
 
 import android.content.Context
 import android.util.Base64
 import android.util.Log
 import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
-import com.obscura.kit.AuthState
-import com.obscura.kit.ConnectionState
-import com.obscura.kit.ObscuraClient
-import com.obscura.kit.ObscuraError
-import com.obscura.kit.TypingState
-import com.obscura.kit.network.LoginScenario
-import com.obscura.kit.stores.FriendData
+import dev.barrelmaker.obscura.kit.AuthState
+import dev.barrelmaker.obscura.kit.ConnectionState
+import dev.barrelmaker.obscura.kit.ObscuraClient
+import dev.barrelmaker.obscura.kit.ObscuraError
+import dev.barrelmaker.obscura.kit.TypingState
+import dev.barrelmaker.obscura.kit.network.LoginScenario
+import dev.barrelmaker.obscura.kit.stores.FriendData
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
 import org.json.JSONObject
@@ -467,7 +467,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
         scope.launch {
             try {
                 val bytes = java.io.File(filePath).readBytes()
-                val encrypted = com.obscura.kit.crypto.AttachmentCrypto.encrypt(bytes)
+                val encrypted = dev.barrelmaker.obscura.kit.crypto.AttachmentCrypto.encrypt(bytes)
                 val id = requireClient().uploadAttachment(encrypted.ciphertext)
                 promise.resolve(Arguments.createMap().apply {
                     putString("id", id)
@@ -915,7 +915,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
             try {
                 requireClient().entries.put(
                     model,
-                    com.obscura.kit.stores.StoredEntry(
+                    dev.barrelmaker.obscura.kit.stores.StoredEntry(
                         id = id,
                         data = dataJson,
                         sentAt = sentAt.toLong(),
@@ -986,7 +986,7 @@ class ObscuraBridgeModule(reactContext: ReactApplicationContext) :
      * recognise WITHOUT reading the payload. A row the app must not read cannot be corrupted by an
      * encoding it never applies.
      */
-    private fun inboxRowToMap(r: com.obscura.kit.stores.InboxRecord): WritableMap =
+    private fun inboxRowToMap(r: dev.barrelmaker.obscura.kit.stores.InboxRecord): WritableMap =
         Arguments.createMap().apply {
             putDouble("id", r.id.toDouble())
             putString("kind", r.kind)

@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<!-- App Group reserved for the app and its Notification Service Extension.
-	     See ios/ObscuraApp/SharedContainer.swift.
+	     See ios/Obscura/SharedContainer.swift.
 	     This identifier must also be registered against the team in the Apple Developer
 	     portal — an unregistered group produces a nil container at runtime, not a build
 	     error, so SharedContainer.isAvailable is what actually proves it works.
@@ -13,7 +13,7 @@
 	     its first entry the default group for items that do not name one. -->
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.com.obscuraapp.ios</string>
+		<string>group.dev.barrelmaker.obscura</string>
 	</array>
 </dict>
 </plist>
