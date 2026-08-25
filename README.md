@@ -26,7 +26,8 @@ is [`docs/BRIDGE.md`](docs/BRIDGE.md).
 
 ## Setup
 
-Follow [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
+Start with [`CONTRIBUTING.md`](CONTRIBUTING.md). Platform details and manual
+commands remain in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 
 ## Project layout
 
@@ -45,9 +46,7 @@ tools/push-sender/          Real Android push test sender
 ## Checks
 
 ```bash
-npm test
-npm run typecheck
-npm run lint
+just check
 ```
 
 The Jest suite covers domain, native facade, and state behavior. It does not

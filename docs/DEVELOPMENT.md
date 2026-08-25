@@ -6,6 +6,7 @@ Shared:
 
 - Node 22.11+
 - Git
+- `just`
 
 Android:
 
@@ -29,6 +30,12 @@ git submodule update --init --recursive
 npm ci
 ```
 
+The recommended equivalent is:
+
+```bash
+just setup
+```
+
 ## Android
 
 Set `JAVA_HOME` to JDK 21 and `ANDROID_HOME` to the installed Android SDK.
@@ -36,8 +43,8 @@ Set `JAVA_HOME` to JDK 21 and `ANDROID_HOME` to the installed Android SDK.
 For a build without real push delivery:
 
 ```bash
-cp android/app/google-services.stub.json android/app/google-services.json
-npm run android
+just android-config
+just android-run
 ```
 
 For push testing, replace the stub with the Firebase configuration for
@@ -46,7 +53,7 @@ For push testing, replace the stub with the Firebase configuration for
 Release compile check:
 
 ```bash
-(cd android && ./gradlew :app:assembleRelease --no-daemon)
+just android-release
 ```
 
 ## iOS
@@ -56,28 +63,13 @@ Build the pinned libsignal FFI once:
 ```bash
 brew install protobuf
 sudo gem install cocoapods -v 1.17.0 -N
-rustup target add aarch64-apple-ios-sim
-
-export LIBSIGNAL_COMMIT=7ef4efdb85d8b2ebd77f3cf1e2b542a2115033c5
-mkdir -p obscura-native/swift/vendored
-git init obscura-native/swift/vendored/libsignal
-git -C obscura-native/swift/vendored/libsignal remote add origin https://github.com/signalapp/libsignal
-git -C obscura-native/swift/vendored/libsignal fetch --depth 1 origin "$LIBSIGNAL_COMMIT"
-git -C obscura-native/swift/vendored/libsignal checkout --detach FETCH_HEAD
-(
-  cd obscura-native/swift/vendored/libsignal
-  RUSTUP_TOOLCHAIN=stable \
-    CARGO_BUILD_TARGET=aarch64-apple-ios-sim \
-    BINDGEN_EXTRA_CLANG_ARGS="--target=arm64-apple-ios16.0-simulator" \
-    ./swift/build_ffi.sh -r
-)
+just ios-bootstrap
 ```
 
 Prepare dependencies and run:
 
 ```bash
-./obscura-native/swift/dev.sh prepare
-(cd ios && pod install)
+just ios-prepare
 npx react-native run-ios
 ```
 
@@ -87,9 +79,7 @@ signing.
 ## Checks
 
 ```bash
-npm test
-npm run typecheck
-npm run lint
+just check
 ```
 
 CI additionally builds Android Release and iOS Debug.

@@ -17,38 +17,41 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: extractions/setup-just@v4
       - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: '22.11.0'
           cache: 'npm'
-      - run: npm ci
-      - run: npm run typecheck
+      - run: just install
+      - run: just typecheck
 
   domain-tests:
     name: Domain tests (jest)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: extractions/setup-just@v4
       - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: '22.11.0'
           cache: npm
-      - run: npm ci
+      - run: just install
       # Domain, bridge-facade, and state tests run without a native simulator.
-      - run: npm test
+      - run: just test
 
   lint:
     name: ESLint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: extractions/setup-just@v4
       - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: '22.11.0'
           cache: 'npm'
-      - run: npm ci
+      - run: just install
       # ESLint errors fail the job; warnings remain non-fatal.
-      - run: npm run lint
+      - run: just lint
 
   android:
     name: Android Release Build
@@ -61,9 +64,11 @@ jobs:
           # submodule required by Kotlin protobuf codegen.
           submodules: recursive
 
+      - uses: extractions/setup-just@v4
+
       - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: '22.11.0'
           cache: 'npm'
 
       - uses: actions/setup-java@v5.7.0
@@ -73,31 +78,46 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6.3.0
 
-      - run: npm ci
-
-      # The Firebase Gradle plugin requires a configuration file. This stub
-      # verifies compilation without enabling push delivery.
-      - name: Write stub google-services.json
-        run: cp android/app/google-services.stub.json android/app/google-services.json
+      - run: just install
 
       - name: Assemble release APK
-        run: ./gradlew :app:assembleRelease --no-daemon
-        working-directory: android
+        run: just android-release
+
+  push-sender:
+    name: Push sender
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: extractions/setup-just@v4
+
+      - uses: actions/setup-java@v5.7.0
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v6.3.0
+
+      - run: just push-sender-build
 
   ios:
     name: iOS Debug Build
     runs-on: macos-26
     env:
-      LIBSIGNAL_COMMIT: 7ef4efdb85d8b2ebd77f3cf1e2b542a2115033c5
+      LIBSIGNAL_REF: 7ef4efdb85d8b2ebd77f3cf1e2b542a2115033c5
     steps:
       - name: Checkout Pix and native dependencies
         uses: actions/checkout@v7
         with:
           submodules: recursive
 
+      - uses: extractions/setup-just@v4
+
       - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: '22.11.0'
           cache: 'npm'
 
       - uses: dtolnay/rust-toolchain@stable
@@ -117,57 +137,17 @@ jobs:
         uses: actions/cache@v6
         with:
           path: obscura-native/swift/vendored/libsignal
-          key: libsignal-${{ env.LIBSIGNAL_COMMIT }}-ios-sim-macos26
+          key: libsignal-${{ env.LIBSIGNAL_REF }}-ios-sim-macos26
 
       - name: Fetch and build libsignal FFI
-        if: steps.libsignal.outputs.cache-hit != 'true'
-        working-directory: obscura-native/swift
         run: |
           brew list protobuf >/dev/null 2>&1 || brew install protobuf
-          mkdir -p vendored
-          for attempt in 1 2 3; do
-            echo "libsignal clone attempt $attempt"
-            rm -rf vendored/libsignal
-            git init vendored/libsignal
-            git -C vendored/libsignal remote add origin https://github.com/signalapp/libsignal
-            if git -C vendored/libsignal fetch --depth 1 origin "$LIBSIGNAL_COMMIT"; then
-              git -C vendored/libsignal checkout --detach FETCH_HEAD
-              break
-            fi
-            sleep 15
-          done
-          test "$(git -C vendored/libsignal rev-parse HEAD)" = "$LIBSIGNAL_COMMIT"
-          (
-            cd vendored/libsignal
-            RUSTUP_TOOLCHAIN=stable \
-              CARGO_BUILD_TARGET=aarch64-apple-ios-sim \
-              BINDGEN_EXTRA_CLANG_ARGS="--target=arm64-apple-ios16.0-simulator" \
-              ./swift/build_ffi.sh -r
-          )
+          just ios-bootstrap
 
-      - name: Prepare Swift package
-        working-directory: obscura-native/swift
-        run: ./dev.sh prepare
-
-      - run: npm ci
+      - run: just install
 
       - name: Install CocoaPods
         run: sudo gem install cocoapods -v 1.17.0 -N
 
-      - name: Resolve iOS pods
-        working-directory: ios
-        run: pod install
-
       - name: Build iOS app
-        env:
-          GIT_CONFIG_COUNT: 1
-          GIT_CONFIG_KEY_0: safe.bareRepository
-          GIT_CONFIG_VALUE_0: all
-        run: |
-          xcodebuild \
-            -workspace ios/Obscura.xcworkspace \
-            -scheme Obscura \
-            -destination 'generic/platform=iOS Simulator' \
-            -configuration Debug \
-            CODE_SIGNING_ALLOWED=NO \
-            build
+        run: just ios-build
