@@ -23,9 +23,7 @@ doctor:
 
 # Verify Android prerequisites.
 doctor-android: doctor
-    @./scripts/run-with-java-21.sh java -version >/dev/null 2>&1
-    @test -n "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}" || { echo "error: set ANDROID_HOME to Android SDK 36" >&2; exit 1; }
-    @test -d "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}/platforms/android-36" || { echo "error: Android SDK 36 is required" >&2; exit 1; }
+    @./scripts/run-with-android-env.sh ./android/gradlew -p android --version >/dev/null
     @echo "Android prerequisites are ready."
 
 # Verify iOS prerequisites.
@@ -58,11 +56,15 @@ android-config:
 
 # Run the Android app.
 android-run: android-config
-    npm run android
+    ./scripts/run-with-android-env.sh npm run android
 
 # Assemble the Android release APK.
 android-release: android-config
-    cd android && ../scripts/run-with-java-21.sh ./gradlew :app:assembleRelease --no-daemon
+    ./scripts/run-with-android-env.sh ./android/gradlew -p android :app:assembleRelease --no-daemon
+
+# Clean Android build outputs.
+android-clean:
+    ./scripts/run-with-android-env.sh ./android/gradlew -p android clean --no-daemon
 
 # Build the standalone encrypted push sender.
 push-sender-build:

@@ -30,6 +30,10 @@ iOS:
 ## Android
 
 Set `JAVA_HOME` to JDK 21 and `ANDROID_HOME` to the installed Android SDK.
+The `just android-*` recipes locate JDK 21 automatically on macOS and locate
+the standard Android SDK directory on macOS or Linux. Linux users must set
+`JAVA_HOME` to JDK 21. Direct `android/gradlew` commands inherit the shell
+environment; use the recipes or set both variables explicitly.
 
 The Firebase Gradle plugin requires `android/app/google-services.json`.
 Compile-only builds create the checked-in stub when that ignored file is
