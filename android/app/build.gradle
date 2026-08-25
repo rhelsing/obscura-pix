@@ -65,7 +65,10 @@ react {
 }
 
 // R8 + resource shrinking are on for release. Keep rules live in proguard-rules.pro.
-def enableProguardInReleaseBuilds = true
+def enableProguardInReleaseBuilds =
+    (findProperty("enableProguardInReleaseBuilds") ?: "true").toBoolean()
+def targetArchitectures =
+    (findProperty("reactNativeArchitectures") ?: "armeabi-v7a,arm64-v8a,x86,x86_64").split(",")
 
 // JSC is intentionally unused — Hermes is enabled in gradle.properties.
 
@@ -122,8 +125,8 @@ android {
         abi {
             enable true
             reset()
-            include "arm64-v8a", "armeabi-v7a", "x86", "x86_64"
-            universalApk true
+            include(*targetArchitectures)
+            universalApk targetArchitectures.size() > 1
         }
     }
     signingConfigs {
