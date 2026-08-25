@@ -25,7 +25,7 @@ ios/.xcode.env.local
 *.xcuserstate
 xcuserdata/
 # Xcode auto-generates this workspace inside the .xcodeproj; the real workspace
-# is ios/ObscuraPix.xcworkspace (CocoaPods). Don't track the generated one.
+# is ios/Obscura.xcworkspace (CocoaPods). Don't track the generated one.
 ios/*.xcodeproj/project.xcworkspace/
 
 # vendor

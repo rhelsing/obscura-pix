@@ -10,7 +10,7 @@ export PATH="$HOME/Android/Sdk/platform-tools:$PATH"
 TAGS=(
   ObscuraBridge:V
   ObscuraMessagingService:V
-  ObscuraPix:V
+  Obscura:V
   NotificationHelper:V
   FirebaseMessaging:V
   FirebaseInstanceId:V

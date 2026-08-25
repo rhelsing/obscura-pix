@@ -9,7 +9,7 @@ cp android/app/google-services.stub.json android/app/google-services.json
 ```
 
 For real push delivery, replace it with the Firebase Android configuration for
-`dev.barrelmaker.obscura.pix`. The destination file is gitignored. A push-capable
+`dev.barrelmaker.obscura`. The destination file is gitignored. A push-capable
 device or emulator must have Google Play Services.
 
 ## iOS

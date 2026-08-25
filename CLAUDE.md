@@ -1,4 +1,4 @@
-# Obscura Pix
+# Obscura
 
 ## Read first
 

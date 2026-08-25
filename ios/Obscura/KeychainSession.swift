@@ -16,7 +16,7 @@ struct SessionData: Codable {
 ///   default group. This is dormant preparation for a possible extension; the
 ///   current background APNs payload does not launch one.
 enum KeychainSession {
-    private static let service = "dev.barrelmaker.obscura.pix.session"
+    private static let service = "dev.barrelmaker.obscura.session"
     private static let account = "session_data"
 
     /// The item's identity. `accessGroup: nil` addresses the app's default group.

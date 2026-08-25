@@ -36,13 +36,13 @@
 # RN looks up ReactPackage / ReactModule classes by name. Keep them, their
 # @ReactMethod handlers, and the Session singleton (called from native FCM
 # service via reflection of Kotlin object companions).
--keep class dev.barrelmaker.obscura.pix.ObscuraSession { *; }
--keep class dev.barrelmaker.obscura.pix.ObscuraSession$* { *; }
--keep class dev.barrelmaker.obscura.pix.ObscuraBridgeModule { *; }
--keep class dev.barrelmaker.obscura.pix.ObscuraBridgePackage { *; }
--keep class dev.barrelmaker.obscura.pix.ObscuraMessagingService { *; }
--keep class dev.barrelmaker.obscura.pix.MainApplication { *; }
--keep class dev.barrelmaker.obscura.pix.MainActivity { *; }
+-keep class dev.barrelmaker.obscura.ObscuraSession { *; }
+-keep class dev.barrelmaker.obscura.ObscuraSession$* { *; }
+-keep class dev.barrelmaker.obscura.ObscuraBridgeModule { *; }
+-keep class dev.barrelmaker.obscura.ObscuraBridgePackage { *; }
+-keep class dev.barrelmaker.obscura.ObscuraMessagingService { *; }
+-keep class dev.barrelmaker.obscura.MainApplication { *; }
+-keep class dev.barrelmaker.obscura.MainActivity { *; }
 
 # Kotlin metadata is needed for the kit's coroutine continuations to be
 # preserved across the suspend-bridge boundary.

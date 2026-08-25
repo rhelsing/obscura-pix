@@ -1,4 +1,4 @@
-# Pix bridge contract
+# Obscura bridge contract
 
 This document defines the behavior of the JS-to-native bridge. The executable
 method and event shapes live in

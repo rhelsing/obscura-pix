@@ -11,7 +11,7 @@ only iOS-specific status; it is not a second API specification.
 
 ## Implemented foundation
 
-- React Native iOS project under `ios/ObscuraPix`.
+- React Native iOS project under `ios/Obscura`.
 - Local Swift Package dependency on the pinned `obscura-native` submodule.
 - Session ownership and Keychain persistence.
 - Swift `RCTEventEmitter` bridge for the shared event stream.
@@ -46,7 +46,7 @@ requirements. Push delivery cannot be validated on the simulator.
 ### CI
 
 CI builds the libsignal simulator FFI, prepares the local Swift package,
-installs pods, and builds `ObscuraPix.xcworkspace` for a generic simulator.
+installs pods, and builds `Obscura.xcworkspace` for a generic simulator.
 
 ### Device verification
 
