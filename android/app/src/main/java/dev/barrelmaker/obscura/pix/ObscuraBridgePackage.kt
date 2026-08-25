@@ -1,4 +1,4 @@
-package com.obscuraapp
+package dev.barrelmaker.obscura.pix
 
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule

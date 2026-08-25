@@ -1,4 +1,4 @@
-package com.obscuraapp
+package dev.barrelmaker.obscura.pix
 
 import android.app.Notification
 import android.app.NotificationChannel

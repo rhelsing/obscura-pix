@@ -1,4 +1,4 @@
-package com.obscuraapp
+package dev.barrelmaker.obscura.pix
 
 import android.app.Application
 import com.facebook.react.PackageList

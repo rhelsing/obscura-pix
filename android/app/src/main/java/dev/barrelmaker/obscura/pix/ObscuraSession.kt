@@ -1,4 +1,4 @@
-package com.obscuraapp
+package dev.barrelmaker.obscura.pix
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -8,12 +8,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
-import com.obscura.kit.AuthState
-import com.obscura.kit.ConnectionState
-import com.obscura.kit.ObscuraClient
-import com.obscura.kit.ObscuraConfig
-import com.obscura.kit.ObscuraLogger
-import com.obscura.kit.db.ObscuraDatabase
+import dev.barrelmaker.obscura.kit.AuthState
+import dev.barrelmaker.obscura.kit.ConnectionState
+import dev.barrelmaker.obscura.kit.ObscuraClient
+import dev.barrelmaker.obscura.kit.ObscuraConfig
+import dev.barrelmaker.obscura.kit.ObscuraLogger
+import dev.barrelmaker.obscura.kit.db.ObscuraDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job

@@ -165,8 +165,8 @@ jobs:
           GIT_CONFIG_VALUE_0: all
         run: |
           xcodebuild \
-            -workspace ios/ObscuraApp.xcworkspace \
-            -scheme ObscuraApp \
+            -workspace ios/ObscuraPix.xcworkspace \
+            -scheme ObscuraPix \
             -destination 'generic/platform=iOS Simulator' \
             -configuration Debug \
             CODE_SIGNING_ALLOWED=NO \

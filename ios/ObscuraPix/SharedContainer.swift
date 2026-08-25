@@ -7,11 +7,11 @@ import Foundation
 /// and the session used to obtain a gateway ticket.
 enum SharedContainer {
 
-    /// The App Group identifier. Must match the entitlement in `ObscuraApp.entitlements` **and** a
+    /// The App Group identifier. Must match the entitlement in `ObscuraPix.entitlements` **and** a
     /// group registered against the team in the Apple Developer portal — an unregistered group
     /// silently yields a `nil` container rather than a build error, which is what `isAvailable`
     /// below is for.
-    static let appGroupId = "group.com.obscuraapp.ios"
+    static let appGroupId = "group.dev.barrelmaker.obscura.pix"
 
     /// The shared container, or `nil` when the entitlement is absent or unprovisioned.
     static var containerURL: URL? {
@@ -30,7 +30,7 @@ enum SharedContainer {
     /// On iOS an App Group identifier is itself a valid keychain access group when the app carries
     /// the app-groups entitlement, so no team-id prefix is hardcoded here. If a build ever fails to
     /// find its items with this set, the alternative is a `keychain-access-groups` entitlement
-    /// holding `$(AppIdentifierPrefix)com.obscuraapp.shared` and that literal string here — note
+    /// holding `$(AppIdentifierPrefix)dev.barrelmaker.obscura.pix.shared` and that literal string here — note
     /// that adding that entitlement also makes its **first** entry the default access group for
     /// items that do not name one, so the app's own identifier must be listed first or existing
     /// items move out from under the code that wrote them.

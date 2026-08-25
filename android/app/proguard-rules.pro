@@ -25,9 +25,9 @@
 # The kit exposes a small Kotlin/SQLDelight API; keep its public surface so
 # the bridge (which goes through reflection in some places) and our own
 # Kotlin call sites continue to resolve after R8 renames.
--keep class com.obscura.kit.** { *; }
--keepclassmembers class com.obscura.kit.** { *; }
--dontwarn com.obscura.kit.**
+-keep class dev.barrelmaker.obscura.kit.** { *; }
+-keepclassmembers class dev.barrelmaker.obscura.kit.** { *; }
+-dontwarn dev.barrelmaker.obscura.kit.**
 
 # ----- SQLDelight + sqlite ------------------------------------------------
 -dontwarn app.cash.sqldelight.**
@@ -36,13 +36,13 @@
 # RN looks up ReactPackage / ReactModule classes by name. Keep them, their
 # @ReactMethod handlers, and the Session singleton (called from native FCM
 # service via reflection of Kotlin object companions).
--keep class com.obscuraapp.ObscuraSession { *; }
--keep class com.obscuraapp.ObscuraSession$* { *; }
--keep class com.obscuraapp.ObscuraBridgeModule { *; }
--keep class com.obscuraapp.ObscuraBridgePackage { *; }
--keep class com.obscuraapp.ObscuraMessagingService { *; }
--keep class com.obscuraapp.MainApplication { *; }
--keep class com.obscuraapp.MainActivity { *; }
+-keep class dev.barrelmaker.obscura.pix.ObscuraSession { *; }
+-keep class dev.barrelmaker.obscura.pix.ObscuraSession$* { *; }
+-keep class dev.barrelmaker.obscura.pix.ObscuraBridgeModule { *; }
+-keep class dev.barrelmaker.obscura.pix.ObscuraBridgePackage { *; }
+-keep class dev.barrelmaker.obscura.pix.ObscuraMessagingService { *; }
+-keep class dev.barrelmaker.obscura.pix.MainApplication { *; }
+-keep class dev.barrelmaker.obscura.pix.MainActivity { *; }
 
 # Kotlin metadata is needed for the kit's coroutine continuations to be
 # preserved across the suspend-bridge boundary.

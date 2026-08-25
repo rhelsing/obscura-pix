@@ -1,7 +1,7 @@
 pluginManagement { includeBuild("../node_modules/@react-native/gradle-plugin") }
 plugins { id("com.facebook.react.settings") }
 extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }
-rootProject.name = 'ObscuraApp'
+rootProject.name = 'ObscuraPix'
 include ':app'
 includeBuild('../node_modules/@react-native/gradle-plugin')
 
@@ -9,7 +9,7 @@ includeBuild('../node_modules/@react-native/gradle-plugin')
 // Pix pins the native repo as a submodule. Rather than publish it to a
 // registry, we compose its Gradle build directly.
 //
-// `implementation("com.obscura:obscura-kit:0.1.0")` in app/build.gradle
+// `implementation("dev.barrelmaker.obscura.kit:obscura-kit:0.1.0")` in app/build.gradle
 // stays as-is — the explicit substitution below rewrites it to the local
 // :lib project. The declared 0.1.0 is ignored while composed; it only
 // matters if/when we graduate the kit to a real published artifact.
@@ -19,6 +19,6 @@ includeBuild('../node_modules/@react-native/gradle-plugin')
 def obscuraKitPath = System.getenv('OBSCURA_KIT_PATH') ?: '../obscura-native/kotlin'
 includeBuild(obscuraKitPath) {
     dependencySubstitution {
-        substitute(module('com.obscura:obscura-kit')).using(project(':lib'))
+        substitute(module('dev.barrelmaker.obscura.kit:obscura-kit')).using(project(':lib'))
     }
 }

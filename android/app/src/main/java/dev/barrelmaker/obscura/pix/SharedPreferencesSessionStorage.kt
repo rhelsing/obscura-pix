@@ -1,7 +1,7 @@
-package com.obscuraapp
+package dev.barrelmaker.obscura.pix
 
 import android.content.SharedPreferences
-import com.obscura.kit.persistence.SessionStorage
+import dev.barrelmaker.obscura.kit.persistence.SessionStorage
 
 /**
  * Android-backed [SessionStorage] for the kit, on a dedicated SharedPreferences

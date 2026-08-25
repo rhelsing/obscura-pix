@@ -1,4 +1,4 @@
-package com.obscuraapp
+package dev.barrelmaker.obscura.pix
 
 import android.util.Log
 import com.google.firebase.messaging.FirebaseMessagingService

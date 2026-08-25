@@ -41,7 +41,7 @@ npm run android
 ```
 
 For push testing, replace the stub with the Firebase configuration for
-`com.obscuraapp.android`. The file is gitignored.
+`dev.barrelmaker.obscura.pix`. The file is gitignored.
 
 Release compile check:
 

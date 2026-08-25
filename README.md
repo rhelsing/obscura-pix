@@ -36,8 +36,8 @@ src/models/schema.ts        Application model declarations
 src/state/                  Inbox/outbox effects and Zustand state
 src/native/ObscuraModule.ts Typed React Native bridge facade
 src/screens/                Shared UI
-android/.../obscuraapp/     Android host, bridge, lifecycle, and notifications
-ios/ObscuraApp/             iOS host and bridge
+android/.../obscura/pix/    Android host, bridge, lifecycle, and notifications
+ios/ObscuraPix/             iOS host and bridge
 obscura-native/             Pinned native source submodule
 tools/push-sender/          Real Android push test sender
 ```
