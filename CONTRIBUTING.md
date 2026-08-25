@@ -56,7 +56,6 @@ For iOS:
 
 ```bash
 just doctor-ios
-just setup-ios
 just ios-build
 ```
 

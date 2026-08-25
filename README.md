@@ -26,8 +26,8 @@ is [`docs/BRIDGE.md`](docs/BRIDGE.md).
 
 ## Setup
 
-Start with [`CONTRIBUTING.md`](CONTRIBUTING.md). Platform details and manual
-commands remain in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
+Start with [`CONTRIBUTING.md`](CONTRIBUTING.md). Platform constraints and
+troubleshooting notes are in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 
 ## Project layout
 

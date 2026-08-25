@@ -1,4 +1,8 @@
-# Development
+# Platform development notes
+
+The contributor happy path and commands live in
+[`CONTRIBUTING.md`](../CONTRIBUTING.md). This document records platform
+constraints that are useful when setup or builds fail.
 
 ## Prerequisites
 
@@ -23,66 +27,31 @@ iOS:
 - CocoaPods 1.17.0
 - Homebrew `protobuf`
 
-## Checkout
-
-```bash
-git submodule update --init --recursive
-npm ci
-```
-
-The recommended equivalent is:
-
-```bash
-just setup
-```
-
 ## Android
 
 Set `JAVA_HOME` to JDK 21 and `ANDROID_HOME` to the installed Android SDK.
 
-For a build without real push delivery:
-
-```bash
-just android-config
-just android-run
-```
-
-For push testing, replace the stub with the Firebase configuration for
-`dev.barrelmaker.obscura`. The file is gitignored.
-
-Release compile check:
-
-```bash
-just android-release
-```
+The Firebase Gradle plugin requires `android/app/google-services.json`.
+Compile-only builds create the checked-in stub when that ignored file is
+absent. Push testing requires downloading the real configuration for
+`dev.barrelmaker.obscura` from Firebase.
 
 ## iOS
 
-Build the pinned libsignal FFI once:
-
-```bash
-brew install protobuf
-sudo gem install cocoapods -v 1.17.0 -N
-just ios-bootstrap
-```
-
-Prepare dependencies and run:
-
-```bash
-just ios-prepare
-npx react-native run-ios
-```
+The first iOS build fetches the exact libsignal commit pinned by
+`obscura-native`, builds its simulator FFI, prepares the local Swift package,
+and resolves CocoaPods. Those generated outputs are cached locally and
+gitignored.
 
 The simulator build does not validate APNs, background delivery, or release
-signing.
+signing. Physical-device builds require Apple team `KY4LCG34B8` and App Group
+`group.dev.barrelmaker.obscura`.
 
 ## Checks
 
-```bash
-just check
-```
-
-CI additionally builds Android Release and iOS Debug.
+The Jest suite covers domain, native facade, and state behavior. It does not
+cover rendered UI or physical-device behavior. CI additionally compiles
+Android Release, iOS Debug, and the standalone push sender.
 
 ## Environment and data
 

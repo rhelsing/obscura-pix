@@ -139,10 +139,8 @@ jobs:
           path: obscura-native/swift/vendored/libsignal
           key: libsignal-${{ env.LIBSIGNAL_REF }}-ios-sim-macos26
 
-      - name: Fetch and build libsignal FFI
-        run: |
-          brew list protobuf >/dev/null 2>&1 || brew install protobuf
-          just ios-bootstrap
+      - name: Install protobuf
+        run: brew list protobuf >/dev/null 2>&1 || brew install protobuf
 
       - run: just install
 

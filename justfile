@@ -64,10 +64,6 @@ android-run: android-config
 android-release: android-config
     cd android && ../scripts/run-with-java-21.sh ./gradlew :app:assembleRelease --no-daemon
 
-# Clean generated app/camera outputs and assemble a fresh release APK.
-android-clean-release: android-config
-    cd android && ../scripts/run-with-java-21.sh ./gradlew :react-native-vision-camera:clean :app:clean :app:assembleRelease --no-daemon
-
 # Build the standalone encrypted push sender.
 push-sender-build:
     cd tools/push-sender && ../../scripts/run-with-java-21.sh ./gradlew installDist --no-daemon
@@ -90,9 +86,3 @@ ios-prepare: ios-native-prepare ios-pods
 # Build the iOS app for a generic simulator.
 ios-build: ios-prepare
     GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=all xcodebuild -workspace ios/Obscura.xcworkspace -scheme Obscura -destination 'generic/platform=iOS Simulator' -configuration Debug CODE_SIGNING_ALLOWED=NO build
-
-# Complete Android onboarding after cloning.
-setup-android: setup android-config
-
-# Complete iOS onboarding after cloning.
-setup-ios: setup ios-prepare
