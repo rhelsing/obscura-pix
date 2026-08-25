@@ -27,11 +27,26 @@ updates:
           - "react"
           - "@types/react*"
     ignore:
-      # React Native major bumps are coordinated (gradle, kotlin, libs).
-      # Patches and minors are fine to auto-PR; majors need human eyes.
+      # React Native is still 0.x, so minor releases are breaking toolchain
+      # migrations (AGP, Gradle, Kotlin, native APIs). Keep the core package
+      # and its version-locked presets on the current minor; patches can
+      # still flow automatically.
       - dependency-name: "react-native"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-major"
+      - dependency-name: "@react-native/*"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-major"
+      # CLI majors are coordinated with React Native minor upgrades.
+      - dependency-name: "@react-native-community/*"
         update-types: ["version-update:semver-major"]
       - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      # v9 requires Android API 37 / AGP 9, while RN 0.86 owns the API 36 /
+      # AGP 8.12 toolchain. Move this with the next RN toolchain migration.
+      - dependency-name: "react-native-pager-view"
         update-types: ["version-update:semver-major"]
       # vision-camera v5 is a nitro-modules rewrite — adds 2 native deps,
       # completely different API. Deliberately held at v4.x.
@@ -75,7 +90,8 @@ updates:
       # Bumped via the kit's own publication. Dependabot can't see
       # mavenLocal anyway.
       - dependency-name: "dev.barrelmaker.obscura.kit:obscura-kit"
-      # RN gradle plugin owns the AGP version + tested gradle wrapper line.
+      # RN owns the AGP/toolchain compatibility line. Wrapper updates are
+      # made manually and validated with the app and native composite build.
       - dependency-name: "com.android.tools.build:gradle"
       - dependency-name: "gradle"
       - dependency-name: "gradle-wrapper"
@@ -103,15 +119,13 @@ updates:
       # composite-built :lib. Bump in lockstep with the kit.
       - dependency-name: "org.jetbrains.kotlin:*"
       - dependency-name: "org.jetbrains.kotlin.*"
-      # coroutines track the Kotlin release; >=1.9 needs Kotlin 2.2+ and
-      # breaks against the pinned 2.1.20. Move with the Kotlin bump.
+      # Coroutines releases are Kotlin-compiler-sensitive and newer versions
+      # have failed against the pinned 2.1.20. Move with the Kotlin bump.
       - dependency-name: "org.jetbrains.kotlinx:*"
-      # Kept on Gradle 8.14.x to match the kit's wrapper. 9.x is gated by
-      # hand there, so gate it here too.
+      # Keep the wrapper exactly aligned with the kit and app. Dependabot
+      # cannot coordinate the three builds, so all bumps happen by hand.
       - dependency-name: "gradle"
-        update-types: ["version-update:semver-major"]
       - dependency-name: "gradle-wrapper"
-        update-types: ["version-update:semver-major"]
       # Published by the kit; bumped via its own publication, not here.
       - dependency-name: "dev.barrelmaker.obscura.kit:obscura-kit"
 
