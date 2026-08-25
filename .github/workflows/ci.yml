@@ -20,7 +20,7 @@ jobs:
       - uses: extractions/setup-just@v4
       - uses: actions/setup-node@v7
         with:
-          node-version: '22.11.0'
+          node-version-file: '.nvmrc'
           cache: 'npm'
       - run: just install
       - run: just typecheck
@@ -33,7 +33,7 @@ jobs:
       - uses: extractions/setup-just@v4
       - uses: actions/setup-node@v7
         with:
-          node-version: '22.11.0'
+          node-version-file: '.nvmrc'
           cache: npm
       - run: just install
       # Domain, bridge-facade, and state tests run without a native simulator.
@@ -47,7 +47,7 @@ jobs:
       - uses: extractions/setup-just@v4
       - uses: actions/setup-node@v7
         with:
-          node-version: '22.11.0'
+          node-version-file: '.nvmrc'
           cache: 'npm'
       - run: just install
       # ESLint errors fail the job; warnings remain non-fatal.
@@ -68,7 +68,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: '22.11.0'
+          node-version-file: '.nvmrc'
           cache: 'npm'
 
       - uses: actions/setup-java@v5.7.0
@@ -117,7 +117,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: '22.11.0'
+          node-version-file: '.nvmrc'
           cache: 'npm'
 
       - uses: dtolnay/rust-toolchain@stable
