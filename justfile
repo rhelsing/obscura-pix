@@ -70,20 +70,12 @@ android-clean:
 push-sender-build:
     cd tools/push-sender && ../../scripts/run-with-java-21.sh ./gradlew installDist --no-daemon
 
-# Fetch and build the pinned iOS Simulator libsignal FFI.
-ios-bootstrap:
-    ./obscura-native/swift/scripts/bootstrap-libsignal.sh ios-sim
-
-# Prepare ObscuraKit's local Swift package.
-ios-native-prepare: ios-bootstrap
-    ./obscura-native/swift/dev.sh prepare
-
-# Resolve CocoaPods.
-ios-pods:
-    cd ios && pod install
-
 # Prepare all native iOS dependencies.
-ios-prepare: ios-native-prepare ios-pods
+[private]
+ios-prepare:
+    ./obscura-native/swift/scripts/bootstrap-libsignal.sh ios-sim
+    ./obscura-native/swift/dev.sh prepare
+    cd ios && pod install
 
 # Build the iOS app for a generic simulator.
 ios-build: ios-prepare
