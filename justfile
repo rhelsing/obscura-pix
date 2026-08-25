@@ -63,17 +63,20 @@ android-config:
 android-run: android-config ensure-node-modules
     ./scripts/run-with-android-env.sh npm run android
 
-# Assemble the Android release APK.
-android-release: android-config ensure-node-modules
-    ./scripts/run-with-android-env.sh ./android/gradlew -p android :app:assembleRelease --no-daemon
+# Assemble the Android release APK. Pass an architecture list and false to
+# skip R8 for a faster compile-only build:
+# just android-release arm64-v8a false
+android-release architectures="" minify="true": android-config ensure-node-modules
+    architectures={{quote(architectures)}}; minify={{quote(minify)}}; args=("-PenableProguardInReleaseBuilds=$minify"); [[ -z "$architectures" ]] || args+=("-PreactNativeArchitectures=$architectures"); ./scripts/run-with-android-env.sh ./android/gradlew -p android :app:assembleRelease --parallel "${args[@]}"
 
 # Clean Android build outputs.
 android-clean: ensure-node-modules
-    ./scripts/run-with-android-env.sh ./android/gradlew -p android clean --no-daemon
+    rm -rf android/app/.cxx
+    ./scripts/run-with-android-env.sh ./android/gradlew -p android clean --parallel
 
 # Build the standalone encrypted push sender.
 push-sender-build:
-    cd tools/push-sender && ../../scripts/run-with-java-21.sh ./gradlew installDist --no-daemon
+    cd tools/push-sender && ../../scripts/run-with-java-21.sh ./gradlew installDist --parallel
 
 # Prepare all native iOS dependencies.
 [private]
@@ -82,6 +85,7 @@ ios-prepare:
     ./obscura-native/swift/dev.sh prepare
     cd ios && pod install
 
-# Build the iOS app for a generic simulator.
-ios-build: ios-prepare
-    GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=all xcodebuild -workspace ios/Obscura.xcworkspace -scheme Obscura -destination 'generic/platform=iOS Simulator' -configuration Debug CODE_SIGNING_ALLOWED=NO build
+# Build the iOS app for a generic simulator. Pass an architecture for a faster
+# compile-only build, for example: just ios-build arm64
+ios-build architecture="": ios-prepare
+    architecture={{quote(architecture)}}; args=(COMPILER_INDEX_STORE_ENABLE=NO); [[ -z "$architecture" ]] || args+=(ARCHS="$architecture" ONLY_ACTIVE_ARCH=YES); GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=all xcodebuild -workspace ios/Obscura.xcworkspace -scheme Obscura -destination 'generic/platform=iOS Simulator' -configuration Debug CODE_SIGNING_ALLOWED=NO "${args[@]}" build
