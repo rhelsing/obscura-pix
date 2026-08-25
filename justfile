@@ -13,6 +13,11 @@ setup:
 install:
     npm ci
 
+# Ensure JavaScript dependencies exist without reinstalling on every build.
+[private]
+ensure-node-modules:
+    @if [[ ! -d node_modules/@react-native/gradle-plugin ]]; then echo "Installing JavaScript dependencies (node_modules missing)..."; npm ci; fi
+
 # Verify shared JavaScript prerequisites.
 doctor:
     @command -v git >/dev/null || { echo "error: git is required" >&2; exit 1; }
@@ -22,7 +27,7 @@ doctor:
     @echo "Shared Obscura prerequisites are ready."
 
 # Verify Android prerequisites.
-doctor-android: doctor
+doctor-android: doctor ensure-node-modules
     @./scripts/run-with-android-env.sh ./android/gradlew -p android --version >/dev/null
     @echo "Android prerequisites are ready."
 
@@ -55,17 +60,17 @@ android-config:
     @if [[ ! -f android/app/google-services.json ]]; then cp android/app/google-services.stub.json android/app/google-services.json; echo "Created ignored Firebase stub for compile-only builds."; else echo "Using existing android/app/google-services.json."; fi
 
 # Run the Android app.
-android-run: android-config
+android-run: android-config ensure-node-modules
     ./scripts/run-with-android-env.sh npm run android
 
 # Assemble the Android release APK. Pass an architecture list and false to
 # skip R8 for a faster compile-only build:
 # just android-release arm64-v8a false
-android-release architectures="" minify="true": android-config
+android-release architectures="" minify="true": android-config ensure-node-modules
     architectures={{quote(architectures)}}; minify={{quote(minify)}}; args=("-PenableProguardInReleaseBuilds=$minify"); [[ -z "$architectures" ]] || args+=("-PreactNativeArchitectures=$architectures"); ./scripts/run-with-android-env.sh ./android/gradlew -p android :app:assembleRelease --parallel "${args[@]}"
 
 # Clean Android build outputs.
-android-clean:
+android-clean: ensure-node-modules
     rm -rf android/app/.cxx
     ./scripts/run-with-android-env.sh ./android/gradlew -p android clean --parallel
 
