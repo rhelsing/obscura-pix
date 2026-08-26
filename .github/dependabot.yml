@@ -117,6 +117,8 @@ updates:
       # Pinned to the kit's Kotlin (2.1.20). Same reason as
       # obscura-native/kotlin: a newer Kotlin compiler diverges from the
       # composite-built :lib. Bump in lockstep with the kit.
+      # Dependabot names kotlin("jvm") simply "jvm".
+      - dependency-name: "jvm"
       - dependency-name: "org.jetbrains.kotlin:*"
       - dependency-name: "org.jetbrains.kotlin.*"
       # Coroutines releases are Kotlin-compiler-sensitive and newer versions
