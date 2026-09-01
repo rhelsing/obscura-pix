@@ -1,0 +1,204 @@
+name: Android Distribution
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: android-distribution-${{ github.event.workflow_run.head_sha || github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  distribute:
+    name: Signed APK
+    if: >-
+      (
+        github.event_name == 'workflow_dispatch' &&
+        github.ref == 'refs/heads/main'
+      ) ||
+      (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.head_repository.full_name == github.repository
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: testing
+    env:
+      DISTRIBUTION_REF: ${{ github.event.workflow_run.head_sha || 'refs/heads/main' }}
+      FIREBASE_ANDROID_APP_ID: ${{ vars.FIREBASE_ANDROID_APP_ID }}
+      FIREBASE_TESTER_GROUP: ${{ vars.FIREBASE_TESTER_GROUP }}
+
+    steps:
+      - name: Checkout tested commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.DISTRIBUTION_REF }}
+          submodules: recursive
+
+      - uses: extractions/setup-just@v4
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+
+      - uses: actions/setup-java@v6.0.0
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v6.3.0
+
+      - name: Install JavaScript dependencies
+        run: just install
+
+      - name: Prepare Firebase and signing configuration
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+          ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          for name in \
+            GOOGLE_SERVICES_JSON_BASE64 \
+            ANDROID_RELEASE_KEYSTORE_BASE64 \
+            ANDROID_RELEASE_STORE_PASSWORD \
+            ANDROID_RELEASE_KEY_ALIAS \
+            ANDROID_RELEASE_KEY_PASSWORD \
+            FIREBASE_ANDROID_APP_ID \
+            FIREBASE_TESTER_GROUP
+          do
+            [[ -n "${!name:-}" ]] || {
+              echo "error: required testing environment value $name is missing" >&2
+              exit 1
+            }
+          done
+
+          printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" |
+            base64 --decode > android/app/google-services.json
+          printf '%s' "$ANDROID_RELEASE_KEYSTORE_BASE64" |
+            base64 --decode > "$RUNNER_TEMP/android-release.p12"
+          chmod 600 \
+            android/app/google-services.json \
+            "$RUNNER_TEMP/android-release.p12"
+
+          node <<'NODE'
+          const fs = require('fs');
+
+          const expectedPackage = 'dev.barrelmaker.obscura';
+          const expectedAppId = process.env.FIREBASE_ANDROID_APP_ID;
+          const config = JSON.parse(
+            fs.readFileSync('android/app/google-services.json', 'utf8'),
+          );
+          const client = config.client?.find(
+            (item) =>
+              item.client_info?.android_client_info?.package_name ===
+              expectedPackage,
+          );
+
+          if (!client) {
+            throw new Error(
+              `Firebase config does not contain Android package ${expectedPackage}`,
+            );
+          }
+          if (client.client_info?.mobilesdk_app_id !== expectedAppId) {
+            throw new Error(
+              'Firebase config App ID does not match FIREBASE_ANDROID_APP_ID',
+            );
+          }
+          NODE
+
+      - name: Compute build metadata
+        id: metadata
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          short_sha="$(git rev-parse --short=7 HEAD)"
+          version_code="$GITHUB_RUN_NUMBER"
+          version_name="1.0.0-test.${version_code}+${short_sha}"
+          artifact_name="obscura-android-${version_code}-${short_sha}"
+
+          {
+            echo "sha=$sha"
+            echo "short_sha=$short_sha"
+            echo "version_code=$version_code"
+            echo "version_name=$version_name"
+            echo "artifact_name=$artifact_name"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "Obscura Android testing build ${version_name}"
+            echo
+            git show -s --format='%s%n%nCommit: %H'
+          } > "$RUNNER_TEMP/release-notes.txt"
+
+      - name: Build signed distribution APK
+        env:
+          ANDROID_RELEASE_STORE_FILE: ${{ runner.temp }}/android-release.p12
+          ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: >-
+          just android-distribution
+          '${{ steps.metadata.outputs.version_code }}'
+          '${{ steps.metadata.outputs.version_name }}'
+
+      - name: Verify and stage APK
+        env:
+          ARTIFACT_NAME: ${{ steps.metadata.outputs.artifact_name }}
+        run: |
+          set -euo pipefail
+          source_apk="android/app/build/outputs/apk/release/app-universal-release.apk"
+          [[ -f "$source_apk" ]] || {
+            echo "error: universal release APK was not produced" >&2
+            exit 1
+          }
+
+          mkdir -p dist
+          cp "$source_apk" "dist/${ARTIFACT_NAME}.apk"
+
+          apksigner="$(
+            find "$ANDROID_HOME/build-tools" -type f -name apksigner -print |
+              sort -V |
+              tail -n 1
+          )"
+          [[ -x "$apksigner" ]] || {
+            echo "error: apksigner was not found" >&2
+            exit 1
+          }
+          "$apksigner" verify --verbose --print-certs \
+            "dist/${ARTIFACT_NAME}.apk"
+
+      - name: Upload GitHub artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.metadata.outputs.artifact_name }}
+          path: dist/${{ steps.metadata.outputs.artifact_name }}.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Distribute to Firebase testers
+        run: >-
+          npx --yes firebase-tools@15.28.2
+          appdistribution:distribute
+          'dist/${{ steps.metadata.outputs.artifact_name }}.apk'
+          --app '${{ env.FIREBASE_ANDROID_APP_ID }}'
+          --groups '${{ env.FIREBASE_TESTER_GROUP }}'
+          --release-notes-file '${{ runner.temp }}/release-notes.txt'
