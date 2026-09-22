@@ -63,11 +63,22 @@ android-config:
 android-run: android-config ensure-node-modules
     ./scripts/run-with-android-env.sh npm run android
 
-# Assemble the Android release APK. Pass an architecture list and false to
-# skip R8 for a faster compile-only build:
+# Internal release assembler shared by compile-only and distribution builds.
+[private]
+android-assemble-release architectures minify distribution version_code version_name: android-config ensure-node-modules
+    architectures={{quote(architectures)}}; minify={{quote(minify)}}; distribution={{quote(distribution)}}; version_code={{quote(version_code)}}; version_name={{quote(version_name)}}; args=("-PenableProguardInReleaseBuilds=$minify"); [[ -z "$architectures" ]] || args+=("-PreactNativeArchitectures=$architectures"); if [[ "$distribution" == "true" ]]; then [[ "$version_code" =~ ^[1-9][0-9]*$ ]] || { echo "error: distribution version code must be a positive integer" >&2; exit 1; }; [[ -n "$version_name" ]] || { echo "error: distribution version name is required" >&2; exit 1; }; args+=("-PobscuraDistributionBuild=true" "-PobscuraVersionCode=$version_code" "-PobscuraVersionName=$version_name"); fi; ./scripts/run-with-android-env.sh ./android/gradlew -p android :app:assembleRelease --parallel "${args[@]}"
+
+# Assemble a compile-only Android release APK. Pass an architecture list and
+# false to skip R8 for a faster build:
 # just android-release arm64-v8a false
-android-release architectures="" minify="true": android-config ensure-node-modules
-    architectures={{quote(architectures)}}; minify={{quote(minify)}}; args=("-PenableProguardInReleaseBuilds=$minify"); [[ -z "$architectures" ]] || args+=("-PreactNativeArchitectures=$architectures"); ./scripts/run-with-android-env.sh ./android/gradlew -p android :app:assembleRelease --parallel "${args[@]}"
+android-release architectures="" minify="true":
+    just android-assemble-release {{quote(architectures)}} {{quote(minify)}} false '' ''
+
+# Assemble a signed, minified universal APK with real Firebase configuration.
+# Signing credentials are read from android/keystore.properties or the
+# ANDROID_RELEASE_* environment variables.
+android-distribution version_code version_name:
+    just android-assemble-release '' true true {{quote(version_code)}} {{quote(version_name)}}
 
 # Clean Android build outputs.
 android-clean: ensure-node-modules

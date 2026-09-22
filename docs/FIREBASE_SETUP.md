@@ -12,6 +12,10 @@ For real push delivery, replace it with the Firebase Android configuration for
 `dev.barrelmaker.obscura`. The destination file is gitignored. A push-capable
 device or emulator must have Google Play Services.
 
+Signed testing builds use that real configuration and are delivered through
+Firebase App Distribution. See
+[`ANDROID_DISTRIBUTION.md`](ANDROID_DISTRIBUTION.md).
+
 ## iOS
 
 iOS push is not implemented. Remaining work is tracked in

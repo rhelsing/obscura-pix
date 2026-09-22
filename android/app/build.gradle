@@ -11,6 +11,56 @@ def keystoreProperties = new Properties()
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
+def signingValue = { String propertyName, String environmentName ->
+    System.getenv(environmentName) ?: keystoreProperties[propertyName]
+}
+def releaseStoreFilePath = signingValue("storeFile", "ANDROID_RELEASE_STORE_FILE")
+def releaseStorePassword = signingValue("storePassword", "ANDROID_RELEASE_STORE_PASSWORD")
+def releaseKeyAlias = signingValue("keyAlias", "ANDROID_RELEASE_KEY_ALIAS")
+def releaseKeyPassword = signingValue("keyPassword", "ANDROID_RELEASE_KEY_PASSWORD")
+def releaseStoreFile = releaseStoreFilePath ? file(releaseStoreFilePath) : null
+def releaseSigningConfigured =
+    releaseStoreFile?.isFile() &&
+    releaseStorePassword &&
+    releaseKeyAlias &&
+    releaseKeyPassword
+
+def distributionBuild =
+    (findProperty("obscuraDistributionBuild") ?: "false").toBoolean()
+def obscuraVersionCode =
+    (findProperty("obscuraVersionCode") ?: "1").toString().toInteger()
+def obscuraVersionName =
+    (findProperty("obscuraVersionName") ?: "1.0").toString()
+
+if (obscuraVersionCode <= 0) {
+    throw new GradleException("obscuraVersionCode must be a positive integer")
+}
+if (obscuraVersionName.trim().isEmpty()) {
+    throw new GradleException("obscuraVersionName must not be empty")
+}
+if (distributionBuild) {
+    if (!releaseSigningConfigured) {
+        throw new GradleException(
+            "Distribution builds require a readable release keystore and all signing credentials"
+        )
+    }
+    if (!hasProperty("obscuraVersionCode") || !hasProperty("obscuraVersionName")) {
+        throw new GradleException(
+            "Distribution builds require obscuraVersionCode and obscuraVersionName"
+        )
+    }
+
+    def firebaseConfig = file("google-services.json")
+    def firebaseStub = file("google-services.stub.json")
+    if (!firebaseConfig.isFile()) {
+        throw new GradleException("Distribution builds require android/app/google-services.json")
+    }
+    if (firebaseStub.isFile() && firebaseConfig.bytes == firebaseStub.bytes) {
+        throw new GradleException(
+            "Distribution builds require the real Firebase config, not google-services.stub.json"
+        )
+    }
+}
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -82,8 +132,8 @@ android {
         applicationId "dev.barrelmaker.obscura"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode obscuraVersionCode
+        versionName obscuraVersionName
     }
 
     compileOptions {
@@ -137,11 +187,11 @@ android {
             keyPassword 'android'
         }
         release {
-            if (keystorePropertiesFile.exists()) {
-                storeFile file(keystoreProperties['storeFile'])
-                storePassword keystoreProperties['storePassword']
-                keyAlias keystoreProperties['keyAlias']
-                keyPassword keystoreProperties['keyPassword']
+            if (releaseSigningConfigured) {
+                storeFile releaseStoreFile
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
             }
         }
     }
@@ -151,8 +201,9 @@ android {
         }
         release {
             // Signed with the real upload key when keystore.properties is present
-            // (required for Play); falls back to debug signing otherwise.
-            signingConfig keystorePropertiesFile.exists() ? signingConfigs.release : signingConfigs.debug
+            // or the equivalent environment variables are set. Compile-only
+            // builds fall back to debug signing; distribution builds fail above.
+            signingConfig releaseSigningConfigured ? signingConfigs.release : signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
             shrinkResources enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
