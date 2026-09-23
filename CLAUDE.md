@@ -4,9 +4,9 @@
 
 - [`docs/DOMAIN_CONTRACT.md`](docs/DOMAIN_CONTRACT.md): application semantics.
 - [`docs/BRIDGE.md`](docs/BRIDGE.md): React Native bridge behavior.
-- [`NATIVE_CONTRACT.md`](https://github.com/barrelmaker97/obscura-native/blob/591a659/docs/NATIVE_CONTRACT.md):
+- [`NATIVE_CONTRACT.md`](https://github.com/obscura-messaging/obscura-native/blob/591a659/docs/NATIVE_CONTRACT.md):
   native ownership and receive guarantees.
-- [`KIT_API.md`](https://github.com/barrelmaker97/obscura-native/blob/591a659/docs/KIT_API.md):
+- [`KIT_API.md`](https://github.com/obscura-messaging/obscura-native/blob/591a659/docs/KIT_API.md):
   app-facing native API.
 
 ## Ownership
